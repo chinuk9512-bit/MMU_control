@@ -143,18 +143,18 @@ class MainWindow(QMainWindow):
             self.command_set_output.clear()
             self._set_command_actions_enabled(False)
 
-    def _create_command_set(self, _checked: bool = False) -> None:
-        dialog = CommandEditorDialog(parent=self)
+    def _create_command_set(self) -> None:
+        dialog = CommandEditorDialog()
         if dialog.exec() != CommandEditorDialog.DialogCode.Accepted:
             return
         command_set = dialog.command_set()
         self._save_command_set(command_set)
 
-    def _edit_command_set(self, _checked: bool = False) -> None:
+    def _edit_command_set(self) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
             return
-        dialog = CommandEditorDialog(command_set, parent=self)
+        dialog = CommandEditorDialog(command_set)
         if dialog.exec() != CommandEditorDialog.DialogCode.Accepted:
             return
         edited = dialog.command_set()
@@ -162,7 +162,7 @@ class MainWindow(QMainWindow):
             self._command_set_store.delete(command_set.name)
         self._save_command_set(edited)
 
-    def _delete_command_set(self, _checked: bool = False) -> None:
+    def _delete_command_set(self) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
             return
@@ -177,7 +177,7 @@ class MainWindow(QMainWindow):
         self._command_sets = dict(collection.command_sets or {})
         self._refresh_command_set_list()
 
-    def _run_command_set(self, _checked: bool = False) -> None:
+    def _run_command_set(self) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
             return
