@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFormLayout,
     QFrame,
     QGridLayout,
