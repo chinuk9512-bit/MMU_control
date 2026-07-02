@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
+from mmu_control.models.command_set import CommandSet
+from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.main_window import MainWindow
 
 
@@ -85,6 +89,32 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
         self.assertEqual(window.connection_status_label.text(), "SSH: connected")
+
+    def test_command_sets_can_be_saved_selected_and_run(self) -> None:
+        """The Commands tab persists command sets and runs them in the SSH shell."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = FakeSSHManager()
+            store = CommandSetStore(Path(temp_dir) / "command_sets.json")
+            window = MainWindow(ssh_manager=manager, command_set_store=store)
+            command_set = CommandSet(
+                name="diagnostics",
+                description="Collect status",
+                commands="pwd\nuname -a",
+            )
+
+            window._save_command_set(command_set)
+
+            self.assertEqual(window.command_set_list.count(), 1)
+            self.assertEqual(window.command_set_list.currentItem().text(), "diagnostics")
+            self.assertTrue(window.edit_command_button.isEnabled())
+            self.assertIn("Collect status", window.command_set_output.toPlainText())
+
+            window.ssh_host_input.setText("server")
+            window.ssh_username_input.setText("user")
+            window._connect_ssh()
+            window._run_command_set()
+
+            self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
 
 
 if __name__ == "__main__":
