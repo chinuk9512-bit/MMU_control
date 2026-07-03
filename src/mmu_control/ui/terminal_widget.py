@@ -6,6 +6,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontDatabase, QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QPlainTextEdit
 
+from mmu_control.core.terminal_sequences import strip_terminal_sequences
+
 
 class TerminalWidget(QPlainTextEdit):
     """Single-pane terminal widget that keeps the prompt and output together."""
@@ -33,6 +35,9 @@ class TerminalWidget(QPlainTextEdit):
         """Append command output above the live prompt."""
         if not text:
             return
+        text = strip_terminal_sequences(text)
+        if not text:
+            return
         if self._history_text and not self._history_text.endswith("\n"):
             self._history_text += "\n"
         self._history_text += text
@@ -42,6 +47,9 @@ class TerminalWidget(QPlainTextEdit):
 
     def write_stream(self, text: str) -> None:
         """Append raw shell output without forcing a trailing newline."""
+        if not text:
+            return
+        text = strip_terminal_sequences(text)
         if not text:
             return
         self._history_text += text.replace("\r\n", "\n").replace("\r", "\n")

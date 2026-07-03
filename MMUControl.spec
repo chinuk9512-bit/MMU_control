@@ -11,6 +11,7 @@ a = Analysis(
         'mmu_control.core.error_recovery',
         'mmu_control.core.sftp_manager',
         'mmu_control.core.ssh_manager',
+        'mmu_control.core.terminal_sequences',
         'mmu_control.models.profile',
         'mmu_control.storage.command_set_store',
         'mmu_control.storage.profile_store',
