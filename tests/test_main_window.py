@@ -116,6 +116,45 @@ class MainWindowTest(unittest.TestCase):
 
             self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
 
+    def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:
+        """Open SFTP sends a board SFTP command through the connected shell."""
+        manager = FakeSSHManager()
+        window = MainWindow(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_password_input.setText("secret")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+
+        self.assertEqual(manager.shell.sent, ["sftp root@[fe80::1%eth0]"])
+        self.assertIn(
+            "Opening SFTP session: sftp root@[fe80::1%eth0]",
+            window.sftp_output.toPlainText(),
+        )
+        self.assertEqual(window.board_status_label.text(), "Board: SFTP opening")
+
+    def test_open_sftp_reports_missing_board_ip(self) -> None:
+        """Open SFTP surfaces validation errors instead of doing nothing."""
+        manager = FakeSSHManager()
+        window = MainWindow(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_username_input.setText("root")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+
+        self.assertEqual(manager.shell.sent, [])
+        self.assertIn(
+            "SFTP error: Board IP address is required.",
+            window.sftp_output.toPlainText(),
+        )
+        self.assertEqual(window.board_status_label.text(), "Board: SFTP failed")
+
 
 if __name__ == "__main__":
     unittest.main()

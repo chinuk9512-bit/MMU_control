@@ -29,9 +29,10 @@ from PySide6.QtWidgets import (
 )
 
 from mmu_control.core.interactive_shell import InteractiveShell
+from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
 from mmu_control.models.command_set import CommandSet
-from mmu_control.models.settings import SSHSettings
+from mmu_control.models.settings import BoardSettings, SSHSettings
 from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
 from mmu_control.ui.terminal_widget import TerminalWidget
@@ -48,10 +49,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._ssh_manager = ssh_manager or SSHManager()
         self._command_set_store = command_set_store or CommandSetStore.create_default()
+        self._sftp_manager = SFTPManager()
         self._command_sets: dict[str, CommandSet] = {}
         self._shell: InteractiveShell | None = None
         self._pending_echo: str | None = None
         self._echo_buffer = ""
+        self._sftp_session_active = False
         self.setWindowTitle("MMU Control")
         self.resize(1180, 760)
         self.setCentralWidget(self._build_central_widget())
@@ -72,6 +75,7 @@ class MainWindow(QMainWindow):
         self.edit_command_button.clicked.connect(self._edit_command_set)
         self.delete_command_button.clicked.connect(self._delete_command_set)
         self.run_command_set_button.clicked.connect(self._run_command_set)
+        self.open_sftp_button.clicked.connect(self._open_sftp)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
 
     def _ssh_settings(self) -> SSHSettings:
@@ -80,6 +84,15 @@ class MainWindow(QMainWindow):
             port=self.ssh_port_input.value(),
             username=self.ssh_username_input.text().strip(),
             password=self.ssh_password_input.text(),
+        )
+
+    def _board_settings(self) -> BoardSettings:
+        return BoardSettings(
+            ip_address=self.board_ip_input.text().strip(),
+            username=self.board_username_input.text().strip(),
+            password=self.board_password_input.text(),
+            interface=self.board_interface_input.text().strip(),
+            usb_port=self.usb_port_combo.currentText().strip(),
         )
 
     def _connect_ssh(self) -> None:
@@ -103,6 +116,7 @@ class MainWindow(QMainWindow):
         self._shell = shell
         self._pending_echo = None
         self._echo_buffer = ""
+        self._sftp_session_active = False
         self.terminal_widget.clear_terminal()
         self.terminal_widget.set_prompt("")
         self.connect_button.setEnabled(False)
@@ -124,6 +138,30 @@ class MainWindow(QMainWindow):
             self._echo_buffer = ""
         except Exception as exc:
             self._show_connection_error(exc)
+
+    def _open_sftp(self) -> None:
+        if self._shell is None or not self._shell.is_open:
+            self._append_sftp_output("Not connected to an SSH shell.")
+            return
+        try:
+            command = self._sftp_manager.open_session(self._shell, self._board_settings())
+        except SFTPError as exc:
+            self._append_sftp_output(f"SFTP error: {exc}")
+            self.board_status_label.setText("Board: SFTP failed")
+            self.statusBar().showMessage("SFTP failed")
+            return
+        except Exception as exc:
+            self._show_connection_error(exc)
+            return
+        self._sftp_session_active = True
+        self._pending_echo = command
+        self._echo_buffer = ""
+        self._append_sftp_output(f"Opening SFTP session: {command}")
+        self.board_status_label.setText("Board: SFTP opening")
+        self.statusBar().showMessage("Opening SFTP session...")
+
+    def _append_sftp_output(self, text: str) -> None:
+        self.sftp_output.appendPlainText(text.rstrip())
 
     def _load_command_sets(self) -> None:
         collection = self._command_set_store.load()
@@ -236,6 +274,13 @@ class MainWindow(QMainWindow):
         output = self._filter_command_echo(output)
         if output:
             self.terminal_widget.write_stream(output)
+            if self._sftp_session_active:
+                self._append_sftp_output(output)
+                sent_password = self._sftp_manager.handle_password_prompt(
+                    self._shell, output, self._board_settings()
+                )
+                if sent_password:
+                    self._append_sftp_output("Sent SFTP password.")
 
     def _filter_command_echo(self, output: str) -> str:
         """Remove the PTY echo because the widget already displays local input."""
@@ -260,6 +305,7 @@ class MainWindow(QMainWindow):
         if self._shell is not None:
             self._shell.close()
             self._shell = None
+        self._sftp_session_active = False
 
     def _show_connection_error(self, error: Exception) -> None:
         self._shell_timer.stop()
