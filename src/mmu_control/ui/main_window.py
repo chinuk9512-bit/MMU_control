@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -13,7 +14,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QPlainTextEdit,
     QSpinBox,
@@ -26,16 +30,25 @@ from PySide6.QtWidgets import (
 
 from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.core.ssh_manager import SSHManager
+from mmu_control.models.command_set import CommandSet
 from mmu_control.models.settings import SSHSettings
+from mmu_control.storage.command_set_store import CommandSetStore, CommandSetStoreError
+from mmu_control.ui.command_editor_dialog import CommandEditorDialog
 from mmu_control.ui.terminal_widget import TerminalWidget
 
 
 class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
 
-    def __init__(self, ssh_manager: SSHManager | None = None) -> None:
+    def __init__(
+        self,
+        ssh_manager: SSHManager | None = None,
+        command_set_store: CommandSetStore | None = None,
+    ) -> None:
         super().__init__()
         self._ssh_manager = ssh_manager or SSHManager()
+        self._command_set_store = command_set_store or CommandSetStore.create_default()
+        self._command_sets: dict[str, CommandSet] = {}
         self._shell: InteractiveShell | None = None
         self._pending_echo: str | None = None
         self._echo_buffer = ""
@@ -48,12 +61,18 @@ class MainWindow(QMainWindow):
         self._shell_timer.setInterval(50)
         self._shell_timer.timeout.connect(self._poll_shell)
         self._wire_events()
+        self._load_command_sets()
 
     def _wire_events(self) -> None:
         self.connect_button.clicked.connect(self._connect_ssh)
         self.disconnect_button.clicked.connect(self._disconnect_ssh)
         self.reconnect_button.clicked.connect(self._reconnect_ssh)
         self.terminal_widget.commandSubmitted.connect(self._send_terminal_command)
+        self.new_command_button.clicked.connect(self._create_command_set)
+        self.edit_command_button.clicked.connect(self._edit_command_set)
+        self.delete_command_button.clicked.connect(self._delete_command_set)
+        self.run_command_set_button.clicked.connect(self._run_command_set)
+        self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
 
     def _ssh_settings(self) -> SSHSettings:
         return SSHSettings(
@@ -105,6 +124,108 @@ class MainWindow(QMainWindow):
             self._echo_buffer = ""
         except Exception as exc:
             self._show_connection_error(exc)
+
+    def _load_command_sets(self) -> None:
+        collection = self._command_set_store.load()
+        self._command_sets = dict(collection.command_sets or {})
+        self._refresh_command_set_list()
+
+    def _refresh_command_set_list(self, selected_name: str | None = None) -> None:
+        self.command_set_list.clear()
+        for name in sorted(self._command_sets):
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            self.command_set_list.addItem(item)
+            if selected_name == name:
+                self.command_set_list.setCurrentItem(item)
+        if self.command_set_list.currentItem() is None and self.command_set_list.count():
+            self.command_set_list.setCurrentRow(0)
+        if self.command_set_list.currentItem() is None:
+            self.command_set_output.clear()
+            self._set_command_actions_enabled(False)
+
+    def _create_command_set(self, _checked: bool = False) -> None:
+        dialog = CommandEditorDialog(parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        command_set = dialog.command_set()
+        self._save_command_set(command_set)
+
+    def _edit_command_set(self, _checked: bool = False) -> None:
+        command_set = self._selected_command_set()
+        if command_set is None:
+            return
+        dialog = CommandEditorDialog(command_set, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        edited = dialog.command_set()
+        if edited.name != command_set.name:
+            self._command_set_store.delete(command_set.name)
+        self._save_command_set(edited)
+
+    def _delete_command_set(self, _checked: bool = False) -> None:
+        command_set = self._selected_command_set()
+        if command_set is None:
+            return
+        result = QMessageBox.question(
+            self,
+            "Delete Command Set",
+            f"Delete command set '{command_set.name}'?",
+        )
+        if result != QMessageBox.StandardButton.Yes:
+            return
+        collection = self._command_set_store.delete(command_set.name)
+        self._command_sets = dict(collection.command_sets or {})
+        self._refresh_command_set_list()
+
+    def _run_command_set(self, _checked: bool = False) -> None:
+        command_set = self._selected_command_set()
+        if command_set is None:
+            return
+        if self._shell is None or not self._shell.is_open:
+            self.terminal_widget.write_output("Not connected to an SSH shell.")
+            return
+        for command in command_set.commands.splitlines():
+            command = command.strip()
+            if command:
+                self._shell.send_line(command)
+
+    def _save_command_set(self, command_set: CommandSet) -> None:
+        try:
+            collection = self._command_set_store.upsert(command_set)
+        except CommandSetStoreError as exc:
+            QMessageBox.critical(self, "Command Set Error", str(exc))
+            return
+        self._command_sets = dict(collection.command_sets or {})
+        self._refresh_command_set_list(command_set.name.strip())
+        self.statusBar().showMessage(f"Command set saved: {command_set.name.strip()}")
+
+    def _selected_command_set(self) -> CommandSet | None:
+        item = self.command_set_list.currentItem()
+        if item is None:
+            return None
+        name = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(name, str):
+            return None
+        return self._command_sets.get(name)
+
+    def _show_selected_command_set(self, *_items: QListWidgetItem | None) -> None:
+        command_set = self._selected_command_set()
+        if command_set is None:
+            self.command_set_output.clear()
+            self._set_command_actions_enabled(False)
+            return
+        self.command_set_output.setPlainText(
+            f"Name: {command_set.name}\n"
+            f"Description: {command_set.description}\n\n"
+            f"{command_set.commands}"
+        )
+        self._set_command_actions_enabled(True)
+
+    def _set_command_actions_enabled(self, enabled: bool) -> None:
+        self.edit_command_button.setEnabled(enabled)
+        self.delete_command_button.setEnabled(enabled)
+        self.run_command_set_button.setEnabled(enabled)
 
     def _poll_shell(self) -> None:
         if self._shell is None:
@@ -319,6 +440,8 @@ class MainWindow(QMainWindow):
         self.command_set_output.setPlaceholderText("Command sets will be listed here.")
 
         layout.addWidget(button_row)
+        self.command_set_list = QListWidget(self)
+        layout.addWidget(self.command_set_list)
         layout.addWidget(self.command_set_output, stretch=1)
         return tab
 
