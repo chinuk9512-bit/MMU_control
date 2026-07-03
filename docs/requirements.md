@@ -28,27 +28,6 @@ The items below are additional inputs needed to create or reproduce the Python v
 - `scripts/build_exe.ps1` - PowerShell entry point for packaging the application into a Windows executable after the virtual environment dependencies are installed.
 - `MMUControl.spec` - PyInstaller specification used by the build script to define the executable packaging configuration.
 
-### Offline Dependency Package Checklist
-
-When preparing an offline installer or wheelhouse, include the following transitive packages in addition to the direct runtime and development packages already listed above:
-
-- `shiboken6` - required by `PySide6`.
-- `PySide6_Essentials` - required by `PySide6` for core Qt modules.
-- `PySide6_Addons` - required by `PySide6` for additional Qt modules.
-- `bcrypt` - required by `paramiko` for SSH authentication support.
-- `cryptography` - required by `paramiko` for SSH cryptographic primitives.
-- `invoke` - required by `paramiko`.
-- `PyNaCl` - required by `paramiko` for Ed25519 key support.
-- `iniconfig` - required by `pytest`.
-- `packaging` - required by `pytest` and commonly used by packaging tools.
-- `pluggy` - required by `pytest` for plugin loading.
-- `Pygments` - required by `pytest` for highlighted output.
-- `colorama` - required by `pytest` on Windows consoles.
-- `altgraph` - required by `pyinstaller`.
-- `pyinstaller-hooks-contrib` - required by `pyinstaller` for package hook support.
-- `pefile` - required by `pyinstaller` when building Windows executables.
-- `pywin32-ctypes` - required by `pyinstaller` on Windows.
-
 ## Recommended Setup
 
 ```powershell
