@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import shlex
+
 from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.models.settings import BoardSettings
 
@@ -34,8 +37,37 @@ class SFTPManager:
             return False
         return shell.respond_to_prompt(output, self.PASSWORD_PROMPT, settings.password)
 
+    def upload(self, shell: InteractiveShell, server_path: str, board_path: str) -> str:
+        """Upload a Linux-server file to the board in an open SFTP session."""
+        command = self._build_transfer_command("put", server_path, board_path)
+        shell.send_line(command)
+        return command
+
+    def download(self, shell: InteractiveShell, board_path: str, server_path: str) -> str:
+        """Download a board file to the Linux server in an open SFTP session."""
+        command = self._build_transfer_command("get", board_path, server_path)
+        shell.send_line(command)
+        return command
+
+    def close_session(self, shell: InteractiveShell) -> None:
+        """Leave the active SFTP session."""
+        shell.send_line("bye")
+
+    def _build_transfer_command(self, operation: str, source: str, destination: str) -> str:
+        source = source.strip()
+        destination = destination.strip()
+        if not source or not destination:
+            raise SFTPError("Both server and board paths are required.")
+        return f"{operation} {shlex.quote(source)} {shlex.quote(destination)}"
+
     def _validate_settings(self, settings: BoardSettings) -> None:
         if not settings.ip_address.strip():
             raise SFTPError("Board IP address is required.")
         if not settings.username.strip():
             raise SFTPError("Board username is required.")
+        if re.fullmatch(r"[A-Za-z0-9._-]+", settings.username) is None:
+            raise SFTPError("Board username contains unsupported characters.")
+        if re.fullmatch(r"[A-Fa-f0-9:.]+", settings.ip_address) is None:
+            raise SFTPError("Board IP address contains unsupported characters.")
+        if settings.interface and re.fullmatch(r"[A-Za-z0-9_.:-]+", settings.interface) is None:
+            raise SFTPError("Board interface contains unsupported characters.")

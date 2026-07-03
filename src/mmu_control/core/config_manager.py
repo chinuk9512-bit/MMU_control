@@ -45,7 +45,10 @@ class ConfigManager:
         if not isinstance(raw_data, dict):
             raise ConfigError(f"Config root must be a JSON object: {self._config_path}")
 
-        return AppSettings.from_dict(raw_data)
+        try:
+            return AppSettings.from_dict(raw_data)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"Invalid config values: {self._config_path}") from exc
 
     def save(self, settings: AppSettings) -> None:
         """Save settings to disk, creating the parent directory when needed."""

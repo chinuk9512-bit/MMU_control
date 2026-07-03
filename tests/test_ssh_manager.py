@@ -27,6 +27,7 @@ class FakeClient:
         self.connect_kwargs: dict[str, object] = {}
         self.transport = FakeTransport(False)
         self.shell_channel = FakeShellChannel()
+        self.command_output = b""
 
     def set_missing_host_key_policy(self, policy: object) -> None:
         """Accept a host key policy."""
@@ -45,6 +46,11 @@ class FakeClient:
         """Return a fake shell channel."""
         self.shell_args = (term, width, height)
         return self.shell_channel
+
+    def exec_command(self, command: str, timeout: float) -> tuple[object, FakeStream, FakeStream]:
+        """Return configured command output."""
+        self.executed_command = (command, timeout)
+        return object(), FakeStream(self.command_output), FakeStream(b"")
 
     def close(self) -> None:
         """Close the fake client."""
@@ -73,6 +79,20 @@ class FakeShellChannel:
     def close(self) -> None:
         """Close the shell channel."""
         self.closed = True
+
+
+class FakeExitChannel:
+    def recv_exit_status(self) -> int:
+        return 0
+
+
+class FakeStream:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+        self.channel = FakeExitChannel()
+
+    def read(self) -> bytes:
+        return self._data
 
 
 class SSHManagerTest(unittest.TestCase):
@@ -108,6 +128,17 @@ class SSHManagerTest(unittest.TestCase):
             manager.connect(SSHSettings(host="", username="user"))
         with self.assertRaises(SSHConnectionError):
             manager.connect(SSHSettings(host="server", username=""))
+
+    def test_lists_remote_usb_serial_ports(self) -> None:
+        """Only supported remote serial device paths are returned."""
+        fake_client = FakeClient()
+        fake_client.command_output = b"/dev/ttyUSB1\n/dev/sda\n/dev/ttyACM0\n"
+        manager = SSHManager(client_factory=lambda: fake_client)
+        manager.connect(SSHSettings(host="server", username="user"))
+
+        ports = manager.list_serial_ports()
+
+        self.assertEqual(ports, ["/dev/ttyACM0", "/dev/ttyUSB1"])
 
 
 if __name__ == "__main__":

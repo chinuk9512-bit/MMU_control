@@ -17,19 +17,21 @@ class TerminalWidget(QPlainTextEdit):
     def __init__(self, prompt: str = "$ ") -> None:
         super().__init__()
         self._prompt = prompt
-        self._history_text = ""
         self._buffer = ""
         self._history: list[str] = []
         self._history_index = 0
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setUndoRedoEnabled(False)
+        self.setMaximumBlockCount(10_000)
         self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
-        self.refresh_display()
+        self.setPlainText(self._prompt)
+        self._move_cursor_to_end()
 
     def set_prompt(self, prompt: str) -> None:
         """Change the prompt text shown before the editable command line."""
+        cursor = self._remove_live_input()
         self._prompt = prompt
-        self.refresh_display()
+        self._insert_live_input(cursor)
 
     def write_output(self, text: str) -> None:
         """Append command output above the live prompt."""
@@ -38,12 +40,13 @@ class TerminalWidget(QPlainTextEdit):
         text = strip_terminal_sequences(text)
         if not text:
             return
-        if self._history_text and not self._history_text.endswith("\n"):
-            self._history_text += "\n"
-        self._history_text += text
-        if not self._history_text.endswith("\n"):
-            self._history_text += "\n"
-        self.refresh_display()
+        cursor = self._remove_live_input()
+        if cursor.position() and str(self.document().characterAt(cursor.position() - 1)) != "\n":
+            cursor.insertText("\n")
+        cursor.insertText(text)
+        if not text.endswith("\n"):
+            cursor.insertText("\n")
+        self._insert_live_input(cursor)
 
     def write_stream(self, text: str) -> None:
         """Append raw shell output without forcing a trailing newline."""
@@ -52,16 +55,17 @@ class TerminalWidget(QPlainTextEdit):
         text = strip_terminal_sequences(text)
         if not text:
             return
-        self._history_text += text.replace("\r\n", "\n").replace("\r", "\n")
-        self.refresh_display()
+        cursor = self._remove_live_input()
+        cursor.insertText(text.replace("\r\n", "\n").replace("\r", "\n"))
+        self._insert_live_input(cursor)
 
     def clear_terminal(self) -> None:
         """Clear the terminal and restore the prompt."""
-        self._history_text = ""
         self._buffer = ""
         self._history.clear()
         self._history_index = 0
-        self.refresh_display()
+        self.setPlainText(self._prompt)
+        self._move_cursor_to_end()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         """Handle terminal input like a command prompt."""
@@ -72,8 +76,7 @@ class TerminalWidget(QPlainTextEdit):
             return
 
         if key == Qt.Key.Key_Backspace:
-            self._buffer = self._buffer[:-1]
-            self.refresh_display()
+            self._replace_buffer(self._buffer[:-1])
             return
 
         if key == Qt.Key.Key_Up:
@@ -90,8 +93,7 @@ class TerminalWidget(QPlainTextEdit):
             | Qt.KeyboardModifier.MetaModifier
         )
         if event.text() and not (event.modifiers() & blocked_modifiers):
-            self._buffer += event.text()
-            self.refresh_display()
+            self._replace_buffer(self._buffer + event.text())
             return
 
         super().keyPressEvent(event)
@@ -100,31 +102,57 @@ class TerminalWidget(QPlainTextEdit):
         command = self._buffer
         self._history.append(command)
         self._history_index = len(self._history)
-        self._history_text += f"{self._prompt}{command}\n"
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText("\n")
         self._buffer = ""
-        self.refresh_display()
+        self._insert_live_input(cursor)
         self.commandSubmitted.emit(command)
 
     def _history_up(self) -> None:
         if not self._history:
             return
         self._history_index = max(0, self._history_index - 1)
-        self._buffer = self._history[self._history_index]
-        self.refresh_display()
+        self._replace_buffer(self._history[self._history_index])
 
     def _history_down(self) -> None:
         if not self._history:
             return
         self._history_index = min(len(self._history), self._history_index + 1)
         if self._history_index == len(self._history):
-            self._buffer = ""
+            buffer = ""
         else:
-            self._buffer = self._history[self._history_index]
-        self.refresh_display()
+            buffer = self._history[self._history_index]
+        self._replace_buffer(buffer)
 
     def refresh_display(self) -> None:
-        """Redraw the terminal text from the current history and buffer."""
-        self.setPlainText(f"{self._history_text}{self._prompt}{self._buffer}")
+        """Keep the cursor at the live command line."""
+        self._move_cursor_to_end()
+
+    def _replace_buffer(self, buffer: str) -> None:
+        cursor = self._remove_live_input()
+        self._buffer = buffer
+        self._insert_live_input(cursor)
+
+    def _remove_live_input(self) -> QTextCursor:
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        tail_length = len(self._prompt) + len(self._buffer)
+        if tail_length:
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Left,
+                QTextCursor.MoveMode.KeepAnchor,
+                tail_length,
+            )
+            cursor.removeSelectedText()
+        return cursor
+
+    def _insert_live_input(self, cursor: QTextCursor) -> None:
+        cursor.insertText(f"{self._prompt}{self._buffer}")
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+
+    def _move_cursor_to_end(self) -> None:
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.setTextCursor(cursor)

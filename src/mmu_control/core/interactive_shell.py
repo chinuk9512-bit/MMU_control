@@ -48,11 +48,13 @@ class InteractiveShell:
         """Read all immediately available output from the shell channel."""
         self._ensure_open()
         chunks: list[bytes] = []
-        while self._channel.recv_ready():
-            chunk = self._channel.recv(max_bytes)
+        remaining = max_bytes
+        while remaining > 0 and self._channel.recv_ready():
+            chunk = self._channel.recv(remaining)
             if not chunk:
                 break
             chunks.append(chunk)
+            remaining -= len(chunk)
         return b"".join(chunks).decode(self._encoding, errors="replace")
 
     def respond_to_prompt(self, output: str, prompt: str, response: str) -> bool:

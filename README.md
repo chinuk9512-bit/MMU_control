@@ -16,6 +16,14 @@ python -m pip install -e .[dev]
 mmu-control
 ```
 
+## Board workflows
+
+- SSH connection and board fields are restored when the application restarts.
+- `Refresh USB` searches the connected Linux server for `/dev/ttyUSB*` and `/dev/ttyACM*` devices.
+- Select a detected device and use `Open Minicom` / `Close Minicom` for the board serial console.
+- The SFTP tab opens an SFTP session from the Linux server to the board. `Server path` is a path on that Linux server, not a path on the Windows PC.
+- Use `Upload to Board` for SFTP `put` and `Download to Server` for SFTP `get`.
+
 ## Test
 
 ```powershell

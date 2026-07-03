@@ -18,6 +18,11 @@ class SSHConnectionError(RuntimeError):
 class SSHManager:
     """Manage SSH client connection lifecycle."""
 
+    SERIAL_PORT_COMMAND = (
+        "find /dev -maxdepth 1 -type c "
+        "\\( -name 'ttyUSB*' -o -name 'ttyACM*' \\) -print 2>/dev/null | sort"
+    )
+
     def __init__(
         self,
         client_factory: Callable[[], paramiko.SSHClient] | None = None,
@@ -91,6 +96,27 @@ class SSHManager:
         except Exception as exc:
             raise SSHConnectionError("Failed to open interactive shell.") from exc
         return InteractiveShell(channel)
+
+    def execute_command(self, command: str, timeout_seconds: float = 10.0) -> str:
+        """Execute a non-interactive command on the connected server."""
+        client = self._require_client()
+        try:
+            _stdin, stdout, stderr = client.exec_command(command, timeout=timeout_seconds)
+            output = stdout.read().decode("utf-8", errors="replace")
+            error_output = stderr.read().decode("utf-8", errors="replace")
+            exit_status = stdout.channel.recv_exit_status()
+        except Exception as exc:
+            raise SSHConnectionError("Failed to execute a remote command.") from exc
+        if exit_status != 0:
+            detail = error_output.strip() or f"exit status {exit_status}"
+            raise SSHConnectionError(f"Remote command failed: {detail}")
+        return output
+
+    def list_serial_ports(self) -> list[str]:
+        """Return USB serial device paths found on the connected Linux server."""
+        output = self.execute_command(self.SERIAL_PORT_COMMAND)
+        prefixes = ("/dev/ttyUSB", "/dev/ttyACM")
+        return sorted({line.strip() for line in output.splitlines() if line.strip().startswith(prefixes)})
 
     def _require_client(self) -> paramiko.SSHClient:
         if self._client is None or not self.is_connected:

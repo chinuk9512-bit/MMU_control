@@ -9,6 +9,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
+from mmu_control.core.config_manager import ConfigManager
+from mmu_control.models.settings import AppSettings, BoardSettings, SSHSettings
 from mmu_control.models.command_set import CommandSet
 from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.main_window import MainWindow
@@ -26,6 +28,10 @@ class FakeShell:
         self.sent.append(command)
         self.output += f"{command}\r\n/home/user\r\nuser@server:~$ "
         return len(command) + 1
+
+    def send(self, text: str) -> int:
+        self.sent.append(text)
+        return len(text)
 
     def read_available(self) -> str:
         output, self.output = self.output, ""
@@ -54,6 +60,21 @@ class FakeSSHManager:
     def disconnect(self) -> None:
         pass
 
+    def list_serial_ports(self) -> list[str]:
+        return ["/dev/ttyACM0", "/dev/ttyUSB0"]
+
+
+class ImmediateTaskRunner:
+    """Run background tasks inline so UI tests stay deterministic."""
+
+    def submit(self, task: object, on_success: object, on_error: object) -> None:
+        try:
+            result = task()
+        except Exception as exc:
+            on_error(exc)
+        else:
+            on_success(result)
+
 
 class MainWindowTest(unittest.TestCase):
     """Tests for the main application window."""
@@ -63,9 +84,23 @@ class MainWindowTest(unittest.TestCase):
         """Create a QApplication for widget tests."""
         cls.app = QApplication.instance() or QApplication(sys.argv)
 
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def create_window(self, **kwargs: object) -> MainWindow:
+        kwargs.setdefault(
+            "config_manager",
+            ConfigManager(Path(self.temp_dir.name) / "settings.json"),
+        )
+        kwargs.setdefault("task_runner", ImmediateTaskRunner())
+        return MainWindow(**kwargs)
+
     def test_main_window_initial_state(self) -> None:
         """Main window exposes the expected Task 2 controls."""
-        window = MainWindow()
+        window = self.create_window()
 
         self.assertEqual(window.windowTitle(), "MMU Control")
         self.assertEqual(window.ssh_port_input.value(), 22)
@@ -78,7 +113,7 @@ class MainWindowTest(unittest.TestCase):
     def test_terminal_commands_are_sent_to_connected_ssh_shell(self) -> None:
         """Terminal input and SSH output share the terminal widget."""
         manager = FakeSSHManager()
-        window = MainWindow(ssh_manager=manager)
+        window = self.create_window(ssh_manager=manager)
         window.ssh_host_input.setText("server")
         window.ssh_username_input.setText("user")
 
@@ -95,7 +130,7 @@ class MainWindowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = FakeSSHManager()
             store = CommandSetStore(Path(temp_dir) / "command_sets.json")
-            window = MainWindow(ssh_manager=manager, command_set_store=store)
+            window = self.create_window(ssh_manager=manager, command_set_store=store)
             command_set = CommandSet(
                 name="diagnostics",
                 description="Collect status",
@@ -119,7 +154,7 @@ class MainWindowTest(unittest.TestCase):
     def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:
         """Open SFTP sends a board SFTP command through the connected shell."""
         manager = FakeSSHManager()
-        window = MainWindow(ssh_manager=manager)
+        window = self.create_window(ssh_manager=manager)
         window.ssh_host_input.setText("server")
         window.ssh_username_input.setText("user")
         window.board_ip_input.setText("fe80::1")
@@ -137,10 +172,24 @@ class MainWindowTest(unittest.TestCase):
         )
         self.assertEqual(window.board_status_label.text(), "Board: SFTP opening")
 
+        window.server_path_input.setText("/tmp/update file.bin")
+        window.board_path_input.setText("/opt/update.bin")
+        window.upload_sftp_button.click()
+        window.download_sftp_button.click()
+
+        self.assertEqual(
+            manager.shell.sent,
+            [
+                "sftp root@[fe80::1%eth0]",
+                "put '/tmp/update file.bin' /opt/update.bin",
+                "get /opt/update.bin '/tmp/update file.bin'",
+            ],
+        )
+
     def test_open_sftp_reports_missing_board_ip(self) -> None:
         """Open SFTP surfaces validation errors instead of doing nothing."""
         manager = FakeSSHManager()
-        window = MainWindow(ssh_manager=manager)
+        window = self.create_window(ssh_manager=manager)
         window.ssh_host_input.setText("server")
         window.ssh_username_input.setText("user")
         window.board_username_input.setText("root")
@@ -154,6 +203,45 @@ class MainWindowTest(unittest.TestCase):
             window.sftp_output.toPlainText(),
         )
         self.assertEqual(window.board_status_label.text(), "Board: SFTP failed")
+
+    def test_settings_are_loaded_and_saved_on_close(self) -> None:
+        """Connection, board, USB, and window settings survive a restart."""
+        config = ConfigManager(Path(self.temp_dir.name) / "settings.json")
+        config.save(
+            AppSettings(
+                ssh=SSHSettings(host="server", port=2200, username="user", password="pw"),
+                board=BoardSettings(ip_address="10.0.0.2", username="root", usb_port="/dev/ttyUSB0"),
+            )
+        )
+        window = self.create_window(config_manager=config)
+
+        self.assertEqual(window.ssh_host_input.text(), "server")
+        self.assertEqual(window.ssh_port_input.value(), 2200)
+        self.assertEqual(window.usb_port_combo.currentText(), "/dev/ttyUSB0")
+
+        window.board_interface_input.setText("eth0")
+        window.close()
+
+        self.assertEqual(config.load().board.interface, "eth0")
+
+    def test_remote_usb_refresh_and_minicom(self) -> None:
+        """Remote serial ports can be discovered and opened with minicom."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window._connect_ssh()
+
+        window.refresh_usb_button.click()
+        window.usb_port_combo.setCurrentText("/dev/ttyUSB0")
+        window.open_minicom_button.click()
+
+        self.assertEqual(window.usb_port_combo.count(), 2)
+        self.assertEqual(manager.shell.sent, ["minicom -D /dev/ttyUSB0"])
+
+        window.close_minicom_button.click()
+
+        self.assertEqual(manager.shell.sent[-1], "\x01x\n")
 
 
 if __name__ == "__main__":

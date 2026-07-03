@@ -46,6 +46,16 @@ class ConfigManagerTest(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 manager.load()
 
+    def test_invalid_setting_value_raises_config_error(self) -> None:
+        """Malformed values are reported instead of crashing application startup."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "settings.json"
+            config_path.write_text('{"ssh": {"port": "not-a-port"}}', encoding="utf-8")
+            manager = ConfigManager(config_path)
+
+            with self.assertRaises(ConfigError):
+                manager.load()
+
 
 if __name__ == "__main__":
     unittest.main()

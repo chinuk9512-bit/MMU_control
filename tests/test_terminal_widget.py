@@ -46,6 +46,26 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget.toPlainText(), "user@server:~$ pwd")
 
+    def test_typing_and_output_do_not_replace_the_whole_document(self) -> None:
+        """Incremental rendering avoids the old full-document redraw bottleneck."""
+
+        class CountingTerminal(TerminalWidget):
+            def __init__(self) -> None:
+                self.replace_count = 0
+                super().__init__(prompt="mmu> ")
+
+            def setPlainText(self, text: str) -> None:  # noqa: N802
+                self.replace_count += 1
+                super().setPlainText(text)
+
+        widget = CountingTerminal()
+        initial_count = widget.replace_count
+
+        QTest.keyClicks(widget, "status")
+        widget.write_stream(" ready")
+
+        self.assertEqual(widget.replace_count, initial_count)
+
 
 if __name__ == "__main__":
     unittest.main()

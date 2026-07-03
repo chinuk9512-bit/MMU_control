@@ -64,6 +64,25 @@ class SFTPManagerTest(unittest.TestCase):
         with self.assertRaises(SFTPError):
             manager.build_command(BoardSettings(username="root"))
 
+    def test_transfer_commands_are_quoted_and_session_can_close(self) -> None:
+        """Put/get preserve paths with spaces and bye leaves SFTP mode."""
+        channel = FakeChannel()
+        shell = InteractiveShell(channel)
+        manager = SFTPManager()
+
+        manager.upload(shell, "/tmp/update file.bin", "/opt/update.bin")
+        manager.download(shell, "/opt/result.bin", "/tmp/result file.bin")
+        manager.close_session(shell)
+
+        self.assertEqual(
+            channel.sent,
+            [
+                "put '/tmp/update file.bin' /opt/update.bin\n",
+                "get /opt/result.bin '/tmp/result file.bin'\n",
+                "bye\n",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
