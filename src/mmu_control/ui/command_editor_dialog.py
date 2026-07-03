@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QVBoxLayout,
-    QWidget,
 )
 
 from mmu_control.models.command_set import CommandSet
@@ -19,12 +18,8 @@ from mmu_control.models.command_set import CommandSet
 class CommandEditorDialog(QDialog):
     """Modal editor for one command set."""
 
-    def __init__(
-        self,
-        command_set: CommandSet | None = None,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
+    def __init__(self, command_set: CommandSet | None = None) -> None:
+        super().__init__()
         self.setWindowTitle("Command Set")
         self._error_label = QLabel("", self)
         self._error_label.setStyleSheet("color: #b00020;")

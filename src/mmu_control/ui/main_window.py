@@ -32,7 +32,7 @@ from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.core.ssh_manager import SSHManager
 from mmu_control.models.command_set import CommandSet
 from mmu_control.models.settings import SSHSettings
-from mmu_control.storage.command_set_store import CommandSetStore, CommandSetStoreError
+from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
 from mmu_control.ui.terminal_widget import TerminalWidget
 
@@ -144,26 +144,26 @@ class MainWindow(QMainWindow):
             self.command_set_output.clear()
             self._set_command_actions_enabled(False)
 
-    def _create_command_set(self, _checked: bool = False) -> None:
-        dialog = CommandEditorDialog(parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+    def _create_command_set(self) -> None:
+        dialog = CommandEditorDialog()
+        if dialog.exec() != CommandEditorDialog.DialogCode.Accepted:
             return
         command_set = dialog.command_set()
         self._save_command_set(command_set)
 
-    def _edit_command_set(self, _checked: bool = False) -> None:
+    def _edit_command_set(self) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
             return
-        dialog = CommandEditorDialog(command_set, parent=self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        dialog = CommandEditorDialog(command_set)
+        if dialog.exec() != CommandEditorDialog.DialogCode.Accepted:
             return
         edited = dialog.command_set()
         if edited.name != command_set.name:
             self._command_set_store.delete(command_set.name)
         self._save_command_set(edited)
 
-    def _delete_command_set(self, _checked: bool = False) -> None:
+    def _delete_command_set(self) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
             return
@@ -178,7 +178,7 @@ class MainWindow(QMainWindow):
         self._command_sets = dict(collection.command_sets or {})
         self._refresh_command_set_list()
 
-    def _run_command_set(self, _checked: bool = False) -> None:
+    def _run_command_set(self) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
             return
@@ -191,14 +191,9 @@ class MainWindow(QMainWindow):
                 self._shell.send_line(command)
 
     def _save_command_set(self, command_set: CommandSet) -> None:
-        try:
-            collection = self._command_set_store.upsert(command_set)
-        except CommandSetStoreError as exc:
-            QMessageBox.critical(self, "Command Set Error", str(exc))
-            return
+        collection = self._command_set_store.upsert(command_set)
         self._command_sets = dict(collection.command_sets or {})
         self._refresh_command_set_list(command_set.name.strip())
-        self.statusBar().showMessage(f"Command set saved: {command_set.name.strip()}")
 
     def _selected_command_set(self) -> CommandSet | None:
         item = self.command_set_list.currentItem()
