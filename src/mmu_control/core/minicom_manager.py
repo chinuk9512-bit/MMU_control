@@ -19,7 +19,7 @@ class MinicomManager:
         port = usb_port.strip()
         if re.fullmatch(r"/dev/tty(?:USB|ACM)\d+", port) is None:
             raise MinicomError("Select a detected USB serial port first.")
-        return f"minicom -D {shlex.quote(port)}"
+        return f"minicom -o -c off -D {shlex.quote(port)}"
 
     def close_session(self, shell: InteractiveShell) -> None:
         """Send minicom's Ctrl-A, X, Enter exit sequence."""

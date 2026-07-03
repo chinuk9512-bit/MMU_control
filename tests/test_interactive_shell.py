@@ -59,6 +59,19 @@ class InteractiveShellTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             shell.send("ls")
 
+    def test_utf8_character_can_span_reads(self) -> None:
+        """Incremental decoding preserves split Linux UTF-8 output."""
+        channel = FakeChannel()
+        encoded = "장비".encode("utf-8")
+        shell = InteractiveShell(channel)
+        channel.output.append(encoded[:2])
+
+        first = shell.read_available()
+        channel.output.append(encoded[2:])
+        second = shell.read_available()
+
+        self.assertEqual(first + second, "장비")
+
 
 if __name__ == "__main__":
     unittest.main()

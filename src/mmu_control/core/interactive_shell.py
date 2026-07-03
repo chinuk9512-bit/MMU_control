@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 from typing import Protocol
 
 
@@ -28,7 +29,7 @@ class InteractiveShell:
 
     def __init__(self, channel: ShellChannel, encoding: str = "utf-8") -> None:
         self._channel = channel
-        self._encoding = encoding
+        self._decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
 
     @property
     def is_open(self) -> bool:
@@ -55,7 +56,7 @@ class InteractiveShell:
                 break
             chunks.append(chunk)
             remaining -= len(chunk)
-        return b"".join(chunks).decode(self._encoding, errors="replace")
+        return self._decoder.decode(b"".join(chunks), final=False)
 
     def respond_to_prompt(self, output: str, prompt: str, response: str) -> bool:
         """Send a response when output contains a prompt."""

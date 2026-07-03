@@ -6,13 +6,14 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontDatabase, QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QPlainTextEdit
 
-from mmu_control.core.terminal_sequences import strip_terminal_sequences
+from mmu_control.core.terminal_sequences import TerminalStreamFilter, strip_terminal_sequences
 
 
 class TerminalWidget(QPlainTextEdit):
     """Single-pane terminal widget that keeps the prompt and output together."""
 
     commandSubmitted = Signal(str)
+    rawInput = Signal(str)
 
     def __init__(self, prompt: str = "$ ") -> None:
         super().__init__()
@@ -20,6 +21,8 @@ class TerminalWidget(QPlainTextEdit):
         self._buffer = ""
         self._history: list[str] = []
         self._history_index = 0
+        self._interactive_mode = False
+        self._stream_filter = TerminalStreamFilter()
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setUndoRedoEnabled(False)
         self.setMaximumBlockCount(10_000)
@@ -32,6 +35,19 @@ class TerminalWidget(QPlainTextEdit):
         cursor = self._remove_live_input()
         self._prompt = prompt
         self._insert_live_input(cursor)
+
+    def set_interactive_mode(self, enabled: bool) -> None:
+        """Switch between line editing and immediate remote key input."""
+        if self._interactive_mode == enabled:
+            return
+        if enabled and self._buffer:
+            self._replace_buffer("")
+        self._interactive_mode = enabled
+
+    @property
+    def is_interactive_mode(self) -> bool:
+        """Return whether key presses are sent immediately."""
+        return self._interactive_mode
 
     def write_output(self, text: str) -> None:
         """Append command output above the live prompt."""
@@ -52,7 +68,7 @@ class TerminalWidget(QPlainTextEdit):
         """Append raw shell output without forcing a trailing newline."""
         if not text:
             return
-        text = strip_terminal_sequences(text)
+        text = self._stream_filter.feed(text)
         if not text:
             return
         cursor = self._remove_live_input()
@@ -64,12 +80,28 @@ class TerminalWidget(QPlainTextEdit):
         self._buffer = ""
         self._history.clear()
         self._history_index = 0
+        self._stream_filter.reset()
         self.setPlainText(self._prompt)
         self._move_cursor_to_end()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         """Handle terminal input like a command prompt."""
         key = event.key()
+
+        if (
+            key == Qt.Key.Key_C
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            self.rawInput.emit("\x03")
+            if self._buffer:
+                self._replace_buffer("")
+            return
+
+        if self._interactive_mode:
+            raw_input = self._interactive_key(event)
+            if raw_input:
+                self.rawInput.emit(raw_input)
+            return
 
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._submit_buffer()
@@ -97,6 +129,35 @@ class TerminalWidget(QPlainTextEdit):
             return
 
         super().keyPressEvent(event)
+
+    def _interactive_key(self, event: QKeyEvent) -> str:
+        key = event.key()
+        special_keys = {
+            Qt.Key.Key_Return: "\r",
+            Qt.Key.Key_Enter: "\r",
+            Qt.Key.Key_Backspace: "\x7f",
+            Qt.Key.Key_Tab: "\t",
+            Qt.Key.Key_Escape: "\x1b",
+            Qt.Key.Key_Up: "\x1b[A",
+            Qt.Key.Key_Down: "\x1b[B",
+            Qt.Key.Key_Right: "\x1b[C",
+            Qt.Key.Key_Left: "\x1b[D",
+            Qt.Key.Key_Home: "\x1b[H",
+            Qt.Key.Key_End: "\x1b[F",
+            Qt.Key.Key_Delete: "\x1b[3~",
+            Qt.Key.Key_PageUp: "\x1b[5~",
+            Qt.Key.Key_PageDown: "\x1b[6~",
+        }
+        if key in special_keys:
+            return special_keys[key]
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
+                return chr(key - Qt.Key.Key_A + 1)
+            return ""
+        text = event.text()
+        if text and event.modifiers() & Qt.KeyboardModifier.AltModifier:
+            return f"\x1b{text}"
+        return text
 
     def _submit_buffer(self) -> None:
         command = self._buffer

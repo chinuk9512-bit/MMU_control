@@ -33,6 +33,12 @@ class FakeShell:
         self.sent.append(text)
         return len(text)
 
+    def respond_to_prompt(self, output: str, prompt: str, response: str) -> bool:
+        if prompt.lower() not in output.lower():
+            return False
+        self.send_line(response)
+        return True
+
     def read_available(self) -> str:
         output, self.output = self.output, ""
         return output
@@ -46,16 +52,26 @@ class FakeSSHManager:
 
     def __init__(self) -> None:
         self.shell = FakeShell()
+        self.sftp_shell: FakeShell | None = None
+        self._shell_open_count = 0
         self.connected_settings = None
 
     def connect(self, settings: object) -> None:
         self.connected_settings = settings
 
     def open_shell(self) -> FakeShell:
-        return self.shell
+        if self._shell_open_count == 0:
+            result = self.shell
+        else:
+            self.sftp_shell = FakeShell()
+            result = self.sftp_shell
+        self._shell_open_count += 1
+        return result
 
     def reconnect(self) -> None:
         self.shell = FakeShell()
+        self.sftp_shell = None
+        self._shell_open_count = 0
 
     def disconnect(self) -> None:
         pass
@@ -125,6 +141,21 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
         self.assertEqual(window.connection_status_label.text(), "SSH: connected")
 
+    def test_htop_q_and_control_c_are_sent_as_raw_input(self) -> None:
+        """Interactive commands can be exited without pressing Enter."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window._connect_ssh()
+
+        window.terminal_widget.commandSubmitted.emit("htop")
+        self.assertTrue(window.terminal_widget.is_interactive_mode)
+        window.terminal_widget.rawInput.emit("q")
+
+        self.assertEqual(manager.shell.sent, ["htop", "q"])
+        self.assertFalse(window.terminal_widget.is_interactive_mode)
+
     def test_command_sets_can_be_saved_selected_and_run(self) -> None:
         """The Commands tab persists command sets and runs them in the SSH shell."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -165,26 +196,37 @@ class MainWindowTest(unittest.TestCase):
         window._connect_ssh()
         window.open_sftp_button.click()
 
-        self.assertEqual(manager.shell.sent, ["sftp root@[fe80::1%eth0]"])
+        self.assertEqual(manager.shell.sent, [])
+        self.assertIsNotNone(manager.sftp_shell)
+        self.assertEqual(manager.sftp_shell.sent, ["sftp root@[fe80::1%eth0]"])
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
             window.sftp_output.toPlainText(),
         )
-        self.assertEqual(window.board_status_label.text(), "Board: SFTP opening")
+        self.assertEqual(window.board_status_label.text(), "Board: SFTP connected")
 
         window.server_path_input.setText("/tmp/update file.bin")
         window.board_path_input.setText("/opt/update.bin")
+        window.sftp_terminal.commandSubmitted.emit("ls")
         window.upload_sftp_button.click()
         window.download_sftp_button.click()
 
         self.assertEqual(
-            manager.shell.sent,
+            manager.sftp_shell.sent,
             [
                 "sftp root@[fe80::1%eth0]",
+                "ls",
                 "put '/tmp/update file.bin' /opt/update.bin",
                 "get /opt/update.bin '/tmp/update file.bin'",
             ],
         )
+
+        window.close_sftp_button.click()
+        window.terminal_widget.commandSubmitted.emit("pwd")
+
+        self.assertEqual(manager.shell.sent, ["pwd"])
+        self.assertTrue(manager.shell.is_open)
+        self.assertFalse(manager.sftp_shell.is_open)
 
     def test_open_sftp_reports_missing_board_ip(self) -> None:
         """Open SFTP surfaces validation errors instead of doing nothing."""
@@ -237,7 +279,7 @@ class MainWindowTest(unittest.TestCase):
         window.open_minicom_button.click()
 
         self.assertEqual(window.usb_port_combo.count(), 2)
-        self.assertEqual(manager.shell.sent, ["minicom -D /dev/ttyUSB0"])
+        self.assertEqual(manager.shell.sent, ["minicom -o -c off -D /dev/ttyUSB0"])
 
         window.close_minicom_button.click()
 

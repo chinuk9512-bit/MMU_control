@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shlex
+
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
@@ -61,10 +63,16 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings()
         self._command_sets: dict[str, CommandSet] = {}
         self._shell: InteractiveShell | None = None
+        self._sftp_shell: InteractiveShell | None = None
         self._pending_echo: str | None = None
         self._echo_buffer = ""
+        self._sftp_pending_echo: str | None = None
+        self._sftp_echo_buffer = ""
+        self._sftp_prompt_buffer = ""
+        self._active_sftp_settings: BoardSettings | None = None
         self._sftp_session_active = False
         self._minicom_session_active = False
+        self._interactive_program = ""
         self._closing = False
         self.setWindowTitle("MMU Control")
         self.resize(1180, 760)
@@ -74,6 +82,9 @@ class MainWindow(QMainWindow):
         self._shell_timer = QTimer(self)
         self._shell_timer.setInterval(50)
         self._shell_timer.timeout.connect(self._poll_shell)
+        self._sftp_timer = QTimer(self)
+        self._sftp_timer.setInterval(50)
+        self._sftp_timer.timeout.connect(self._poll_sftp_shell)
         self._wire_events()
         self._load_command_sets()
         self._load_settings()
@@ -83,6 +94,9 @@ class MainWindow(QMainWindow):
         self.disconnect_button.clicked.connect(self._disconnect_ssh)
         self.reconnect_button.clicked.connect(self._reconnect_ssh)
         self.terminal_widget.commandSubmitted.connect(self._send_terminal_command)
+        self.terminal_widget.rawInput.connect(self._send_terminal_raw)
+        self.sftp_terminal.commandSubmitted.connect(self._send_sftp_command)
+        self.sftp_terminal.rawInput.connect(self._send_sftp_raw)
         self.new_command_button.clicked.connect(self._create_command_set)
         self.edit_command_button.clicked.connect(self._edit_command_set)
         self.delete_command_button.clicked.connect(self._delete_command_set)
@@ -206,6 +220,7 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         self._sftp_session_active = False
         self._minicom_session_active = False
+        self._leave_interactive_mode()
         self.terminal_widget.clear_terminal()
         self.terminal_widget.set_prompt("")
         self.connect_button.setEnabled(False)
@@ -226,38 +241,95 @@ class MainWindow(QMainWindow):
             return
         try:
             self._shell.send_line(command)
+            self._interactive_program = self._interactive_program_name(command)
+            self.terminal_widget.set_interactive_mode(bool(self._interactive_program))
             self._pending_echo = command if command else None
             self._echo_buffer = ""
         except Exception as exc:
             self._show_connection_error(exc)
 
+    def _send_terminal_raw(self, text: str) -> None:
+        if self._shell is None or not self._shell.is_open:
+            return
+        try:
+            self._shell.send(text)
+        except Exception as exc:
+            self._show_connection_error(exc)
+            return
+        if (text == "\x03" and self._interactive_program != "minicom") or (
+            text == "q" and self._interactive_program in {"htop", "top", "less", "more"}
+        ):
+            self._leave_interactive_mode()
+
+    def _interactive_program_name(self, command: str) -> str:
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            return ""
+        while parts and parts[0] in {"sudo", "env"}:
+            parts.pop(0)
+        if not parts:
+            return ""
+        name = parts[0].rsplit("/", 1)[-1]
+        interactive_programs = {"htop", "top", "less", "more", "vi", "vim", "nano", "watch"}
+        return name if name in interactive_programs else ""
+
+    def _leave_interactive_mode(self) -> None:
+        self._interactive_program = ""
+        self.terminal_widget.set_interactive_mode(False)
+
     def _open_sftp(self) -> None:
         if self._shell is None or not self._shell.is_open:
             self._append_sftp_output("Not connected to an SSH shell.")
-            return
-        if self._minicom_session_active:
-            self._append_sftp_output("Close minicom before opening an SFTP session.")
             return
         if self._sftp_session_active:
             self._append_sftp_output("An SFTP session is already open.")
             return
         try:
-            command = self._sftp_manager.open_session(self._shell, self._board_settings())
+            settings = self._board_settings()
+            command = self._sftp_manager.build_command(settings)
         except SFTPError as exc:
             self._append_sftp_output(f"SFTP error: {exc}")
             self.board_status_label.setText("Board: SFTP failed")
             self.statusBar().showMessage("SFTP failed")
             return
-        except Exception as exc:
-            self._show_connection_error(exc)
-            return
-        self._sftp_session_active = True
-        self._pending_echo = command
-        self._echo_buffer = ""
+        self.open_sftp_button.setEnabled(False)
         self._append_sftp_output(f"Opening SFTP session: {command}")
         self.board_status_label.setText("Board: SFTP opening")
         self.statusBar().showMessage("Opening SFTP session...")
+        self._task_runner.submit(
+            self._ssh_manager.open_shell,
+            lambda shell: self._activate_sftp_shell(shell, settings),
+            self._show_sftp_error,
+        )
+
+    def _activate_sftp_shell(
+        self,
+        shell: InteractiveShell,
+        settings: BoardSettings,
+    ) -> None:
+        if self._closing or self._shell is None:
+            shell.close()
+            return
+        self._sftp_shell = shell
+        self._active_sftp_settings = settings
+        try:
+            command = self._sftp_manager.open_session(shell, settings)
+        except Exception as exc:
+            shell.close()
+            self._sftp_shell = None
+            self._show_sftp_error(exc)
+            return
+        self._sftp_session_active = True
+        self._sftp_pending_echo = command
+        self._sftp_echo_buffer = ""
+        self._sftp_prompt_buffer = ""
+        self.sftp_terminal.set_prompt("")
+        self._sftp_timer.start()
         self._set_sftp_actions_enabled(True)
+        self.board_status_label.setText("Board: SFTP connected")
+        self.statusBar().showMessage("SFTP session opened")
+        self._poll_sftp_shell()
 
     def _upload_sftp(self) -> None:
         self._run_sftp_transfer(upload=True)
@@ -266,38 +338,55 @@ class MainWindow(QMainWindow):
         self._run_sftp_transfer(upload=False)
 
     def _run_sftp_transfer(self, upload: bool) -> None:
-        if self._shell is None or not self._shell.is_open or not self._sftp_session_active:
+        if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
             self._append_sftp_output("Open an SFTP session first.")
             return
         try:
             if upload:
                 command = self._sftp_manager.upload(
-                    self._shell,
+                    self._sftp_shell,
                     self.server_path_input.text(),
                     self.board_path_input.text(),
                 )
             else:
                 command = self._sftp_manager.download(
-                    self._shell,
+                    self._sftp_shell,
                     self.board_path_input.text(),
                     self.server_path_input.text(),
                 )
         except SFTPError as exc:
             self._append_sftp_output(f"SFTP error: {exc}")
             return
-        self._pending_echo = command
-        self._echo_buffer = ""
+        self._sftp_pending_echo = command
+        self._sftp_echo_buffer = ""
         self._append_sftp_output(f"Running: {command}")
 
     def _close_sftp_session(self) -> None:
-        if self._shell is not None and self._shell.is_open and self._sftp_session_active:
-            self._sftp_manager.close_session(self._shell)
-            self._pending_echo = "bye"
-            self._echo_buffer = ""
-        self._sftp_session_active = False
-        self._set_sftp_actions_enabled(False)
+        if self._sftp_shell is not None and self._sftp_shell.is_open and self._sftp_session_active:
+            self._sftp_manager.close_session(self._sftp_shell)
+        self._close_sftp_shell()
+        self._append_sftp_output("SFTP session closed. Main terminal remains connected.")
         self.board_status_label.setText("Board: SFTP closed")
         self.statusBar().showMessage("SFTP session closed")
+
+    def _send_sftp_command(self, command: str) -> None:
+        if self._sftp_shell is None or not self._sftp_shell.is_open:
+            self._append_sftp_output("Open an SFTP session first.")
+            return
+        try:
+            self._sftp_shell.send_line(command)
+            self._sftp_pending_echo = command if command else None
+            self._sftp_echo_buffer = ""
+        except Exception as exc:
+            self._show_sftp_error(exc)
+
+    def _send_sftp_raw(self, text: str) -> None:
+        if self._sftp_shell is None or not self._sftp_shell.is_open:
+            return
+        try:
+            self._sftp_shell.send(text)
+        except Exception as exc:
+            self._show_sftp_error(exc)
 
     def _set_sftp_actions_enabled(self, enabled: bool) -> None:
         self.upload_sftp_button.setEnabled(enabled)
@@ -352,9 +441,6 @@ class MainWindow(QMainWindow):
         if self._shell is None or not self._shell.is_open:
             self.terminal_widget.write_output("Not connected to an SSH shell.")
             return
-        if self._sftp_session_active:
-            self.terminal_widget.write_output("Close the SFTP session before opening minicom.")
-            return
         try:
             command = self._minicom_manager.build_command(self._selected_usb_port())
             self._shell.send_line(command)
@@ -364,6 +450,8 @@ class MainWindow(QMainWindow):
         self._pending_echo = command
         self._echo_buffer = ""
         self._minicom_session_active = True
+        self._interactive_program = "minicom"
+        self.terminal_widget.set_interactive_mode(True)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(True)
         self.board_status_label.setText(f"Board: minicom on {self._selected_usb_port()}")
@@ -373,13 +461,14 @@ class MainWindow(QMainWindow):
         if self._shell is not None and self._shell.is_open and self._minicom_session_active:
             self._minicom_manager.close_session(self._shell)
         self._minicom_session_active = False
+        self._leave_interactive_mode()
         self.close_minicom_button.setEnabled(False)
         self._update_minicom_button()
         self.board_status_label.setText("Board: minicom closed")
         self.statusBar().showMessage("Closing minicom...")
 
     def _append_sftp_output(self, text: str) -> None:
-        self.sftp_output.appendPlainText(text.rstrip())
+        self.sftp_terminal.write_output(text.rstrip())
 
     def _load_command_sets(self) -> None:
         collection = self._command_set_store.load()
@@ -492,13 +581,34 @@ class MainWindow(QMainWindow):
         output = self._filter_command_echo(output)
         if output:
             self.terminal_widget.write_stream(output)
-            if self._sftp_session_active:
-                self._append_sftp_output(output)
-                sent_password = self._sftp_manager.handle_password_prompt(
-                    self._shell, output, self._board_settings()
-                )
-                if sent_password:
-                    self._append_sftp_output("Sent SFTP password.")
+
+    def _poll_sftp_shell(self) -> None:
+        if self._sftp_shell is None:
+            return
+        if not self._sftp_shell.is_open:
+            self._handle_sftp_closed("SFTP shell closed.")
+            return
+        try:
+            output = self._sftp_shell.read_available()
+        except Exception as exc:
+            self._show_sftp_error(exc)
+            return
+        if not output:
+            return
+        settings = self._active_sftp_settings
+        if settings is not None:
+            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-256:]
+            sent_password = self._sftp_manager.handle_password_prompt(
+                self._sftp_shell,
+                self._sftp_prompt_buffer,
+                settings,
+            )
+            if sent_password:
+                self._sftp_prompt_buffer = ""
+                self._append_sftp_output("SFTP password sent.")
+        output = self._filter_sftp_echo(output)
+        if output:
+            self.sftp_terminal.write_stream(output)
 
     def _filter_command_echo(self, output: str) -> str:
         """Remove the PTY echo because the widget already displays local input."""
@@ -513,26 +623,68 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         return result
 
+    def _filter_sftp_echo(self, output: str) -> str:
+        if self._sftp_pending_echo is None or not output:
+            return output
+        self._sftp_echo_buffer += output.replace("\r\n", "\n").replace("\r", "\n")
+        if "\n" not in self._sftp_echo_buffer:
+            return ""
+        first_line, remainder = self._sftp_echo_buffer.split("\n", 1)
+        result = remainder if first_line == self._sftp_pending_echo else self._sftp_echo_buffer
+        self._sftp_pending_echo = None
+        self._sftp_echo_buffer = ""
+        return result
+
     def _disconnect_ssh(self) -> None:
         self._shell_timer.stop()
+        self._close_sftp_shell()
         self._close_shell()
         self._ssh_manager.disconnect()
         self._set_disconnected_state("Disconnected")
 
     def _close_shell(self) -> None:
+        self._close_sftp_shell()
         if self._shell is not None:
             self._shell.close()
             self._shell = None
         self._sftp_session_active = False
         self._minicom_session_active = False
+        self._leave_interactive_mode()
         self._set_sftp_actions_enabled(False)
         self.open_sftp_button.setEnabled(False)
         self.refresh_usb_button.setEnabled(False)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(False)
 
+    def _close_sftp_shell(self) -> None:
+        self._sftp_timer.stop()
+        if self._sftp_shell is not None:
+            self._sftp_shell.close()
+            self._sftp_shell = None
+        self._sftp_session_active = False
+        self._active_sftp_settings = None
+        self._sftp_pending_echo = None
+        self._sftp_echo_buffer = ""
+        self._sftp_prompt_buffer = ""
+        self._set_sftp_actions_enabled(False)
+        self.sftp_terminal.set_prompt("sftp> ")
+        self.open_sftp_button.setEnabled(self._shell is not None and self._shell.is_open)
+
+    def _show_sftp_error(self, error: Exception) -> None:
+        message = str(error) or error.__class__.__name__
+        self._append_sftp_output(f"SFTP error: {message}")
+        self._close_sftp_shell()
+        self.board_status_label.setText("Board: SFTP failed")
+        self.statusBar().showMessage("SFTP failed")
+
+    def _handle_sftp_closed(self, message: str) -> None:
+        self._append_sftp_output(message)
+        self._close_sftp_shell()
+        self.board_status_label.setText("Board: SFTP closed")
+
     def _show_connection_error(self, error: Exception) -> None:
         self._shell_timer.stop()
+        self._close_sftp_shell()
         self._close_shell()
         self._ssh_manager.disconnect()
         message = str(error) or error.__class__.__name__
@@ -541,6 +693,7 @@ class MainWindow(QMainWindow):
 
     def _handle_connection_closed(self, message: str) -> None:
         self._shell_timer.stop()
+        self._close_sftp_shell()
         self._shell = None
         self._ssh_manager.disconnect()
         self.terminal_widget.write_output(message)
@@ -564,6 +717,7 @@ class MainWindow(QMainWindow):
         self._closing = True
         self._save_settings()
         self._shell_timer.stop()
+        self._close_sftp_shell()
         self._close_shell()
         self._ssh_manager.disconnect()
         super().closeEvent(event)
@@ -745,9 +899,13 @@ class MainWindow(QMainWindow):
 
         path_form = QFormLayout()
         self.server_path_input = QLineEdit(self)
-        self.server_path_input.setPlaceholderText("Path on the Linux SSH server")
+        self.server_path_input.setPlaceholderText("Example: /home/user/firmware.bin")
+        self.server_path_input.setToolTip(
+            "A source or destination path on the Linux server reached by the main SSH connection."
+        )
         self.board_path_input = QLineEdit(self)
-        self.board_path_input.setPlaceholderText("Path on the board")
+        self.board_path_input.setPlaceholderText("Example: /tmp/firmware.bin")
+        self.board_path_input.setToolTip("A source or destination path on the connected board.")
         path_form.addRow("Server path", self.server_path_input)
         path_form.addRow("Board path", self.board_path_input)
 
@@ -762,12 +920,20 @@ class MainWindow(QMainWindow):
         transfer_button_layout.addWidget(self.download_sftp_button)
         transfer_button_layout.addStretch(1)
 
-        self.sftp_output = QPlainTextEdit(self)
-        self.sftp_output.setReadOnly(True)
-        self.sftp_output.setPlaceholderText("SFTP session output will appear here.")
+        path_help = QLabel(
+            "Server path: file on the SSH Linux server (example: /home/user/firmware.bin).  "
+            "Board path: file on the board (example: /tmp/firmware.bin).",
+            self,
+        )
+        path_help.setWordWrap(True)
+
+        self.sftp_terminal = TerminalWidget(prompt="sftp> ")
+        self.sftp_terminal.setPlaceholderText("The independent SFTP terminal appears here.")
+        self.sftp_output = self.sftp_terminal
 
         layout.addWidget(transfer_actions)
+        layout.addWidget(path_help)
         layout.addLayout(path_form)
         layout.addWidget(transfer_buttons)
-        layout.addWidget(self.sftp_output, stretch=1)
+        layout.addWidget(self.sftp_terminal, stretch=1)
         return tab

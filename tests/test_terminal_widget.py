@@ -66,6 +66,20 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget.replace_count, initial_count)
 
+    def test_interactive_mode_sends_q_and_control_c_immediately(self) -> None:
+        """Full-screen programs receive keys without waiting for Enter."""
+        widget = TerminalWidget(prompt="")
+        raw_input: list[str] = []
+        widget.rawInput.connect(raw_input.append)
+        widget.set_interactive_mode(True)
+        widget.show()
+        widget.setFocus()
+
+        QTest.keyClick(widget, Qt.Key.Key_Q)
+        QTest.keyClick(widget, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+
+        self.assertEqual(raw_input, ["q", "\x03"])
+
 
 if __name__ == "__main__":
     unittest.main()

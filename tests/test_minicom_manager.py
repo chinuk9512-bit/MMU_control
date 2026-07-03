@@ -18,7 +18,10 @@ class FakeShell:
 
 class MinicomManagerTest(unittest.TestCase):
     def test_builds_command_for_detected_port(self) -> None:
-        self.assertEqual(MinicomManager().build_command("/dev/ttyUSB0"), "minicom -D /dev/ttyUSB0")
+        self.assertEqual(
+            MinicomManager().build_command("/dev/ttyUSB0"),
+            "minicom -o -c off -D /dev/ttyUSB0",
+        )
 
     def test_rejects_non_serial_device(self) -> None:
         with self.assertRaises(MinicomError):

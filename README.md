@@ -21,7 +21,9 @@ mmu-control
 - SSH connection and board fields are restored when the application restarts.
 - `Refresh USB` searches the connected Linux server for `/dev/ttyUSB*` and `/dev/ttyACM*` devices.
 - Select a detected device and use `Open Minicom` / `Close Minicom` for the board serial console.
-- The SFTP tab opens an SFTP session from the Linux server to the board. `Server path` is a path on that Linux server, not a path on the Windows PC.
+- Full-screen commands such as `htop` use immediate key input, so `q` and `Ctrl+C` are sent without pressing Enter.
+- The SFTP tab uses its own SSH terminal and opens an SFTP session from the Linux server to the board. Closing it does not close the main Terminal tab.
+- `Server path` is a path on that Linux server, not a path on the Windows PC. `Board path` is the corresponding path on the board.
 - Use `Upload to Board` for SFTP `put` and `Download to Server` for SFTP `get`.
 
 ## Test
