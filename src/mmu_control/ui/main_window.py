@@ -634,8 +634,15 @@ class MainWindow(QMainWindow):
             return
         settings = self._active_sftp_settings
         if settings is not None:
-            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-4096:]
+            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-512:]
             accepted_host = self._sftp_manager.handle_authenticity_prompt(
+                self._sftp_shell,
+                self._sftp_prompt_buffer,
+            )
+            if accepted_host:
+                self._sftp_prompt_buffer = ""
+                self._append_sftp_output("SFTP host authenticity accepted.")
+            sent_password = self._sftp_manager.handle_password_prompt(
                 self._sftp_shell,
                 self._sftp_prompt_buffer,
             )
