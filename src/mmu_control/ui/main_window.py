@@ -225,7 +225,7 @@ class MainWindow(QMainWindow):
             self._shell.send_line(command)
             self._interactive_program = self._interactive_program_name(command)
             self.terminal_widget.set_interactive_mode(bool(self._interactive_program))
-            self._pending_echo = command if command else None
+            self._pending_echo = command
             self._echo_buffer = ""
         except Exception as exc:
             self._show_connection_error(exc)
@@ -412,7 +412,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self._sftp_shell.send_line(command)
-            self._sftp_pending_echo = command if command else None
+            self._sftp_pending_echo = command
             self._sftp_echo_buffer = ""
         except Exception as exc:
             self._show_sftp_error(exc)
@@ -645,11 +645,19 @@ class MainWindow(QMainWindow):
             sent_password = self._sftp_manager.handle_password_prompt(
                 self._sftp_shell,
                 self._sftp_prompt_buffer,
-                settings,
             )
-            if sent_password:
+            if accepted_host:
                 self._sftp_prompt_buffer = ""
-                self._append_sftp_output("SFTP password sent.")
+                self._append_sftp_output("SFTP host authenticity accepted.")
+            else:
+                sent_password = self._sftp_manager.handle_password_prompt(
+                    self._sftp_shell,
+                    self._sftp_prompt_buffer,
+                    settings,
+                )
+                if sent_password:
+                    self._sftp_prompt_buffer = ""
+                    self._append_sftp_output("SFTP password sent.")
         output = self._filter_sftp_echo(output)
         if output:
             self.sftp_terminal.write_stream(output)

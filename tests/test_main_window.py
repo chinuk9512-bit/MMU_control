@@ -152,6 +152,20 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
         self.assertEqual(window.connection_status_label.text(), "SSH: connected")
 
+    def test_empty_ssh_enter_filters_remote_echo_newline(self) -> None:
+        """Blank Enter on SSH should leave a single prompt line, not a double newline."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window._connect_ssh()
+
+        window.terminal_widget.commandSubmitted.emit("")
+        manager.shell.output = "\r\nuser@server:~$ "
+        window._poll_shell()
+
+        self.assertNotIn("\n\nuser@server", window.terminal_widget.toPlainText())
+
     def test_htop_q_and_control_c_are_sent_as_raw_input(self) -> None:
         """Interactive commands can be exited without pressing Enter."""
         manager = FakeSSHManager()
