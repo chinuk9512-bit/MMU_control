@@ -6,7 +6,7 @@ import os
 import shlex
 import subprocess
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QProcess, QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -232,6 +232,7 @@ class MainWindow(QMainWindow):
 
     def _send_terminal_raw(self, text: str) -> None:
         if self._shell is None or not self._shell.is_open:
+            self._write_local_process_input(text)
             return
         try:
             self._shell.send(text)
@@ -779,6 +780,7 @@ class MainWindow(QMainWindow):
         """Close SSH resources before the application exits."""
         self._closing = True
         self._save_settings()
+        self._close_local_process()
         self._shell_timer.stop()
         self._close_sftp_shell()
         self._close_shell()

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QLineEdit
@@ -105,6 +107,17 @@ class MainWindowTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def process_events_until(
+        self,
+        condition: Callable[[], bool],
+        timeout_seconds: float = 2.0,
+    ) -> None:
+        """Process Qt events until a condition is met or a timeout expires."""
+        deadline = time.monotonic() + timeout_seconds
+        while not condition() and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.01)
 
     def create_window(self, **kwargs: object) -> MainWindow:
         kwargs.setdefault(
