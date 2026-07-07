@@ -363,7 +363,6 @@ class MainWindow(QMainWindow):
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
         self.sftp_terminal.set_prompt("sftp> ")
-        self._append_sftp_output(f"SFTP password: {settings.password or '(empty)'}")
         self._append_sftp_output("SFTP session opened. You can type SFTP commands below.")
         self._sftp_timer.start()
         self._set_sftp_actions_enabled(True)
