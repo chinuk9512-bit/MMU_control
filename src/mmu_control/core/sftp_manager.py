@@ -18,7 +18,6 @@ class SFTPManager:
 
     PASSWORD_PROMPT = "password:"
     AUTHENTICITY_PROMPT = "authenticity of host"
-    AUTHENTICITY_CONFIRM_PROMPT = "are you sure you want to continue connecting"
     AUTHENTICITY_RESPONSE_PROMPT = "yes/no"
     KNOWN_HOSTS_CLEANUP_COMMAND = "rm -f ~/.ssh/known_hosts"
 
@@ -39,12 +38,8 @@ class SFTPManager:
     def handle_authenticity_prompt(self, shell: InteractiveShell, output: str) -> bool:
         """Accept first-connection host authenticity prompts."""
         output_lower = output.lower()
-        has_authenticity_warning = (
-            self.AUTHENTICITY_PROMPT in output_lower
-            or self.AUTHENTICITY_CONFIRM_PROMPT in output_lower
-        )
         if (
-            not has_authenticity_warning
+            self.AUTHENTICITY_PROMPT not in output_lower
             or self.AUTHENTICITY_RESPONSE_PROMPT not in output_lower
         ):
             return False

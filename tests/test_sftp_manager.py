@@ -76,20 +76,6 @@ class SFTPManagerTest(unittest.TestCase):
         self.assertTrue(handled)
         self.assertEqual(channel.sent, ["yes\n"])
 
-    def test_authenticity_confirmation_prompt_is_accepted(self) -> None:
-        """Manager also accepts wrapped prompts that only include the confirmation text."""
-        channel = FakeChannel()
-        shell = InteractiveShell(channel)
-        manager = SFTPManager()
-
-        handled = manager.handle_authenticity_prompt(
-            shell,
-            "Are you sure you want to continue connecting (yes/no/[fingerprint])?",
-        )
-
-        self.assertTrue(handled)
-        self.assertEqual(channel.sent, ["yes\n"])
-
     def test_required_fields_are_validated(self) -> None:
         """Board IP and username are required."""
         manager = SFTPManager()

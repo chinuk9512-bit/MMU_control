@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import subprocess
 
 from PySide6.QtCore import QProcess, QTimer, Qt
 from PySide6.QtGui import QCloseEvent
@@ -75,7 +76,6 @@ class MainWindow(QMainWindow):
         self._minicom_session_active = False
         self._interactive_program = ""
         self._local_cwd = os.getcwd()
-        self._local_process: QProcess | None = None
         self._closing = False
         self.setWindowTitle("MMU Control")
         self.resize(1180, 760)
@@ -262,72 +262,21 @@ class MainWindow(QMainWindow):
         if command.lower().startswith("cd "):
             self._change_local_directory(command[3:].strip())
             return
-        self._start_local_process(command)
-
-    def _start_local_process(self, command: str) -> None:
-        """Start a local command asynchronously without blocking the UI."""
-        if self._local_process is not None:
-            self.terminal_widget.write_output("A local command is already running.")
+        try:
+            result = subprocess.run(
+                command,
+                cwd=self._local_cwd,
+                shell=True,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except OSError as exc:
+            self.terminal_widget.write_output(str(exc))
             return
-        program, arguments = self._local_shell_command(command)
-        process = QProcess(self)
-        process.setWorkingDirectory(self._local_cwd)
-        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        process.readyRead.connect(self._read_local_process_output)
-        process.finished.connect(self._local_process_finished)
-        process.errorOccurred.connect(self._local_process_error)
-        self._local_process = process
-        self.terminal_widget.set_prompt("")
-        self.terminal_widget.set_interactive_mode(True)
-        process.start(program, arguments)
-
-    def _local_shell_command(self, command: str) -> tuple[str, list[str]]:
-        """Return the platform shell command used to run a local terminal command."""
-        if os.name == "nt":
-            return os.environ.get("COMSPEC", "cmd.exe"), ["/C", command]
-        return os.environ.get("SHELL", "/bin/sh"), ["-lc", command]
-
-    def _read_local_process_output(self) -> None:
-        """Append any output produced by the running local command."""
-        if self._local_process is None:
-            return
-        output = bytes(self._local_process.readAll()).decode(errors="replace")
+        output = f"{result.stdout}{result.stderr}"
         if output:
-            self.terminal_widget.write_stream(output)
-
-    def _local_process_finished(self, *_args: object) -> None:
-        """Restore the local prompt after a local command exits."""
-        self._local_process = None
-        self.terminal_widget.set_interactive_mode(False)
-        self.terminal_widget.set_prompt(self._local_prompt())
-
-    def _local_process_error(self, _error: QProcess.ProcessError) -> None:
-        """Show local process startup/runtime errors and restore the prompt."""
-        if self._local_process is None:
-            return
-        message = self._local_process.errorString()
-        self._local_process = None
-        self.terminal_widget.set_interactive_mode(False)
-        self.terminal_widget.write_output(f"Local command error: {message}")
-        self.terminal_widget.set_prompt(self._local_prompt())
-
-    def _write_local_process_input(self, text: str) -> None:
-        """Forward raw terminal input to a running local command."""
-        if self._local_process is None:
-            return
-        if text == "\r":
-            text = "\n"
-        self._local_process.write(text.encode())
-
-    def _close_local_process(self) -> None:
-        """Stop any running local command."""
-        if self._local_process is None:
-            return
-        process = self._local_process
-        self._local_process = None
-        process.kill()
-        process.deleteLater()
-        self.terminal_widget.set_interactive_mode(False)
+            self.terminal_widget.write_output(output)
 
     def _change_local_directory(self, path_text: str) -> None:
         """Change the working directory used by the local fallback terminal."""
@@ -686,8 +635,15 @@ class MainWindow(QMainWindow):
             return
         settings = self._active_sftp_settings
         if settings is not None:
-            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-4096:]
+            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-512:]
             accepted_host = self._sftp_manager.handle_authenticity_prompt(
+                self._sftp_shell,
+                self._sftp_prompt_buffer,
+            )
+            if accepted_host:
+                self._sftp_prompt_buffer = ""
+                self._append_sftp_output("SFTP host authenticity accepted.")
+            sent_password = self._sftp_manager.handle_password_prompt(
                 self._sftp_shell,
                 self._sftp_prompt_buffer,
             )
