@@ -28,7 +28,10 @@ class FakeShell:
 
     def send_line(self, command: str) -> int:
         self.sent.append(command)
-        self.output += f"{command}\r\n/home/user\r\nuser@server:~$ "
+        if command.startswith("sftp "):
+            self.output += f"{command}\r\nsftp> "
+        else:
+            self.output += f"{command}\r\n/home/user\r\nuser@server:~$ "
         return len(command) + 1
 
     def send(self, text: str) -> int:

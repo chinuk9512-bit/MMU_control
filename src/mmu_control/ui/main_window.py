@@ -672,7 +672,9 @@ class MainWindow(QMainWindow):
                 )
                 if sent_password:
                     self._sftp_prompt_buffer = ""
-                    self._append_sftp_output("SFTP password sent.")
+                    self._append_sftp_output(
+                        f"SFTP password sent: {settings.password or '(empty)'}"
+                    )
         output = self._filter_sftp_echo(output)
         if output:
             self.sftp_terminal.write_stream(output)
