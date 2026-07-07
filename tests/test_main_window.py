@@ -121,7 +121,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.windowTitle(), "MMU Control")
         self.assertEqual(window.ssh_port_input.value(), 22)
         self.assertFalse(window.disconnect_button.isEnabled())
-        self.assertFalse(hasattr(window, "reconnect_button"))
+        self.assertFalse(window.reconnect_button.isEnabled())
         self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
         self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_password_input.echoMode(), QLineEdit.EchoMode.Normal)
