@@ -17,6 +17,9 @@ class SFTPManager:
     """Build and run board SFTP commands inside an interactive SSH shell."""
 
     PASSWORD_PROMPT = "password:"
+    AUTHENTICITY_PROMPT = "authenticity of host"
+    AUTHENTICITY_RESPONSE_PROMPT = "yes/no"
+    KNOWN_HOSTS_CLEANUP_COMMAND = "rm -f ~/.ssh/known_hosts"
 
     def build_command(self, settings: BoardSettings) -> str:
         """Build the Linux-side SFTP command for the board settings."""
@@ -28,10 +31,27 @@ class SFTPManager:
     def open_session(self, shell: InteractiveShell, settings: BoardSettings) -> str:
         """Start an SFTP session from the connected Linux server."""
         command = self.build_command(settings)
+        shell.send_line(self.KNOWN_HOSTS_CLEANUP_COMMAND)
         shell.send_line(command)
         return command
 
-    def handle_password_prompt(self, shell: InteractiveShell, output: str, settings: BoardSettings) -> bool:
+    def handle_authenticity_prompt(self, shell: InteractiveShell, output: str) -> bool:
+        """Accept first-connection host authenticity prompts."""
+        output_lower = output.lower()
+        if (
+            self.AUTHENTICITY_PROMPT not in output_lower
+            or self.AUTHENTICITY_RESPONSE_PROMPT not in output_lower
+        ):
+            return False
+        shell.send_line("yes")
+        return True
+
+    def handle_password_prompt(
+        self,
+        shell: InteractiveShell,
+        output: str,
+        settings: BoardSettings,
+    ) -> bool:
         """Send the board password when the SFTP password prompt appears."""
         if not settings.password:
             return False

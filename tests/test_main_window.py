@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit
 
 from mmu_control.core.config_manager import ConfigManager
 from mmu_control.models.settings import AppSettings, BoardSettings, SSHSettings
@@ -121,9 +121,20 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.windowTitle(), "MMU Control")
         self.assertEqual(window.ssh_port_input.value(), 22)
         self.assertFalse(window.disconnect_button.isEnabled())
-        self.assertFalse(window.reconnect_button.isEnabled())
-        self.assertEqual(window.terminal_widget.toPlainText(), "mmu> ")
+        self.assertFalse(hasattr(window, "reconnect_button"))
+        self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
+        self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
+        self.assertEqual(window.board_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertFalse(window.open_sftp_button.isEnabled())
+        self.assertEqual(window.connection_status_label.text(), "SSH: disconnected")
+
+    def test_terminal_commands_run_locally_without_ssh_shell(self) -> None:
+        """Terminal input runs against the local PC when SSH is disconnected."""
+        window = self.create_window()
+
+        window.terminal_widget.commandSubmitted.emit("pwd")
+
+        self.assertIn(window._local_cwd, window.terminal_widget.toPlainText())
         self.assertEqual(window.connection_status_label.text(), "SSH: disconnected")
 
     def test_terminal_commands_are_sent_to_connected_ssh_shell(self) -> None:
@@ -198,7 +209,10 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(manager.shell.sent, [])
         self.assertIsNotNone(manager.sftp_shell)
-        self.assertEqual(manager.sftp_shell.sent, ["sftp root@[fe80::1%eth0]"])
+        self.assertEqual(
+            manager.sftp_shell.sent,
+            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]"],
+        )
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
             window.sftp_output.toPlainText(),
@@ -214,6 +228,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(
             manager.sftp_shell.sent,
             [
+                "rm -f ~/.ssh/known_hosts",
                 "sftp root@[fe80::1%eth0]",
                 "ls",
                 "put '/tmp/update file.bin' /opt/update.bin",

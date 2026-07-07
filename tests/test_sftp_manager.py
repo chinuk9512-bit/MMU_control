@@ -54,8 +54,27 @@ class SFTPManagerTest(unittest.TestCase):
         handled = manager.handle_password_prompt(shell, "root password:", settings)
 
         self.assertEqual(command, "sftp root@[fe80::1%eth0]")
-        self.assertEqual(channel.sent, ["sftp root@[fe80::1%eth0]\n", "secret\n"])
+        self.assertEqual(
+            channel.sent,
+            ["rm -f ~/.ssh/known_hosts\n", "sftp root@[fe80::1%eth0]\n", "secret\n"],
+        )
         self.assertTrue(handled)
+
+    def test_authenticity_prompt_is_accepted(self) -> None:
+        """Manager accepts first-connection SFTP host authenticity prompts."""
+        channel = FakeChannel()
+        shell = InteractiveShell(channel)
+        manager = SFTPManager()
+
+        prompt = (
+            "The authenticity of host 'board' can't be established. "
+            "Are you sure you want to continue connecting (yes/no/[fingerprint])?"
+        )
+
+        handled = manager.handle_authenticity_prompt(shell, prompt)
+
+        self.assertTrue(handled)
+        self.assertEqual(channel.sent, ["yes\n"])
 
     def test_required_fields_are_validated(self) -> None:
         """Board IP and username are required."""
