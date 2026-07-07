@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shlex
+import subprocess
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent
@@ -73,6 +75,7 @@ class MainWindow(QMainWindow):
         self._sftp_session_active = False
         self._minicom_session_active = False
         self._interactive_program = ""
+        self._local_cwd = os.getcwd()
         self._closing = False
         self.setWindowTitle("MMU Control")
         self.resize(1180, 760)
@@ -92,7 +95,6 @@ class MainWindow(QMainWindow):
     def _wire_events(self) -> None:
         self.connect_button.clicked.connect(self._connect_ssh)
         self.disconnect_button.clicked.connect(self._disconnect_ssh)
-        self.reconnect_button.clicked.connect(self._reconnect_ssh)
         self.terminal_widget.commandSubmitted.connect(self._send_terminal_command)
         self.terminal_widget.rawInput.connect(self._send_terminal_raw)
         self.sftp_terminal.commandSubmitted.connect(self._send_sftp_command)
@@ -183,24 +185,6 @@ class MainWindow(QMainWindow):
         self._ssh_manager.connect(settings)
         return self._ssh_manager.open_shell()
 
-    def _reconnect_ssh(self) -> None:
-        self.statusBar().showMessage("Reconnecting...")
-        self._close_shell()
-        self._set_connection_busy(True)
-        self._task_runner.submit(
-            self._reconnect_and_open,
-            self._connection_ready,
-            self._show_connection_error,
-        )
-
-    def _reconnect_and_open(self) -> InteractiveShell:
-        try:
-            self._ssh_manager.reconnect()
-            return self._ssh_manager.open_shell()
-        except Exception:
-            self._ssh_manager.disconnect()
-            raise
-
     def _connection_ready(self, shell: InteractiveShell) -> None:
         if self._closing:
             shell.close()
@@ -212,7 +196,6 @@ class MainWindow(QMainWindow):
     def _set_connection_busy(self, busy: bool) -> None:
         self.connect_button.setEnabled(not busy and self._shell is None)
         self.disconnect_button.setEnabled(not busy and self._shell is not None)
-        self.reconnect_button.setEnabled(not busy and self.reconnect_button.isEnabled())
 
     def _activate_shell(self, shell: InteractiveShell) -> None:
         self._shell = shell
@@ -225,7 +208,6 @@ class MainWindow(QMainWindow):
         self.terminal_widget.set_prompt("")
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
-        self.reconnect_button.setEnabled(True)
         self.open_sftp_button.setEnabled(True)
         self.refresh_usb_button.setEnabled(True)
         self._update_minicom_button()
@@ -237,13 +219,13 @@ class MainWindow(QMainWindow):
 
     def _send_terminal_command(self, command: str) -> None:
         if self._shell is None or not self._shell.is_open:
-            self.terminal_widget.write_output("Not connected to an SSH shell.")
+            self._run_local_terminal_command(command)
             return
         try:
             self._shell.send_line(command)
             self._interactive_program = self._interactive_program_name(command)
             self.terminal_widget.set_interactive_mode(bool(self._interactive_program))
-            self._pending_echo = command if command else None
+            self._pending_echo = command
             self._echo_buffer = ""
         except Exception as exc:
             self._show_connection_error(exc)
@@ -260,6 +242,61 @@ class MainWindow(QMainWindow):
             text == "q" and self._interactive_program in {"htop", "top", "less", "more"}
         ):
             self._leave_interactive_mode()
+
+    def _local_prompt(self) -> str:
+        """Return the prompt for the local fallback terminal."""
+        return f"{self._local_cwd}> "
+
+    def _run_local_terminal_command(self, command: str) -> None:
+        """Execute a command on the local PC when no SSH shell is connected."""
+        command = command.strip()
+        if not command:
+            return
+        if command.lower() in {"clear", "cls"}:
+            self.terminal_widget.clear_terminal()
+            return
+        if command.lower() in {"pwd", "cd"}:
+            self.terminal_widget.write_output(self._local_cwd)
+            return
+        if command.lower().startswith("cd "):
+            self._change_local_directory(command[3:].strip())
+            return
+        try:
+            result = subprocess.run(
+                command,
+                cwd=self._local_cwd,
+                shell=True,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except OSError as exc:
+            self.terminal_widget.write_output(str(exc))
+            return
+        output = f"{result.stdout}{result.stderr}"
+        if output:
+            self.terminal_widget.write_output(output)
+
+    def _change_local_directory(self, path_text: str) -> None:
+        """Change the working directory used by the local fallback terminal."""
+        if not path_text:
+            self.terminal_widget.write_output(self._local_cwd)
+            return
+        try:
+            parts = shlex.split(path_text)
+        except ValueError as exc:
+            self.terminal_widget.write_output(str(exc))
+            return
+        target_text = " ".join(parts) if parts else path_text
+        target = os.path.expanduser(os.path.expandvars(target_text))
+        if not os.path.isabs(target):
+            target = os.path.join(self._local_cwd, target)
+        target = os.path.abspath(target)
+        if not os.path.isdir(target):
+            self.terminal_widget.write_output(f"cd: no such directory: {target_text}")
+            return
+        self._local_cwd = target
+        self.terminal_widget.set_prompt(self._local_prompt())
 
     def _interactive_program_name(self, command: str) -> str:
         try:
@@ -375,7 +412,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self._sftp_shell.send_line(command)
-            self._sftp_pending_echo = command if command else None
+            self._sftp_pending_echo = command
             self._sftp_echo_buffer = ""
         except Exception as exc:
             self._show_sftp_error(exc)
@@ -597,15 +634,23 @@ class MainWindow(QMainWindow):
             return
         settings = self._active_sftp_settings
         if settings is not None:
-            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-256:]
-            sent_password = self._sftp_manager.handle_password_prompt(
+            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-4096:]
+            accepted_host = self._sftp_manager.handle_authenticity_prompt(
                 self._sftp_shell,
                 self._sftp_prompt_buffer,
-                settings,
             )
-            if sent_password:
+            if accepted_host:
                 self._sftp_prompt_buffer = ""
-                self._append_sftp_output("SFTP password sent.")
+                self._append_sftp_output("SFTP host authenticity accepted.")
+            else:
+                sent_password = self._sftp_manager.handle_password_prompt(
+                    self._sftp_shell,
+                    self._sftp_prompt_buffer,
+                    settings,
+                )
+                if sent_password:
+                    self._sftp_prompt_buffer = ""
+                    self._append_sftp_output("SFTP password sent.")
         output = self._filter_sftp_echo(output)
         if output:
             self.sftp_terminal.write_stream(output)
@@ -618,10 +663,18 @@ class MainWindow(QMainWindow):
         if "\n" not in self._echo_buffer:
             return ""
         first_line, remainder = self._echo_buffer.split("\n", 1)
-        result = remainder if first_line == self._pending_echo else self._echo_buffer
+        result = (
+            self._without_extra_echo_newline(remainder)
+            if first_line == self._pending_echo
+            else self._echo_buffer
+        )
         self._pending_echo = None
         self._echo_buffer = ""
         return result
+
+    def _without_extra_echo_newline(self, output: str) -> str:
+        """Drop one blank line left behind after filtering a PTY echo."""
+        return output[1:] if output.startswith("\n") else output
 
     def _filter_sftp_echo(self, output: str) -> str:
         if self._sftp_pending_echo is None or not output:
@@ -630,7 +683,11 @@ class MainWindow(QMainWindow):
         if "\n" not in self._sftp_echo_buffer:
             return ""
         first_line, remainder = self._sftp_echo_buffer.split("\n", 1)
-        result = remainder if first_line == self._sftp_pending_echo else self._sftp_echo_buffer
+        result = (
+            self._without_extra_echo_newline(remainder)
+            if first_line == self._sftp_pending_echo
+            else self._sftp_echo_buffer
+        )
         self._sftp_pending_echo = None
         self._sftp_echo_buffer = ""
         return result
@@ -700,10 +757,9 @@ class MainWindow(QMainWindow):
         self._set_disconnected_state("Connection closed")
 
     def _set_disconnected_state(self, status_message: str) -> None:
-        self.terminal_widget.set_prompt("mmu> ")
+        self.terminal_widget.set_prompt(self._local_prompt())
         self.connect_button.setEnabled(True)
         self.disconnect_button.setEnabled(False)
-        self.reconnect_button.setEnabled(True)
         self.open_sftp_button.setEnabled(False)
         self.refresh_usb_button.setEnabled(False)
         self.open_minicom_button.setEnabled(False)
@@ -737,13 +793,10 @@ class MainWindow(QMainWindow):
 
         self.connect_button = QPushButton("Connect", self)
         self.disconnect_button = QPushButton("Disconnect", self)
-        self.reconnect_button = QPushButton("Reconnect", self)
         self.disconnect_button.setEnabled(False)
-        self.reconnect_button.setEnabled(False)
 
         toolbar.addWidget(self.connect_button)
         toolbar.addWidget(self.disconnect_button)
-        toolbar.addWidget(self.reconnect_button)
         return toolbar
 
     def _build_status_bar(self) -> QStatusBar:
@@ -782,7 +835,7 @@ class MainWindow(QMainWindow):
         self.ssh_username_input = QLineEdit(self)
         self.ssh_username_input.setPlaceholderText("Username")
         self.ssh_password_input = QLineEdit(self)
-        self.ssh_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ssh_password_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.ssh_password_input.setPlaceholderText("Password")
 
         layout.addRow("Host", self.ssh_host_input)
@@ -801,7 +854,7 @@ class MainWindow(QMainWindow):
         self.board_username_input = QLineEdit(self)
         self.board_username_input.setPlaceholderText("Username")
         self.board_password_input = QLineEdit(self)
-        self.board_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.board_password_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.board_password_input.setPlaceholderText("Password")
         self.board_interface_input = QLineEdit(self)
         self.board_interface_input.setPlaceholderText("Interface, e.g. eth0")
@@ -844,7 +897,7 @@ class MainWindow(QMainWindow):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(10, 10, 10, 10)
-        self.terminal_widget = TerminalWidget(prompt="mmu> ")
+        self.terminal_widget = TerminalWidget(prompt=self._local_prompt())
         layout.addWidget(self.terminal_widget, stretch=1)
         return tab
 
