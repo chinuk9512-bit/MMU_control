@@ -362,7 +362,9 @@ class MainWindow(QMainWindow):
         self._sftp_pending_echo = command
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
-        self.sftp_terminal.set_prompt("")
+        self.sftp_terminal.set_prompt("sftp> ")
+        self._append_sftp_output(f"SFTP password: {settings.password or '(empty)'}")
+        self._append_sftp_output("SFTP session opened. You can type SFTP commands below.")
         self._sftp_timer.start()
         self._set_sftp_actions_enabled(True)
         self.board_status_label.setText("Board: SFTP connected")
@@ -409,7 +411,7 @@ class MainWindow(QMainWindow):
 
     def _send_sftp_command(self, command: str) -> None:
         if self._sftp_shell is None or not self._sftp_shell.is_open:
-            self._append_sftp_output("Open an SFTP session first.")
+            self._run_sftp_local_command(command)
             return
         try:
             self._sftp_shell.send_line(command)
@@ -417,6 +419,26 @@ class MainWindow(QMainWindow):
             self._sftp_echo_buffer = ""
         except Exception as exc:
             self._show_sftp_error(exc)
+
+    def _run_sftp_local_command(self, command: str) -> None:
+        """Mirror the Terminal tab local prompt before an SFTP session is open."""
+        before = self.terminal_widget.toPlainText()
+        self._run_local_terminal_command(command)
+        after = self.terminal_widget.toPlainText()
+        if after != before:
+            self._copy_new_terminal_output_to_sftp(before, after)
+            self.terminal_widget.setPlainText(before)
+            self.terminal_widget.refresh_display()
+        self.sftp_terminal.set_prompt(self._local_prompt())
+
+    def _copy_new_terminal_output_to_sftp(self, before: str, after: str) -> None:
+        prompt = self._local_prompt()
+        new_text = after[len(before):] if after.startswith(before) else after
+        if new_text.endswith(prompt):
+            new_text = new_text[: -len(prompt)]
+        new_text = new_text.strip("\n")
+        if new_text:
+            self._append_sftp_output(new_text)
 
     def _send_sftp_raw(self, text: str) -> None:
         if self._sftp_shell is None or not self._sftp_shell.is_open:
@@ -643,13 +665,6 @@ class MainWindow(QMainWindow):
             if accepted_host:
                 self._sftp_prompt_buffer = ""
                 self._append_sftp_output("SFTP host authenticity accepted.")
-            sent_password = self._sftp_manager.handle_password_prompt(
-                self._sftp_shell,
-                self._sftp_prompt_buffer,
-            )
-            if accepted_host:
-                self._sftp_prompt_buffer = ""
-                self._append_sftp_output("SFTP host authenticity accepted.")
             else:
                 sent_password = self._sftp_manager.handle_password_prompt(
                     self._sftp_shell,
@@ -658,10 +673,19 @@ class MainWindow(QMainWindow):
                 )
                 if sent_password:
                     self._sftp_prompt_buffer = ""
-                    self._append_sftp_output("SFTP password sent.")
+                    self._append_sftp_output(
+                        f"SFTP password sent: {settings.password or '(empty)'}"
+                    )
         output = self._filter_sftp_echo(output)
+        output = self._without_trailing_sftp_prompt(output)
         if output:
             self.sftp_terminal.write_stream(output)
+
+    def _without_trailing_sftp_prompt(self, output: str) -> str:
+        """Drop remote SFTP prompts because the widget already shows one locally."""
+        while output.endswith("sftp> "):
+            output = output.removesuffix("sftp> ")
+        return output
 
     def _filter_command_echo(self, output: str) -> str:
         """Remove the PTY echo because the widget already displays local input."""
@@ -732,7 +756,7 @@ class MainWindow(QMainWindow):
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
         self._set_sftp_actions_enabled(False)
-        self.sftp_terminal.set_prompt("sftp> ")
+        self.sftp_terminal.set_prompt(self._local_prompt())
         self.open_sftp_button.setEnabled(self._shell is not None and self._shell.is_open)
 
     def _show_sftp_error(self, error: Exception) -> None:
@@ -989,7 +1013,7 @@ class MainWindow(QMainWindow):
         )
         path_help.setWordWrap(True)
 
-        self.sftp_terminal = TerminalWidget(prompt="sftp> ")
+        self.sftp_terminal = TerminalWidget(prompt=self._local_prompt())
         self.sftp_terminal.setPlaceholderText("The independent SFTP terminal appears here.")
         self.sftp_output = self.sftp_terminal
 
