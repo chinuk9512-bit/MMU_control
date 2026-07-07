@@ -95,7 +95,6 @@ class MainWindow(QMainWindow):
     def _wire_events(self) -> None:
         self.connect_button.clicked.connect(self._connect_ssh)
         self.disconnect_button.clicked.connect(self._disconnect_ssh)
-        self.reconnect_button.clicked.connect(self._reconnect_ssh)
         self.terminal_widget.commandSubmitted.connect(self._send_terminal_command)
         self.terminal_widget.rawInput.connect(self._send_terminal_raw)
         self.sftp_terminal.commandSubmitted.connect(self._send_sftp_command)
@@ -186,24 +185,6 @@ class MainWindow(QMainWindow):
         self._ssh_manager.connect(settings)
         return self._ssh_manager.open_shell()
 
-    def _reconnect_ssh(self) -> None:
-        self.statusBar().showMessage("Reconnecting...")
-        self._close_shell()
-        self._set_connection_busy(True)
-        self._task_runner.submit(
-            self._reconnect_and_open,
-            self._connection_ready,
-            self._show_connection_error,
-        )
-
-    def _reconnect_and_open(self) -> InteractiveShell:
-        try:
-            self._ssh_manager.reconnect()
-            return self._ssh_manager.open_shell()
-        except Exception:
-            self._ssh_manager.disconnect()
-            raise
-
     def _connection_ready(self, shell: InteractiveShell) -> None:
         if self._closing:
             shell.close()
@@ -215,7 +196,6 @@ class MainWindow(QMainWindow):
     def _set_connection_busy(self, busy: bool) -> None:
         self.connect_button.setEnabled(not busy and self._shell is None)
         self.disconnect_button.setEnabled(not busy and self._shell is not None)
-        self.reconnect_button.setEnabled(not busy and self.reconnect_button.isEnabled())
 
     def _activate_shell(self, shell: InteractiveShell) -> None:
         self._shell = shell
@@ -228,7 +208,6 @@ class MainWindow(QMainWindow):
         self.terminal_widget.set_prompt("")
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
-        self.reconnect_button.setEnabled(True)
         self.open_sftp_button.setEnabled(True)
         self.refresh_usb_button.setEnabled(True)
         self._update_minicom_button()
@@ -655,7 +634,14 @@ class MainWindow(QMainWindow):
             return
         settings = self._active_sftp_settings
         if settings is not None:
-            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-256:]
+            self._sftp_prompt_buffer = f"{self._sftp_prompt_buffer}{output}"[-512:]
+            accepted_host = self._sftp_manager.handle_authenticity_prompt(
+                self._sftp_shell,
+                self._sftp_prompt_buffer,
+            )
+            if accepted_host:
+                self._sftp_prompt_buffer = ""
+                self._append_sftp_output("SFTP host authenticity accepted.")
             sent_password = self._sftp_manager.handle_password_prompt(
                 self._sftp_shell,
                 self._sftp_prompt_buffer,
@@ -676,10 +662,18 @@ class MainWindow(QMainWindow):
         if "\n" not in self._echo_buffer:
             return ""
         first_line, remainder = self._echo_buffer.split("\n", 1)
-        result = remainder if first_line == self._pending_echo else self._echo_buffer
+        result = (
+            self._without_extra_echo_newline(remainder)
+            if first_line == self._pending_echo
+            else self._echo_buffer
+        )
         self._pending_echo = None
         self._echo_buffer = ""
         return result
+
+    def _without_extra_echo_newline(self, output: str) -> str:
+        """Drop one blank line left behind after filtering a PTY echo."""
+        return output[1:] if output.startswith("\n") else output
 
     def _filter_sftp_echo(self, output: str) -> str:
         if self._sftp_pending_echo is None or not output:
@@ -688,7 +682,11 @@ class MainWindow(QMainWindow):
         if "\n" not in self._sftp_echo_buffer:
             return ""
         first_line, remainder = self._sftp_echo_buffer.split("\n", 1)
-        result = remainder if first_line == self._sftp_pending_echo else self._sftp_echo_buffer
+        result = (
+            self._without_extra_echo_newline(remainder)
+            if first_line == self._sftp_pending_echo
+            else self._sftp_echo_buffer
+        )
         self._sftp_pending_echo = None
         self._sftp_echo_buffer = ""
         return result
@@ -761,7 +759,6 @@ class MainWindow(QMainWindow):
         self.terminal_widget.set_prompt(self._local_prompt())
         self.connect_button.setEnabled(True)
         self.disconnect_button.setEnabled(False)
-        self.reconnect_button.setEnabled(True)
         self.open_sftp_button.setEnabled(False)
         self.refresh_usb_button.setEnabled(False)
         self.open_minicom_button.setEnabled(False)
@@ -795,13 +792,10 @@ class MainWindow(QMainWindow):
 
         self.connect_button = QPushButton("Connect", self)
         self.disconnect_button = QPushButton("Disconnect", self)
-        self.reconnect_button = QPushButton("Reconnect", self)
         self.disconnect_button.setEnabled(False)
-        self.reconnect_button.setEnabled(False)
 
         toolbar.addWidget(self.connect_button)
         toolbar.addWidget(self.disconnect_button)
-        toolbar.addWidget(self.reconnect_button)
         return toolbar
 
     def _build_status_bar(self) -> QStatusBar:
