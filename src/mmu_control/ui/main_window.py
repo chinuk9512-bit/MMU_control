@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shlex
+import subprocess
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent
@@ -73,6 +75,7 @@ class MainWindow(QMainWindow):
         self._sftp_session_active = False
         self._minicom_session_active = False
         self._interactive_program = ""
+        self._local_cwd = os.getcwd()
         self._closing = False
         self.setWindowTitle("MMU Control")
         self.resize(1180, 760)
@@ -237,7 +240,7 @@ class MainWindow(QMainWindow):
 
     def _send_terminal_command(self, command: str) -> None:
         if self._shell is None or not self._shell.is_open:
-            self.terminal_widget.write_output("Not connected to an SSH shell.")
+            self._run_local_terminal_command(command)
             return
         try:
             self._shell.send_line(command)
@@ -260,6 +263,61 @@ class MainWindow(QMainWindow):
             text == "q" and self._interactive_program in {"htop", "top", "less", "more"}
         ):
             self._leave_interactive_mode()
+
+    def _local_prompt(self) -> str:
+        """Return the prompt for the local fallback terminal."""
+        return f"{self._local_cwd}> "
+
+    def _run_local_terminal_command(self, command: str) -> None:
+        """Execute a command on the local PC when no SSH shell is connected."""
+        command = command.strip()
+        if not command:
+            return
+        if command.lower() in {"clear", "cls"}:
+            self.terminal_widget.clear_terminal()
+            return
+        if command.lower() in {"pwd", "cd"}:
+            self.terminal_widget.write_output(self._local_cwd)
+            return
+        if command.lower().startswith("cd "):
+            self._change_local_directory(command[3:].strip())
+            return
+        try:
+            result = subprocess.run(
+                command,
+                cwd=self._local_cwd,
+                shell=True,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except OSError as exc:
+            self.terminal_widget.write_output(str(exc))
+            return
+        output = f"{result.stdout}{result.stderr}"
+        if output:
+            self.terminal_widget.write_output(output)
+
+    def _change_local_directory(self, path_text: str) -> None:
+        """Change the working directory used by the local fallback terminal."""
+        if not path_text:
+            self.terminal_widget.write_output(self._local_cwd)
+            return
+        try:
+            parts = shlex.split(path_text)
+        except ValueError as exc:
+            self.terminal_widget.write_output(str(exc))
+            return
+        target_text = " ".join(parts) if parts else path_text
+        target = os.path.expanduser(os.path.expandvars(target_text))
+        if not os.path.isabs(target):
+            target = os.path.join(self._local_cwd, target)
+        target = os.path.abspath(target)
+        if not os.path.isdir(target):
+            self.terminal_widget.write_output(f"cd: no such directory: {target_text}")
+            return
+        self._local_cwd = target
+        self.terminal_widget.set_prompt(self._local_prompt())
 
     def _interactive_program_name(self, command: str) -> str:
         try:
@@ -700,7 +758,7 @@ class MainWindow(QMainWindow):
         self._set_disconnected_state("Connection closed")
 
     def _set_disconnected_state(self, status_message: str) -> None:
-        self.terminal_widget.set_prompt("mmu> ")
+        self.terminal_widget.set_prompt(self._local_prompt())
         self.connect_button.setEnabled(True)
         self.disconnect_button.setEnabled(False)
         self.reconnect_button.setEnabled(True)
@@ -782,7 +840,7 @@ class MainWindow(QMainWindow):
         self.ssh_username_input = QLineEdit(self)
         self.ssh_username_input.setPlaceholderText("Username")
         self.ssh_password_input = QLineEdit(self)
-        self.ssh_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ssh_password_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.ssh_password_input.setPlaceholderText("Password")
 
         layout.addRow("Host", self.ssh_host_input)
@@ -801,7 +859,7 @@ class MainWindow(QMainWindow):
         self.board_username_input = QLineEdit(self)
         self.board_username_input.setPlaceholderText("Username")
         self.board_password_input = QLineEdit(self)
-        self.board_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.board_password_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.board_password_input.setPlaceholderText("Password")
         self.board_interface_input = QLineEdit(self)
         self.board_interface_input.setPlaceholderText("Interface, e.g. eth0")
@@ -844,7 +902,7 @@ class MainWindow(QMainWindow):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(10, 10, 10, 10)
-        self.terminal_widget = TerminalWidget(prompt="mmu> ")
+        self.terminal_widget = TerminalWidget(prompt=self._local_prompt())
         layout.addWidget(self.terminal_widget, stretch=1)
         return tab
 
