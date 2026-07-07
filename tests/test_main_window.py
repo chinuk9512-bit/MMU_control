@@ -134,8 +134,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.windowTitle(), "MMU Control")
         self.assertEqual(window.ssh_port_input.value(), 22)
         self.assertFalse(window.disconnect_button.isEnabled())
-        self.assertFalse(window.reconnect_button.isEnabled())
         self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
+        self.assertEqual(window.sftp_terminal.toPlainText(), f"{window._local_cwd}> ")
         self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertFalse(window.open_sftp_button.isEnabled())
@@ -244,6 +244,11 @@ class MainWindowTest(unittest.TestCase):
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
             window.sftp_output.toPlainText(),
         )
+        self.assertIn(
+            "SFTP session opened. You can type SFTP commands below.",
+            window.sftp_output.toPlainText(),
+        )
+        self.assertTrue(window.sftp_output.toPlainText().endswith("sftp> "))
         self.assertEqual(window.board_status_label.text(), "Board: SFTP connected")
 
         window.server_path_input.setText("/tmp/update file.bin")
@@ -269,6 +274,16 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertTrue(manager.shell.is_open)
         self.assertFalse(manager.sftp_shell.is_open)
+
+    def test_sftp_tab_runs_local_commands_before_session(self) -> None:
+        """The SFTP command pane mirrors the local prompt before SFTP is connected."""
+        window = self.create_window()
+
+        window.sftp_terminal.commandSubmitted.emit("pwd")
+
+        self.assertIn(window._local_cwd, window.sftp_terminal.toPlainText())
+        self.assertEqual(window.sftp_terminal.toPlainText().splitlines()[-1], f"{window._local_cwd}> ")
+        self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
 
     def test_open_sftp_reports_missing_board_ip(self) -> None:
         """Open SFTP surfaces validation errors instead of doing nothing."""
