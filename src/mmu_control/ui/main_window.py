@@ -676,8 +676,15 @@ class MainWindow(QMainWindow):
                         f"SFTP password sent: {settings.password or '(empty)'}"
                     )
         output = self._filter_sftp_echo(output)
+        output = self._without_trailing_sftp_prompt(output)
         if output:
             self.sftp_terminal.write_stream(output)
+
+    def _without_trailing_sftp_prompt(self, output: str) -> str:
+        """Drop remote SFTP prompts because the widget already shows one locally."""
+        while output.endswith("sftp> "):
+            output = output.removesuffix("sftp> ")
+        return output
 
     def _filter_command_echo(self, output: str) -> str:
         """Remove the PTY echo because the widget already displays local input."""
