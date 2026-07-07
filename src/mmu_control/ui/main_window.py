@@ -315,6 +315,7 @@ class MainWindow(QMainWindow):
     def _leave_interactive_mode(self) -> None:
         self._interactive_program = ""
         self.terminal_widget.set_interactive_mode(False)
+        self.terminal_widget.set_backspace_sequence("\x7f")
 
     def _open_sftp(self) -> None:
         if self._shell is None or not self._shell.is_open:
@@ -510,6 +511,7 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         self._minicom_session_active = True
         self._interactive_program = "minicom"
+        self.terminal_widget.set_backspace_sequence("\x08")
         self.terminal_widget.set_interactive_mode(True)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(True)

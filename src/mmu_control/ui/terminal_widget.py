@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFontDatabase, QKeyEvent, QTextCursor
-from PySide6.QtWidgets import QPlainTextEdit
+from PySide6.QtCore import QMimeData, Qt, Signal
+from PySide6.QtGui import QFontDatabase, QKeyEvent, QKeySequence, QTextCursor
+from PySide6.QtWidgets import QApplication, QPlainTextEdit
 
 from mmu_control.core.terminal_sequences import TerminalStreamFilter, strip_terminal_sequences
 
@@ -22,6 +22,7 @@ class TerminalWidget(QPlainTextEdit):
         self._history: list[str] = []
         self._history_index = 0
         self._interactive_mode = False
+        self._backspace_sequence = "\x7f"
         self._stream_filter = TerminalStreamFilter()
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setUndoRedoEnabled(False)
@@ -48,6 +49,10 @@ class TerminalWidget(QPlainTextEdit):
     def is_interactive_mode(self) -> bool:
         """Return whether key presses are sent immediately."""
         return self._interactive_mode
+
+    def set_backspace_sequence(self, sequence: str) -> None:
+        """Set the bytes sent for Backspace in interactive mode."""
+        self._backspace_sequence = sequence
 
     def write_output(self, text: str) -> None:
         """Append command output above the live prompt."""
@@ -87,6 +92,17 @@ class TerminalWidget(QPlainTextEdit):
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         """Handle terminal input like a command prompt."""
         key = event.key()
+
+        if (
+            event.matches(QKeySequence.StandardKey.Copy)
+            and self.textCursor().hasSelection()
+        ):
+            self.copy()
+            return
+
+        if event.matches(QKeySequence.StandardKey.Paste):
+            self._paste_text(self._clipboard_text())
+            return
 
         if (
             key == Qt.Key.Key_C
@@ -135,7 +151,7 @@ class TerminalWidget(QPlainTextEdit):
         special_keys = {
             Qt.Key.Key_Return: "\r",
             Qt.Key.Key_Enter: "\r",
-            Qt.Key.Key_Backspace: "\x7f",
+            Qt.Key.Key_Backspace: self._backspace_sequence,
             Qt.Key.Key_Tab: "\t",
             Qt.Key.Key_Escape: "\x1b",
             Qt.Key.Key_Up: "\x1b[A",
@@ -158,6 +174,27 @@ class TerminalWidget(QPlainTextEdit):
         if text and event.modifiers() & Qt.KeyboardModifier.AltModifier:
             return f"\x1b{text}"
         return text
+
+    def insertFromMimeData(self, source: QMimeData) -> None:  # noqa: N802
+        """Route pasted text through the terminal input buffer."""
+        self._paste_text(source.text() if source.hasText() else "")
+
+    def _clipboard_text(self) -> str:
+        return QApplication.clipboard().text()
+
+    def _paste_text(self, text: str) -> None:
+        if not text:
+            return
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if self._interactive_mode:
+            self.rawInput.emit(text)
+            return
+        lines = text.split("\n")
+        for line in lines[:-1]:
+            self._replace_buffer(self._buffer + line)
+            self._submit_buffer()
+        if lines[-1]:
+            self._replace_buffer(self._buffer + lines[-1])
 
     def _submit_buffer(self) -> None:
         command = self._buffer
