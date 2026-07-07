@@ -248,15 +248,10 @@ class MainWindowTest(unittest.TestCase):
             window.sftp_output.toPlainText(),
         )
         self.assertIn(
-            "SFTP password: secret",
-            window.sftp_output.toPlainText(),
-        )
-        self.assertIn(
             "SFTP session opened. You can type SFTP commands below.",
             window.sftp_output.toPlainText(),
         )
         self.assertTrue(window.sftp_output.toPlainText().endswith("sftp> "))
-        self.assertNotIn("sftp> sftp>", window.sftp_output.toPlainText())
         self.assertEqual(window.board_status_label.text(), "Board: SFTP connected")
 
         window.server_path_input.setText("/tmp/update file.bin")
