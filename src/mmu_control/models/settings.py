@@ -44,6 +44,8 @@ class BoardSettings:
     password: str = ""
     interface: str = ""
     usb_port: str = ""
+    ssh_port: int = 22
+    ssh_key_path: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BoardSettings:
@@ -54,6 +56,8 @@ class BoardSettings:
             password=str(data.get("password", "")),
             interface=str(data.get("interface", "")),
             usb_port=str(data.get("usb_port", "")),
+            ssh_port=int(data.get("ssh_port", 22)),
+            ssh_key_path=str(data.get("ssh_key_path", "")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,6 +68,8 @@ class BoardSettings:
             "password": self.password,
             "interface": self.interface,
             "usb_port": self.usb_port,
+            "ssh_port": self.ssh_port,
+            "ssh_key_path": self.ssh_key_path,
         }
 
 

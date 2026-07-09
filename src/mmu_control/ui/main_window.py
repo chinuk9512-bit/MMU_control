@@ -73,6 +73,8 @@ class MainWindow(QMainWindow):
         self._active_sftp_settings: BoardSettings | None = None
         self._sftp_session_active = False
         self._minicom_session_active = False
+        self._mmu_ssh_session_active = False
+        self._mmu_ssh_prompt_buffer = ""
         self._interactive_program = ""
         self._local_cwd = os.getcwd()
         self._closing = False
@@ -108,6 +110,7 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.clicked.connect(self._refresh_usb_ports)
         self.open_minicom_button.clicked.connect(self._open_minicom)
         self.close_minicom_button.clicked.connect(self._close_minicom)
+        self.mmu_ssh_button.clicked.connect(self._toggle_mmu_ssh)
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
 
@@ -126,6 +129,8 @@ class MainWindow(QMainWindow):
             password=self.board_password_input.text(),
             interface=self.board_interface_input.text().strip(),
             usb_port=self._selected_usb_port(),
+            ssh_port=self.board_ssh_port_input.value(),
+            ssh_key_path=self.board_ssh_key_input.text().strip(),
         )
 
     def _selected_usb_port(self) -> str:
@@ -148,6 +153,8 @@ class MainWindow(QMainWindow):
         self.board_username_input.setText(settings.board.username)
         self.board_password_input.setText(settings.board.password)
         self.board_interface_input.setText(settings.board.interface)
+        self.board_ssh_port_input.setValue(settings.board.ssh_port)
+        self.board_ssh_key_input.setText(settings.board.ssh_key_path)
         if settings.board.usb_port:
             self.usb_port_combo.clear()
             self.usb_port_combo.addItem(settings.board.usb_port)
@@ -201,6 +208,8 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         self._sftp_session_active = False
         self._minicom_session_active = False
+        self._mmu_ssh_session_active = False
+        self._mmu_ssh_prompt_buffer = ""
         self._leave_interactive_mode()
         self.terminal_widget.clear_terminal()
         self.terminal_widget.set_prompt("")
@@ -210,6 +219,7 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.setEnabled(True)
         self._update_minicom_button()
         self.close_minicom_button.setEnabled(False)
+        self.mmu_ssh_button.setEnabled(True)
         self.connection_status_label.setText("SSH: connected")
         self.statusBar().showMessage("Connected")
         self._shell_timer.start()
@@ -495,6 +505,78 @@ class MainWindow(QMainWindow):
             and bool(self._selected_usb_port())
         )
 
+    def _toggle_mmu_ssh(self) -> None:
+        if self._mmu_ssh_session_active:
+            self._disconnect_mmu_ssh()
+        else:
+            self._connect_mmu_ssh()
+
+    def _connect_mmu_ssh(self) -> None:
+        if self._shell is None or not self._shell.is_open:
+            self.terminal_widget.write_output("Connect to the SSH server before opening an MMU SSH session.")
+            return
+        try:
+            command = self._build_mmu_ssh_command(self._board_settings())
+            self._shell.send_line(command)
+        except ValueError as exc:
+            self.terminal_widget.write_output(f"MMU SSH error: {exc}")
+            self.board_status_label.setText("MMU: SSH failed")
+            return
+        self._pending_echo = command
+        self._echo_buffer = ""
+        self._mmu_ssh_prompt_buffer = ""
+        self._mmu_ssh_session_active = True
+        self.mmu_ssh_button.setText("SSH Disconnect")
+        self.board_status_label.setText("MMU: SSH connecting")
+        self.statusBar().showMessage("Opening MMU SSH session...")
+
+    def _build_mmu_ssh_command(self, settings: BoardSettings) -> str:
+        if not settings.ip_address.strip():
+            raise ValueError("MMU IP address is required.")
+        if not settings.username.strip():
+            raise ValueError("MMU username is required.")
+        if not 1 <= settings.ssh_port <= 65535:
+            raise ValueError("MMU SSH port must be between 1 and 65535.")
+        destination = settings.ip_address.strip()
+        if ":" in destination and not destination.startswith("["):
+            interface = settings.interface.strip()
+            if interface and "%" not in destination:
+                destination = f"{destination}%{interface}"
+            destination = f"[{destination}]"
+        command = ["ssh", "-p", str(settings.ssh_port), "-o", "StrictHostKeyChecking=no"]
+        if settings.ssh_key_path:
+            command.extend(["-i", settings.ssh_key_path])
+        command.append(f"{settings.username}@{destination}")
+        return " ".join(shlex.quote(part) for part in command)
+
+    def _handle_mmu_ssh_auth(self, output: str) -> None:
+        self._mmu_ssh_prompt_buffer = f"{self._mmu_ssh_prompt_buffer}{output}"[-512:]
+        lower = self._mmu_ssh_prompt_buffer.lower()
+        if "password:" in lower:
+            password = self.board_password_input.text()
+            self._shell.send_line(password)
+            self._mmu_ssh_prompt_buffer = ""
+            self.terminal_widget.write_output("MMU SSH password sent.")
+            self.board_status_label.setText("MMU: SSH connected")
+            self.statusBar().showMessage("MMU SSH session opened")
+        elif "are you sure you want to continue connecting" in lower:
+            self._shell.send_line("yes")
+            self._mmu_ssh_prompt_buffer = ""
+        elif "permission denied" in lower or "could not resolve" in lower or "connection refused" in lower:
+            self.board_status_label.setText("MMU: SSH failed")
+            self.statusBar().showMessage("MMU SSH failed")
+        elif output:
+            self.board_status_label.setText("MMU: SSH connected")
+
+    def _disconnect_mmu_ssh(self) -> None:
+        if self._shell is not None and self._shell.is_open and self._mmu_ssh_session_active:
+            self._shell.send_line("exit")
+        self._mmu_ssh_session_active = False
+        self._mmu_ssh_prompt_buffer = ""
+        self.mmu_ssh_button.setText("SSH Connect")
+        self.board_status_label.setText("MMU: SSH disconnected")
+        self.statusBar().showMessage("Closing MMU SSH session...")
+
     def _open_minicom(self) -> None:
         if self._shell is None or not self._shell.is_open:
             self.terminal_widget.write_output("Not connected to an SSH shell.")
@@ -638,6 +720,8 @@ class MainWindow(QMainWindow):
             self._show_connection_error(exc)
             return
         output = self._filter_command_echo(output)
+        if self._mmu_ssh_session_active:
+            self._handle_mmu_ssh_auth(output)
         if output:
             self.terminal_widget.write_stream(output)
 
@@ -743,6 +827,10 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.setEnabled(False)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(False)
+        self._mmu_ssh_session_active = False
+        self._mmu_ssh_prompt_buffer = ""
+        self.mmu_ssh_button.setText("SSH Connect")
+        self.mmu_ssh_button.setEnabled(False)
 
     def _close_sftp_shell(self) -> None:
         self._sftp_timer.stop()
@@ -795,6 +883,8 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.setEnabled(False)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(False)
+        self.mmu_ssh_button.setText("SSH Connect")
+        self.mmu_ssh_button.setEnabled(False)
         self._set_sftp_actions_enabled(False)
         self.connection_status_label.setText("SSH: disconnected")
         self.statusBar().showMessage(status_message)
@@ -853,7 +943,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._build_ssh_group(), 0, 0)
         layout.addWidget(self._build_board_group(), 0, 1)
         layout.setColumnStretch(0, 1)
-        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(1, 2)
         return panel
 
     def _build_ssh_group(self) -> QGroupBox:
@@ -893,6 +983,11 @@ class MainWindow(QMainWindow):
         self.board_password_input.setPlaceholderText("Password")
         self.board_interface_input = QLineEdit(self)
         self.board_interface_input.setPlaceholderText("Interface, e.g. eth0")
+        self.board_ssh_port_input = QSpinBox(self)
+        self.board_ssh_port_input.setRange(1, 65535)
+        self.board_ssh_port_input.setValue(22)
+        self.board_ssh_key_input = QLineEdit(self)
+        self.board_ssh_key_input.setPlaceholderText("Optional SSH private key path")
         self.usb_port_combo = QComboBox(self)
         self.usb_port_combo.addItem("No USB ports detected")
         self.refresh_usb_button = QPushButton("Refresh USB", self)
@@ -901,6 +996,8 @@ class MainWindow(QMainWindow):
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button = QPushButton("Close Minicom", self)
         self.close_minicom_button.setEnabled(False)
+        self.mmu_ssh_button = QPushButton("SSH Connect", self)
+        self.mmu_ssh_button.setEnabled(False)
 
         usb_row = QWidget(self)
         usb_layout = QHBoxLayout(usb_row)
@@ -912,6 +1009,8 @@ class MainWindow(QMainWindow):
         layout.addRow("User", self.board_username_input)
         layout.addRow("Password", self.board_password_input)
         layout.addRow("Interface", self.board_interface_input)
+        layout.addRow("SSH Port", self.board_ssh_port_input)
+        layout.addRow("SSH Key", self.board_ssh_key_input)
         layout.addRow("USB Port", usb_row)
         minicom_row = QWidget(self)
         minicom_layout = QHBoxLayout(minicom_row)
@@ -919,6 +1018,7 @@ class MainWindow(QMainWindow):
         minicom_layout.addWidget(self.open_minicom_button)
         minicom_layout.addWidget(self.close_minicom_button)
         layout.addRow("Serial Console", minicom_row)
+        layout.addRow("SSH Console", self.mmu_ssh_button)
         return group
 
     def _build_workspace(self) -> QTabWidget:

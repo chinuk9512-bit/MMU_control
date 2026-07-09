@@ -326,6 +326,38 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(config.load().board.interface, "eth0")
 
+    def test_mmu_ssh_command_uses_board_inputs(self) -> None:
+        """MMU SSH uses the board fields and toggles disconnect through the server shell."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_password_input.setText("secret")
+        window.board_interface_input.setText("eth0")
+        window.board_ssh_port_input.setValue(2222)
+        window.board_ssh_key_input.setText("/home/user/.ssh/mmu key")
+
+        window._connect_ssh()
+        window.mmu_ssh_button.click()
+
+        self.assertEqual(
+            manager.shell.sent,
+            [
+                "ssh -p 2222 -o StrictHostKeyChecking=no "
+                "-i '/home/user/.ssh/mmu key' root@'[fe80::1%eth0]'"
+            ],
+        )
+        self.assertEqual(window.mmu_ssh_button.text(), "SSH Disconnect")
+        self.assertEqual(window.board_status_label.text(), "MMU: SSH connecting")
+
+        window.mmu_ssh_button.click()
+
+        self.assertEqual(manager.shell.sent[-1], "exit")
+        self.assertEqual(window.mmu_ssh_button.text(), "SSH Connect")
+        self.assertEqual(window.board_status_label.text(), "MMU: SSH disconnected")
+
     def test_remote_usb_refresh_and_minicom(self) -> None:
         """Remote serial ports can be discovered and opened with minicom."""
         manager = FakeSSHManager()

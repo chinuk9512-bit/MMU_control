@@ -26,6 +26,8 @@ class AppSettingsTest(unittest.TestCase):
                     "password": "board",
                     "interface": "eth0",
                     "usb_port": "/dev/ttyUSB0",
+                    "ssh_port": 2222,
+                    "ssh_key_path": "/home/user/.ssh/mmu",
                 },
             }
         )
@@ -46,6 +48,8 @@ class AppSettingsTest(unittest.TestCase):
                     "password": "board",
                     "interface": "eth0",
                     "usb_port": "/dev/ttyUSB0",
+                    "ssh_port": 2222,
+                    "ssh_key_path": "/home/user/.ssh/mmu",
                 },
                 "window": {
                     "width": 1180,
