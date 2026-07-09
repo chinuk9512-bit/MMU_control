@@ -337,25 +337,28 @@ class MainWindowTest(unittest.TestCase):
         window.board_password_input.setText("secret")
         window.board_interface_input.setText("eth0")
         window.board_ssh_port_input.setValue(2222)
-        window.board_ssh_key_input.setText("/home/user/.ssh/mmu key")
-
         window._connect_ssh()
-        window.mmu_ssh_button.click()
+        window.mmu_ssh_connect_button.click()
 
         self.assertEqual(
             manager.shell.sent,
             [
                 "ssh -p 2222 -o StrictHostKeyChecking=no "
-                "-i '/home/user/.ssh/mmu key' root@'[fe80::1%eth0]'"
+                "-o UserKnownHostsFile=/dev/null "
+                "-o PubkeyAuthentication=no "
+                "-o PreferredAuthentications=password,keyboard-interactive "
+                "-o NumberOfPasswordPrompts=1 root@'[fe80::1%eth0]'"
             ],
         )
-        self.assertEqual(window.mmu_ssh_button.text(), "SSH Disconnect")
+        self.assertFalse(window.mmu_ssh_connect_button.isEnabled())
+        self.assertTrue(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH connecting")
 
-        window.mmu_ssh_button.click()
+        window.mmu_ssh_disconnect_button.click()
 
         self.assertEqual(manager.shell.sent[-1], "exit")
-        self.assertEqual(window.mmu_ssh_button.text(), "SSH Connect")
+        self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
+        self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH disconnected")
 
     def test_remote_usb_refresh_and_minicom(self) -> None:

@@ -110,7 +110,8 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.clicked.connect(self._refresh_usb_ports)
         self.open_minicom_button.clicked.connect(self._open_minicom)
         self.close_minicom_button.clicked.connect(self._close_minicom)
-        self.mmu_ssh_button.clicked.connect(self._toggle_mmu_ssh)
+        self.mmu_ssh_connect_button.clicked.connect(self._connect_mmu_ssh)
+        self.mmu_ssh_disconnect_button.clicked.connect(self._disconnect_mmu_ssh)
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
 
@@ -130,7 +131,6 @@ class MainWindow(QMainWindow):
             interface=self.board_interface_input.text().strip(),
             usb_port=self._selected_usb_port(),
             ssh_port=self.board_ssh_port_input.value(),
-            ssh_key_path=self.board_ssh_key_input.text().strip(),
         )
 
     def _selected_usb_port(self) -> str:
@@ -154,7 +154,6 @@ class MainWindow(QMainWindow):
         self.board_password_input.setText(settings.board.password)
         self.board_interface_input.setText(settings.board.interface)
         self.board_ssh_port_input.setValue(settings.board.ssh_port)
-        self.board_ssh_key_input.setText(settings.board.ssh_key_path)
         if settings.board.usb_port:
             self.usb_port_combo.clear()
             self.usb_port_combo.addItem(settings.board.usb_port)
@@ -219,7 +218,8 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.setEnabled(True)
         self._update_minicom_button()
         self.close_minicom_button.setEnabled(False)
-        self.mmu_ssh_button.setEnabled(True)
+        self.mmu_ssh_connect_button.setEnabled(True)
+        self.mmu_ssh_disconnect_button.setEnabled(False)
         self.connection_status_label.setText("SSH: connected")
         self.statusBar().showMessage("Connected")
         self._shell_timer.start()
@@ -505,12 +505,6 @@ class MainWindow(QMainWindow):
             and bool(self._selected_usb_port())
         )
 
-    def _toggle_mmu_ssh(self) -> None:
-        if self._mmu_ssh_session_active:
-            self._disconnect_mmu_ssh()
-        else:
-            self._connect_mmu_ssh()
-
     def _connect_mmu_ssh(self) -> None:
         if self._shell is None or not self._shell.is_open:
             self.terminal_widget.write_output("Connect to the SSH server before opening an MMU SSH session.")
@@ -526,7 +520,8 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         self._mmu_ssh_prompt_buffer = ""
         self._mmu_ssh_session_active = True
-        self.mmu_ssh_button.setText("SSH Disconnect")
+        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_disconnect_button.setEnabled(True)
         self.board_status_label.setText("MMU: SSH connecting")
         self.statusBar().showMessage("Opening MMU SSH session...")
 
@@ -543,9 +538,21 @@ class MainWindow(QMainWindow):
             if interface and "%" not in destination:
                 destination = f"{destination}%{interface}"
             destination = f"[{destination}]"
-        command = ["ssh", "-p", str(settings.ssh_port), "-o", "StrictHostKeyChecking=no"]
-        if settings.ssh_key_path:
-            command.extend(["-i", settings.ssh_key_path])
+        command = [
+            "ssh",
+            "-p",
+            str(settings.ssh_port),
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "PubkeyAuthentication=no",
+            "-o",
+            "PreferredAuthentications=password,keyboard-interactive",
+            "-o",
+            "NumberOfPasswordPrompts=1",
+        ]
         command.append(f"{settings.username}@{destination}")
         return " ".join(shlex.quote(part) for part in command)
 
@@ -573,7 +580,8 @@ class MainWindow(QMainWindow):
             self._shell.send_line("exit")
         self._mmu_ssh_session_active = False
         self._mmu_ssh_prompt_buffer = ""
-        self.mmu_ssh_button.setText("SSH Connect")
+        self.mmu_ssh_connect_button.setEnabled(self._shell is not None and self._shell.is_open)
+        self.mmu_ssh_disconnect_button.setEnabled(False)
         self.board_status_label.setText("MMU: SSH disconnected")
         self.statusBar().showMessage("Closing MMU SSH session...")
 
@@ -829,8 +837,8 @@ class MainWindow(QMainWindow):
         self.close_minicom_button.setEnabled(False)
         self._mmu_ssh_session_active = False
         self._mmu_ssh_prompt_buffer = ""
-        self.mmu_ssh_button.setText("SSH Connect")
-        self.mmu_ssh_button.setEnabled(False)
+        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_disconnect_button.setEnabled(False)
 
     def _close_sftp_shell(self) -> None:
         self._sftp_timer.stop()
@@ -883,8 +891,8 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.setEnabled(False)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(False)
-        self.mmu_ssh_button.setText("SSH Connect")
-        self.mmu_ssh_button.setEnabled(False)
+        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_disconnect_button.setEnabled(False)
         self._set_sftp_actions_enabled(False)
         self.connection_status_label.setText("SSH: disconnected")
         self.statusBar().showMessage(status_message)
@@ -986,8 +994,6 @@ class MainWindow(QMainWindow):
         self.board_ssh_port_input = QSpinBox(self)
         self.board_ssh_port_input.setRange(1, 65535)
         self.board_ssh_port_input.setValue(22)
-        self.board_ssh_key_input = QLineEdit(self)
-        self.board_ssh_key_input.setPlaceholderText("Optional SSH private key path")
         self.usb_port_combo = QComboBox(self)
         self.usb_port_combo.addItem("No USB ports detected")
         self.refresh_usb_button = QPushButton("Refresh USB", self)
@@ -996,8 +1002,10 @@ class MainWindow(QMainWindow):
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button = QPushButton("Close Minicom", self)
         self.close_minicom_button.setEnabled(False)
-        self.mmu_ssh_button = QPushButton("SSH Connect", self)
-        self.mmu_ssh_button.setEnabled(False)
+        self.mmu_ssh_connect_button = QPushButton("SSH Connect", self)
+        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_disconnect_button = QPushButton("SSH Disconnect", self)
+        self.mmu_ssh_disconnect_button.setEnabled(False)
 
         usb_row = QWidget(self)
         usb_layout = QHBoxLayout(usb_row)
@@ -1010,15 +1018,28 @@ class MainWindow(QMainWindow):
         layout.addRow("Password", self.board_password_input)
         layout.addRow("Interface", self.board_interface_input)
         layout.addRow("SSH Port", self.board_ssh_port_input)
-        layout.addRow("SSH Key", self.board_ssh_key_input)
         layout.addRow("USB Port", usb_row)
         minicom_row = QWidget(self)
         minicom_layout = QHBoxLayout(minicom_row)
         minicom_layout.setContentsMargins(0, 0, 0, 0)
         minicom_layout.addWidget(self.open_minicom_button)
         minicom_layout.addWidget(self.close_minicom_button)
-        layout.addRow("Serial Console", minicom_row)
-        layout.addRow("SSH Console", self.mmu_ssh_button)
+
+        mmu_ssh_row = QWidget(self)
+        mmu_ssh_layout = QHBoxLayout(mmu_ssh_row)
+        mmu_ssh_layout.setContentsMargins(0, 0, 0, 0)
+        mmu_ssh_layout.addWidget(self.mmu_ssh_connect_button)
+        mmu_ssh_layout.addWidget(self.mmu_ssh_disconnect_button)
+
+        console_row = QWidget(self)
+        console_layout = QHBoxLayout(console_row)
+        console_layout.setContentsMargins(0, 0, 0, 0)
+        console_layout.addWidget(QLabel("Serial Console", self))
+        console_layout.addWidget(minicom_row, stretch=1)
+        console_layout.addSpacing(12)
+        console_layout.addWidget(QLabel("SSH Console", self))
+        console_layout.addWidget(mmu_ssh_row, stretch=1)
+        layout.addRow(console_row)
         return group
 
     def _build_workspace(self) -> QTabWidget:
