@@ -124,7 +124,41 @@ class TerminalWidget(QPlainTextEdit):
             return
 
         if key == Qt.Key.Key_Backspace:
-            self._replace_buffer(self._buffer[:-1])
+            index = self._buffer_cursor_index()
+            if index > 0:
+                self._replace_buffer(
+                    f"{self._buffer[: index - 1]}{self._buffer[index:]}",
+                    index - 1,
+                )
+            else:
+                self._set_cursor_at_buffer_index(0)
+            return
+
+        if key == Qt.Key.Key_Delete:
+            index = self._buffer_cursor_index()
+            if index < len(self._buffer):
+                self._replace_buffer(
+                    f"{self._buffer[:index]}{self._buffer[index + 1:]}",
+                    index,
+                )
+            else:
+                self._set_cursor_at_buffer_index(len(self._buffer))
+            return
+
+        if key == Qt.Key.Key_Left:
+            self._set_cursor_at_buffer_index(self._buffer_cursor_index() - 1)
+            return
+
+        if key == Qt.Key.Key_Right:
+            self._set_cursor_at_buffer_index(self._buffer_cursor_index() + 1)
+            return
+
+        if key == Qt.Key.Key_Home:
+            self._set_cursor_at_buffer_index(0)
+            return
+
+        if key == Qt.Key.Key_End:
+            self._set_cursor_at_buffer_index(len(self._buffer))
             return
 
         if key == Qt.Key.Key_Up:
@@ -141,7 +175,11 @@ class TerminalWidget(QPlainTextEdit):
             | Qt.KeyboardModifier.MetaModifier
         )
         if event.text() and not (event.modifiers() & blocked_modifiers):
-            self._replace_buffer(self._buffer + event.text())
+            index = self._buffer_cursor_index()
+            self._replace_buffer(
+                f"{self._buffer[:index]}{event.text()}{self._buffer[index:]}",
+                index + len(event.text()),
+            )
             return
 
         super().keyPressEvent(event)
@@ -191,10 +229,18 @@ class TerminalWidget(QPlainTextEdit):
             return
         lines = text.split("\n")
         for line in lines[:-1]:
-            self._replace_buffer(self._buffer + line)
+            index = self._buffer_cursor_index()
+            self._replace_buffer(
+                f"{self._buffer[:index]}{line}{self._buffer[index:]}",
+                index + len(line),
+            )
             self._submit_buffer()
         if lines[-1]:
-            self._replace_buffer(self._buffer + lines[-1])
+            index = self._buffer_cursor_index()
+            self._replace_buffer(
+                f"{self._buffer[:index]}{lines[-1]}{self._buffer[index:]}",
+                index + len(lines[-1]),
+            )
 
     def _submit_buffer(self) -> None:
         command = self._buffer
@@ -227,10 +273,12 @@ class TerminalWidget(QPlainTextEdit):
         """Keep the cursor at the live command line."""
         self._move_cursor_to_end()
 
-    def _replace_buffer(self, buffer: str) -> None:
+    def _replace_buffer(self, buffer: str, cursor_index: int | None = None) -> None:
         cursor = self._remove_live_input()
         self._buffer = buffer
         self._insert_live_input(cursor)
+        if cursor_index is not None:
+            self._set_cursor_at_buffer_index(cursor_index)
 
     def _remove_live_input(self) -> QTextCursor:
         cursor = self.textCursor()
@@ -247,6 +295,25 @@ class TerminalWidget(QPlainTextEdit):
 
     def _insert_live_input(self, cursor: QTextCursor) -> None:
         cursor.insertText(f"{self._prompt}{self._buffer}")
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+
+    def _buffer_cursor_index(self) -> int:
+        """Return the current cursor location relative to the editable buffer."""
+        text_length = len(self.toPlainText())
+        live_length = len(self._prompt) + len(self._buffer)
+        command_start = max(0, text_length - live_length + len(self._prompt))
+        index = self.textCursor().position() - command_start
+        return max(0, min(len(self._buffer), index))
+
+    def _set_cursor_at_buffer_index(self, index: int) -> None:
+        """Move the cursor to an index inside the editable command buffer."""
+        index = max(0, min(len(self._buffer), index))
+        text_length = len(self.toPlainText())
+        live_length = len(self._prompt) + len(self._buffer)
+        command_start = max(0, text_length - live_length + len(self._prompt))
+        cursor = self.textCursor()
+        cursor.setPosition(command_start + index)
         self.setTextCursor(cursor)
         self.ensureCursorVisible()
 
