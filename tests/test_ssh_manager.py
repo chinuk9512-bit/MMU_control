@@ -28,6 +28,7 @@ class FakeClient:
         self.transport = FakeTransport(False)
         self.shell_channel = FakeShellChannel()
         self.command_output = b""
+        self.sftp = FakeSFTP()
 
     def set_missing_host_key_policy(self, policy: object) -> None:
         """Accept a host key policy."""
@@ -51,6 +52,10 @@ class FakeClient:
         """Return configured command output."""
         self.executed_command = (command, timeout)
         return object(), FakeStream(self.command_output), FakeStream(b"")
+
+    def open_sftp(self) -> "FakeSFTP":
+        """Return a fake SFTP client."""
+        return self.sftp
 
     def close(self) -> None:
         """Close the fake client."""
@@ -93,6 +98,18 @@ class FakeStream:
 
     def read(self) -> bytes:
         return self._data
+
+
+class FakeSFTP:
+    def __init__(self) -> None:
+        self.put_calls: list[tuple[str, str]] = []
+        self.closed = False
+
+    def put(self, local_path: str, remote_path: str) -> None:
+        self.put_calls.append((local_path, remote_path))
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class SSHManagerTest(unittest.TestCase):
@@ -139,6 +156,20 @@ class SSHManagerTest(unittest.TestCase):
         ports = manager.list_serial_ports()
 
         self.assertEqual(ports, ["/dev/ttyACM0", "/dev/ttyUSB1"])
+
+    def test_upload_file_uses_sftp_client(self) -> None:
+        """Local files can be copied to the connected Linux server."""
+        fake_client = FakeClient()
+        manager = SSHManager(client_factory=lambda: fake_client)
+        manager.connect(SSHSettings(host="server", username="user"))
+
+        manager.upload_file("C:\\tmp\\firmware.bin", "/tmp/firmware.bin")
+
+        self.assertEqual(
+            fake_client.sftp.put_calls,
+            [("C:\\tmp\\firmware.bin", "/tmp/firmware.bin")],
+        )
+        self.assertTrue(fake_client.sftp.closed)
 
 
 if __name__ == "__main__":

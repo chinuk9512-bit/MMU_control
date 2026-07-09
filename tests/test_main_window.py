@@ -62,6 +62,8 @@ class FakeSSHManager:
         self.sftp_shell: FakeShell | None = None
         self._shell_open_count = 0
         self.connected_settings = None
+        self.executed_commands: list[str] = []
+        self.uploaded_files: list[tuple[str, str]] = []
 
     def connect(self, settings: object) -> None:
         self.connected_settings = settings
@@ -85,6 +87,13 @@ class FakeSSHManager:
 
     def list_serial_ports(self) -> list[str]:
         return ["/dev/ttyACM0", "/dev/ttyUSB0"]
+
+    def execute_command(self, command: str) -> str:
+        self.executed_commands.append(command)
+        return ""
+
+    def upload_file(self, local_path: str, remote_path: str) -> None:
+        self.uploaded_files.append((local_path, remote_path))
 
 
 class ImmediateTaskRunner:
@@ -243,6 +252,40 @@ class MainWindowTest(unittest.TestCase):
         window.server_path_input.dropEvent(drop_event)
 
         self.assertEqual(window.server_path_input.text(), str(local_file))
+        self.assertTrue(drop_event.isAccepted())
+
+    def test_dropped_file_uploads_through_server_and_sftp_session(self) -> None:
+        """Dropping a file during SFTP uploads it to the server, then to the MMU."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+        local_file = Path(self.temp_dir.name) / "update file.bin"
+        local_file.write_text("firmware", encoding="utf-8")
+        mime_data = QMimeData()
+        mime_data.setUrls([QUrl.fromLocalFile(str(local_file))])
+        drop_event = QDropEvent(
+            QPointF(1, 1),
+            Qt.DropAction.CopyAction,
+            mime_data,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+        window.server_path_input.dropEvent(drop_event)
+
+        local_path = str(local_file)
+        server_path = "/tmp/mmu_control_uploads/update file.bin"
+        self.assertEqual(manager.executed_commands, ["mkdir -p /tmp/mmu_control_uploads"])
+        self.assertEqual(manager.uploaded_files, [(local_path, server_path)])
+        self.assertEqual(window.server_path_input.text(), server_path)
+        self.assertEqual(window.board_path_input.text(), "/tmp/update file.bin")
+        self.assertIn(f"put '{server_path}' '/tmp/update file.bin'", manager.sftp_shell.sent)
         self.assertTrue(drop_event.isAccepted())
 
     def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:

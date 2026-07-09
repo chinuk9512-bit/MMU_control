@@ -112,6 +112,18 @@ class SSHManager:
             raise SSHConnectionError(f"Remote command failed: {detail}")
         return output
 
+    def upload_file(self, local_path: str, remote_path: str) -> None:
+        """Upload a local PC file to the connected Linux server."""
+        client = self._require_client()
+        try:
+            sftp = client.open_sftp()
+            try:
+                sftp.put(local_path, remote_path)
+            finally:
+                sftp.close()
+        except Exception as exc:
+            raise SSHConnectionError("Failed to upload file to the SSH server.") from exc
+
     def list_serial_ports(self) -> list[str]:
         """Return USB serial device paths found on the connected Linux server."""
         output = self.execute_command(self.SERIAL_PORT_COMMAND)

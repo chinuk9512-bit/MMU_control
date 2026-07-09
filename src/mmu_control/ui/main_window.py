@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import shlex
 import subprocess
 
-from PySide6.QtCore import QProcess, QTimer, Qt
+from PySide6.QtCore import QProcess, QTimer, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -47,6 +48,8 @@ from mmu_control.ui.terminal_widget import TerminalWidget
 class FileDropLineEdit(QLineEdit):
     """Line edit that accepts local file paths via drag and drop."""
 
+    localFileDropped = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAcceptDrops(True)
@@ -63,7 +66,9 @@ class FileDropLineEdit(QLineEdit):
         """Set the input text to the dropped local file path."""
         urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
         if urls and urls[0].isLocalFile():
-            self.setText(urls[0].toLocalFile())
+            local_path = os.path.normpath(urls[0].toLocalFile())
+            self.setText(local_path)
+            self.localFileDropped.emit(local_path)
             event.acceptProposedAction()
             return
         super().dropEvent(event)
@@ -133,6 +138,7 @@ class MainWindow(QMainWindow):
         self.upload_sftp_button.clicked.connect(self._upload_sftp)
         self.download_sftp_button.clicked.connect(self._download_sftp)
         self.close_sftp_button.clicked.connect(self._close_sftp_session)
+        self.server_path_input.localFileDropped.connect(self._handle_sftp_file_drop)
         self.refresh_usb_button.clicked.connect(self._refresh_usb_ports)
         self.open_minicom_button.clicked.connect(self._open_minicom)
         self.close_minicom_button.clicked.connect(self._close_minicom)
@@ -434,6 +440,68 @@ class MainWindow(QMainWindow):
         self._sftp_pending_echo = command
         self._sftp_echo_buffer = ""
         self._append_sftp_output(f"Running: {command}")
+
+    def _handle_sftp_file_drop(self, local_path: str) -> None:
+        if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
+            self._append_sftp_output("Open an SFTP session before dropping a file to upload.")
+            return
+        if not os.path.isfile(local_path):
+            self._append_sftp_output(f"SFTP error: dropped path is not a file: {local_path}")
+            return
+
+        filename = os.path.basename(local_path)
+        if not self.board_path_input.text().strip():
+            self.board_path_input.setText(posixpath.join("/tmp", filename))
+        server_path = self._server_upload_path(local_path)
+        self.server_path_input.setText(server_path)
+        self._set_sftp_actions_enabled(False)
+        self._append_sftp_output(f"Uploading dropped file to SSH server: {server_path}")
+        self.statusBar().showMessage("Uploading dropped file to SSH server...")
+        self._task_runner.submit(
+            lambda: self._upload_dropped_file_to_server(local_path, server_path),
+            self._upload_dropped_file_to_mmu,
+            self._show_dropped_file_error,
+        )
+
+    def _server_upload_path(self, local_path: str) -> str:
+        filename = os.path.basename(local_path.strip()) or "upload.bin"
+        return posixpath.join("/tmp/mmu_control_uploads", filename)
+
+    def _upload_dropped_file_to_server(self, local_path: str, server_path: str) -> str:
+        self._ssh_manager.execute_command(
+            f"mkdir -p {shlex.quote(posixpath.dirname(server_path))}"
+        )
+        self._ssh_manager.upload_file(local_path, server_path)
+        return server_path
+
+    def _upload_dropped_file_to_mmu(self, server_path: str) -> None:
+        self._set_sftp_actions_enabled(True)
+        if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
+            self._append_sftp_output("SFTP error: session closed before dropped file upload could finish.")
+            self.statusBar().showMessage("SFTP upload failed")
+            return
+        try:
+            command = self._sftp_manager.upload(
+                self._sftp_shell,
+                server_path,
+                self.board_path_input.text(),
+            )
+        except SFTPError as exc:
+            self._append_sftp_output(f"SFTP error: {exc}")
+            self.statusBar().showMessage("SFTP upload failed")
+            return
+        self._sftp_pending_echo = command
+        self._sftp_echo_buffer = ""
+        self._append_sftp_output(f"Running: {command}")
+        self.statusBar().showMessage("Dropped file upload started")
+
+    def _show_dropped_file_error(self, error: Exception) -> None:
+        self._set_sftp_actions_enabled(
+            self._sftp_shell is not None and self._sftp_shell.is_open and self._sftp_session_active
+        )
+        message = str(error) or error.__class__.__name__
+        self._append_sftp_output(f"SFTP error: {message}")
+        self.statusBar().showMessage("SFTP upload failed")
 
     def _close_sftp_session(self) -> None:
         if self._sftp_shell is not None and self._sftp_shell.is_open and self._sftp_session_active:
@@ -854,6 +922,16 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_prompt_buffer = ""
         self.mmu_ssh_connect_button.setEnabled(False)
         self.mmu_ssh_disconnect_button.setEnabled(False)
+
+    def _close_local_process(self) -> None:
+        """Close a local fallback process if one exists."""
+        process = getattr(self, "_local_process", None)
+        if process is None:
+            return
+        if process.state() != QProcess.ProcessState.NotRunning:
+            process.kill()
+            process.waitForFinished(1000)
+        self._local_process = None
 
     def _close_sftp_shell(self) -> None:
         self._sftp_timer.stop()
