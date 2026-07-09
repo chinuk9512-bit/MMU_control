@@ -342,7 +342,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(
             manager.shell.sent,
-            ["ssh root@fe80::1%eth0 -p 2222"],
+            ["rm -f ~/.ssh/known_hosts", "ssh root@fe80::1%eth0 -p 2222"],
         )
         self.assertFalse(window.mmu_ssh_connect_button.isEnabled())
         self.assertTrue(window.mmu_ssh_disconnect_button.isEnabled())

@@ -79,6 +79,37 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(submitted, ["echo pasted"])
 
+    def test_typing_uses_current_command_cursor_position(self) -> None:
+        """Text typed in the middle of a command is inserted at the cursor."""
+        widget = TerminalWidget(prompt="mmu> ")
+        submitted: list[str] = []
+        widget.commandSubmitted.connect(submitted.append)
+        widget.show()
+        widget.setFocus()
+
+        QTest.keyClicks(widget, "helo")
+        QTest.keyClick(widget, Qt.Key.Key_Left)
+        QTest.keyClick(widget, Qt.Key.Key_L)
+        QTest.keyClick(widget, Qt.Key.Key_Return)
+
+        self.assertEqual(submitted, ["hello"])
+
+    def test_backspace_uses_current_command_cursor_position(self) -> None:
+        """Backspace removes the character before the cursor, not always the tail."""
+        widget = TerminalWidget(prompt="mmu> ")
+        submitted: list[str] = []
+        widget.commandSubmitted.connect(submitted.append)
+        widget.show()
+        widget.setFocus()
+
+        QTest.keyClicks(widget, "helllo")
+        QTest.keyClick(widget, Qt.Key.Key_Left)
+        QTest.keyClick(widget, Qt.Key.Key_Left)
+        QTest.keyClick(widget, Qt.Key.Key_Backspace)
+        QTest.keyClick(widget, Qt.Key.Key_Return)
+
+        self.assertEqual(submitted, ["hello"])
+
     def test_multiline_paste_submits_completed_lines(self) -> None:
         """Pasting newline-delimited commands submits each completed line."""
         widget = TerminalWidget(prompt="mmu> ")
