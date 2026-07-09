@@ -9,6 +9,8 @@ import unittest
 from collections.abc import Callable
 from pathlib import Path
 
+from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
+from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 from mmu_control.core.config_manager import ConfigManager
@@ -222,6 +224,26 @@ class MainWindowTest(unittest.TestCase):
             window._run_command_set()
 
             self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
+
+    def test_server_path_input_accepts_dropped_local_file(self) -> None:
+        """Dropping a local file path fills the Linux server path input."""
+        window = self.create_window()
+        local_file = Path(self.temp_dir.name) / "update file.bin"
+        local_file.write_text("firmware", encoding="utf-8")
+        mime_data = QMimeData()
+        mime_data.setUrls([QUrl.fromLocalFile(str(local_file))])
+        drop_event = QDropEvent(
+            QPointF(1, 1),
+            Qt.DropAction.CopyAction,
+            mime_data,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+
+        window.server_path_input.dropEvent(drop_event)
+
+        self.assertEqual(window.server_path_input.text(), str(local_file))
+        self.assertTrue(drop_event.isAccepted())
 
     def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:
         """Open SFTP sends a board SFTP command through the connected shell."""

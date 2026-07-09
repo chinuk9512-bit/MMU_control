@@ -24,6 +24,7 @@ mmu-control
 - Full-screen commands such as `htop` use immediate key input, so `q` and `Ctrl+C` are sent without pressing Enter.
 - The SFTP tab uses its own SSH terminal and opens an SFTP session from the Linux server to the board. Closing it does not close the main Terminal tab.
 - `Server path` is a path on that Linux server, not a path on the Windows PC. `Board path` is the corresponding path on the board.
+- You can drag and drop a file into the `Server path` input to fill in a local PC path as an entry aid; use it only when that same path is accessible from the SSH Linux server, otherwise enter the Linux server path manually.
 - Use `Upload to Board` for SFTP `put` and `Download to Server` for SFTP `get`.
 
 ## Test

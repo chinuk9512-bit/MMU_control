@@ -7,7 +7,7 @@ import shlex
 import subprocess
 
 from PySide6.QtCore import QProcess, QTimer, Qt
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -42,6 +42,31 @@ from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.background_worker import TaskRunner, ThreadPoolTaskRunner
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
 from mmu_control.ui.terminal_widget import TerminalWidget
+
+
+class FileDropLineEdit(QLineEdit):
+    """Line edit that accepts local file paths via drag and drop."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        """Accept drags that contain at least one local file URL."""
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        if urls and urls[0].isLocalFile():
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        """Set the input text to the dropped local file path."""
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        if urls and urls[0].isLocalFile():
+            self.setText(urls[0].toLocalFile())
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -1097,15 +1122,19 @@ class MainWindow(QMainWindow):
         action_layout.addStretch(1)
 
         path_form = QFormLayout()
-        self.server_path_input = QLineEdit(self)
-        self.server_path_input.setPlaceholderText("Example: /home/user/firmware.bin")
+        self.server_path_input = FileDropLineEdit(self)
+        self.server_path_input.setPlaceholderText(
+            "Drag a local PC file here or enter a Linux server path manually."
+        )
         self.server_path_input.setToolTip(
-            "A source or destination path on the Linux server reached by the main SSH connection."
+            "SFTP uses a path on the SSH Linux server. Drag and drop only helps fill a "
+            "local PC file path; use it when that same path is accessible from the server, "
+            "or enter the server path manually."
         )
         self.board_path_input = QLineEdit(self)
         self.board_path_input.setPlaceholderText("Example: /tmp/firmware.bin")
         self.board_path_input.setToolTip("A source or destination path on the connected MMU.")
-        path_form.addRow("Server path", self.server_path_input)
+        path_form.addRow("Linux server path", self.server_path_input)
         path_form.addRow("MMU path", self.board_path_input)
 
         transfer_buttons = QWidget(self)
