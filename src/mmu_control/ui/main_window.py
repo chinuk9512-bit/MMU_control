@@ -533,13 +533,10 @@ class MainWindow(QMainWindow):
         if not 1 <= settings.ssh_port <= 65535:
             raise ValueError("MMU SSH port must be between 1 and 65535.")
         destination = settings.ip_address.strip()
-        if ":" in destination and not destination.startswith("["):
-            interface = settings.interface.strip()
-            if interface and "%" not in destination:
-                destination = f"{destination}%{interface}"
-            destination = f"[{destination}]"
-        command = ["ssh", "-p", str(settings.ssh_port), "-o", "StrictHostKeyChecking=no"]
-        command.append(f"{settings.username}@{destination}")
+        interface = settings.interface.strip()
+        if interface and "%" not in destination:
+            destination = f"{destination}%{interface}"
+        command = ["ssh", f"{settings.username.strip()}@{destination}", "-p", str(settings.ssh_port)]
         return " ".join(shlex.quote(part) for part in command)
 
     def _handle_mmu_ssh_auth(self, output: str) -> None:
