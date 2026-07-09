@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStatusBar,
     QTabWidget,
-    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -81,7 +80,6 @@ class MainWindow(QMainWindow):
         self.resize(1180, 760)
         self.setCentralWidget(self._build_central_widget())
         self.setStatusBar(self._build_status_bar())
-        self.addToolBar(self._build_toolbar())
         self._shell_timer = QTimer(self)
         self._shell_timer.setInterval(50)
         self._shell_timer.timeout.connect(self._poll_shell)
@@ -329,12 +327,12 @@ class MainWindow(QMainWindow):
             command = self._sftp_manager.build_command(settings)
         except SFTPError as exc:
             self._append_sftp_output(f"SFTP error: {exc}")
-            self.board_status_label.setText("Board: SFTP failed")
+            self.board_status_label.setText("MMU: SFTP failed")
             self.statusBar().showMessage("SFTP failed")
             return
         self.open_sftp_button.setEnabled(False)
         self._append_sftp_output(f"Opening SFTP session: {command}")
-        self.board_status_label.setText("Board: SFTP opening")
+        self.board_status_label.setText("MMU: SFTP opening")
         self.statusBar().showMessage("Opening SFTP session...")
         self._task_runner.submit(
             self._ssh_manager.open_shell,
@@ -367,7 +365,7 @@ class MainWindow(QMainWindow):
         self._append_sftp_output("SFTP session opened. You can type SFTP commands below.")
         self._sftp_timer.start()
         self._set_sftp_actions_enabled(True)
-        self.board_status_label.setText("Board: SFTP connected")
+        self.board_status_label.setText("MMU: SFTP connected")
         self.statusBar().showMessage("SFTP session opened")
         self._poll_sftp_shell()
 
@@ -406,7 +404,7 @@ class MainWindow(QMainWindow):
             self._sftp_manager.close_session(self._sftp_shell)
         self._close_sftp_shell()
         self._append_sftp_output("SFTP session closed. Main terminal remains connected.")
-        self.board_status_label.setText("Board: SFTP closed")
+        self.board_status_label.setText("MMU: SFTP closed")
         self.statusBar().showMessage("SFTP session closed")
 
     def _send_sftp_command(self, command: str) -> None:
@@ -515,7 +513,7 @@ class MainWindow(QMainWindow):
         self.terminal_widget.set_interactive_mode(True)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(True)
-        self.board_status_label.setText(f"Board: minicom on {self._selected_usb_port()}")
+        self.board_status_label.setText(f"MMU: minicom on {self._selected_usb_port()}")
         self.statusBar().showMessage("Opening minicom...")
 
     def _close_minicom(self) -> None:
@@ -525,7 +523,7 @@ class MainWindow(QMainWindow):
         self._leave_interactive_mode()
         self.close_minicom_button.setEnabled(False)
         self._update_minicom_button()
-        self.board_status_label.setText("Board: minicom closed")
+        self.board_status_label.setText("MMU: minicom closed")
         self.statusBar().showMessage("Closing minicom...")
 
     def _append_sftp_output(self, text: str) -> None:
@@ -764,13 +762,13 @@ class MainWindow(QMainWindow):
         message = str(error) or error.__class__.__name__
         self._append_sftp_output(f"SFTP error: {message}")
         self._close_sftp_shell()
-        self.board_status_label.setText("Board: SFTP failed")
+        self.board_status_label.setText("MMU: SFTP failed")
         self.statusBar().showMessage("SFTP failed")
 
     def _handle_sftp_closed(self, message: str) -> None:
         self._append_sftp_output(message)
         self._close_sftp_shell()
-        self.board_status_label.setText("Board: SFTP closed")
+        self.board_status_label.setText("MMU: SFTP closed")
 
     def _show_connection_error(self, error: Exception) -> None:
         self._shell_timer.stop()
@@ -821,22 +819,24 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._build_workspace(), stretch=1)
         return container
 
-    def _build_toolbar(self) -> QToolBar:
-        toolbar = QToolBar("Main", self)
-        toolbar.setMovable(False)
+    def _build_connection_buttons(self) -> QWidget:
+        buttons = QWidget(self)
+        layout = QHBoxLayout(buttons)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self.connect_button = QPushButton("Connect", self)
         self.disconnect_button = QPushButton("Disconnect", self)
         self.disconnect_button.setEnabled(False)
 
-        toolbar.addWidget(self.connect_button)
-        toolbar.addWidget(self.disconnect_button)
-        return toolbar
+        layout.addWidget(self.connect_button)
+        layout.addWidget(self.disconnect_button)
+        layout.addStretch(1)
+        return buttons
 
     def _build_status_bar(self) -> QStatusBar:
         status_bar = QStatusBar(self)
         self.connection_status_label = QLabel("SSH: disconnected", self)
-        self.board_status_label = QLabel("Board: not configured", self)
+        self.board_status_label = QLabel("MMU: not configured", self)
         status_bar.addPermanentWidget(self.connection_status_label)
         status_bar.addPermanentWidget(self.board_status_label)
         status_bar.showMessage("Ready")
@@ -876,15 +876,16 @@ class MainWindow(QMainWindow):
         layout.addRow("Port", self.ssh_port_input)
         layout.addRow("User", self.ssh_username_input)
         layout.addRow("Password", self.ssh_password_input)
+        layout.addRow(self._build_connection_buttons())
         return group
 
     def _build_board_group(self) -> QGroupBox:
-        group = QGroupBox("Board", self)
+        group = QGroupBox("MMU", self)
         layout = QFormLayout(group)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.board_ip_input = QLineEdit(self)
-        self.board_ip_input.setPlaceholderText("Board IP")
+        self.board_ip_input.setPlaceholderText("MMU IP")
         self.board_username_input = QLineEdit(self)
         self.board_username_input.setPlaceholderText("Username")
         self.board_password_input = QLineEdit(self)
@@ -992,14 +993,14 @@ class MainWindow(QMainWindow):
         )
         self.board_path_input = QLineEdit(self)
         self.board_path_input.setPlaceholderText("Example: /tmp/firmware.bin")
-        self.board_path_input.setToolTip("A source or destination path on the connected board.")
+        self.board_path_input.setToolTip("A source or destination path on the connected MMU.")
         path_form.addRow("Server path", self.server_path_input)
-        path_form.addRow("Board path", self.board_path_input)
+        path_form.addRow("MMU path", self.board_path_input)
 
         transfer_buttons = QWidget(self)
         transfer_button_layout = QHBoxLayout(transfer_buttons)
         transfer_button_layout.setContentsMargins(0, 0, 0, 0)
-        self.upload_sftp_button = QPushButton("Upload to Board", self)
+        self.upload_sftp_button = QPushButton("Upload to MMU", self)
         self.download_sftp_button = QPushButton("Download to Server", self)
         self.upload_sftp_button.setEnabled(False)
         self.download_sftp_button.setEnabled(False)
@@ -1009,7 +1010,7 @@ class MainWindow(QMainWindow):
 
         path_help = QLabel(
             "Server path: file on the SSH Linux server (example: /home/user/firmware.bin).  "
-            "Board path: file on the board (example: /tmp/firmware.bin).",
+            "MMU path: file on the MMU (example: /tmp/firmware.bin).",
             self,
         )
         path_help.setWordWrap(True)

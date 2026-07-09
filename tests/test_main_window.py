@@ -252,7 +252,7 @@ class MainWindowTest(unittest.TestCase):
             window.sftp_output.toPlainText(),
         )
         self.assertTrue(window.sftp_output.toPlainText().endswith("sftp> "))
-        self.assertEqual(window.board_status_label.text(), "Board: SFTP connected")
+        self.assertEqual(window.board_status_label.text(), "MMU: SFTP connected")
 
         window.server_path_input.setText("/tmp/update file.bin")
         window.board_path_input.setText("/opt/update.bin")
@@ -301,10 +301,10 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(manager.shell.sent, [])
         self.assertIn(
-            "SFTP error: Board IP address is required.",
+            "SFTP error: MMU IP address is required.",
             window.sftp_output.toPlainText(),
         )
-        self.assertEqual(window.board_status_label.text(), "Board: SFTP failed")
+        self.assertEqual(window.board_status_label.text(), "MMU: SFTP failed")
 
     def test_settings_are_loaded_and_saved_on_close(self) -> None:
         """Connection, board, USB, and window settings survive a restart."""
