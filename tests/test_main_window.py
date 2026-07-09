@@ -344,10 +344,7 @@ class MainWindowTest(unittest.TestCase):
             manager.shell.sent,
             [
                 "ssh -p 2222 -o StrictHostKeyChecking=no "
-                "-o UserKnownHostsFile=/dev/null "
-                "-o PubkeyAuthentication=no "
-                "-o PreferredAuthentications=password,keyboard-interactive "
-                "-o NumberOfPasswordPrompts=1 root@'[fe80::1%eth0]'"
+                "root@'[fe80::1%eth0]'"
             ],
         )
         self.assertFalse(window.mmu_ssh_connect_button.isEnabled())

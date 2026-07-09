@@ -538,21 +538,7 @@ class MainWindow(QMainWindow):
             if interface and "%" not in destination:
                 destination = f"{destination}%{interface}"
             destination = f"[{destination}]"
-        command = [
-            "ssh",
-            "-p",
-            str(settings.ssh_port),
-            "-o",
-            "StrictHostKeyChecking=no",
-            "-o",
-            "UserKnownHostsFile=/dev/null",
-            "-o",
-            "PubkeyAuthentication=no",
-            "-o",
-            "PreferredAuthentications=password,keyboard-interactive",
-            "-o",
-            "NumberOfPasswordPrompts=1",
-        ]
+        command = ["ssh", "-p", str(settings.ssh_port), "-o", "StrictHostKeyChecking=no"]
         command.append(f"{settings.username}@{destination}")
         return " ".join(shlex.quote(part) for part in command)
 
