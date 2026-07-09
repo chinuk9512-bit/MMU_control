@@ -77,7 +77,7 @@ class SFTPManagerTest(unittest.TestCase):
         self.assertEqual(channel.sent, ["yes\n"])
 
     def test_required_fields_are_validated(self) -> None:
-        """Board IP and username are required."""
+        """MMU IP and username are required."""
         manager = SFTPManager()
 
         with self.assertRaises(SFTPError):
