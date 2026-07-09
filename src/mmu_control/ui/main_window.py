@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         self._sftp_session_active = False
         self._minicom_session_active = False
         self._mmu_ssh_session_active = False
+        self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
         self._interactive_program = ""
         self._local_cwd = os.getcwd()
@@ -520,6 +521,7 @@ class MainWindow(QMainWindow):
         self._pending_echo = command
         self._echo_buffer = ""
         self._mmu_ssh_prompt_buffer = ""
+        self._mmu_ssh_auth_pending = True
         self._mmu_ssh_session_active = True
         self.mmu_ssh_connect_button.setEnabled(False)
         self.mmu_ssh_disconnect_button.setEnabled(True)
@@ -543,9 +545,10 @@ class MainWindow(QMainWindow):
     def _handle_mmu_ssh_auth(self, output: str) -> None:
         self._mmu_ssh_prompt_buffer = f"{self._mmu_ssh_prompt_buffer}{output}"[-512:]
         lower = self._mmu_ssh_prompt_buffer.lower()
-        if "password:" in lower:
+        if "password:" in lower and self._mmu_ssh_auth_pending:
             password = self.board_password_input.text()
             self._shell.send_line(password)
+            self._mmu_ssh_auth_pending = False
             self._mmu_ssh_prompt_buffer = ""
             self.terminal_widget.write_output("MMU SSH password sent.")
             self.board_status_label.setText("MMU: SSH connected")
@@ -554,6 +557,7 @@ class MainWindow(QMainWindow):
             self._shell.send_line("yes")
             self._mmu_ssh_prompt_buffer = ""
         elif "permission denied" in lower or "could not resolve" in lower or "connection refused" in lower:
+            self._mmu_ssh_auth_pending = False
             self.board_status_label.setText("MMU: SSH failed")
             self.statusBar().showMessage("MMU SSH failed")
         elif output:
@@ -563,6 +567,7 @@ class MainWindow(QMainWindow):
         if self._shell is not None and self._shell.is_open and self._mmu_ssh_session_active:
             self._shell.send_line("exit")
         self._mmu_ssh_session_active = False
+        self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
         self.mmu_ssh_connect_button.setEnabled(self._shell is not None and self._shell.is_open)
         self.mmu_ssh_disconnect_button.setEnabled(False)
@@ -820,6 +825,7 @@ class MainWindow(QMainWindow):
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(False)
         self._mmu_ssh_session_active = False
+        self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
         self.mmu_ssh_connect_button.setEnabled(False)
         self.mmu_ssh_disconnect_button.setEnabled(False)
