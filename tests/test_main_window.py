@@ -355,6 +355,28 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH disconnected")
 
+    def test_mmu_ssh_password_is_sent_only_for_initial_auth_prompt(self) -> None:
+        """MMU SSH password automation does not answer later shell password prompts."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_password_input.setText("secret")
+        window.board_interface_input.setText("eth0")
+        window._connect_ssh()
+        window.mmu_ssh_connect_button.click()
+
+        window._handle_mmu_ssh_auth("root@fe80::1's password:")
+        self.assertEqual(manager.shell.sent[-1], "secret")
+        sent_after_initial_auth = list(manager.shell.sent)
+
+        window._handle_mmu_ssh_auth("Password:")
+
+        self.assertEqual(manager.shell.sent, sent_after_initial_auth)
+        window.close()
+
     def test_remote_usb_refresh_and_minicom(self) -> None:
         """Remote serial ports can be discovered and opened with minicom."""
         manager = FakeSSHManager()
