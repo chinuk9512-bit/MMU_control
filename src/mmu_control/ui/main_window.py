@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 import posixpath
 import shlex
 import subprocess
 
-from PySide6.QtCore import QProcess, QTimer, Qt, Signal
-from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import QByteArray, QMimeData, QProcess, QTimer, Qt, Signal
+from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDragMoveEvent, QDropEvent, QDrag
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -74,6 +75,86 @@ class FileDropLineEdit(QLineEdit):
         super().dropEvent(event)
 
 
+class SftpFileListWidget(QListWidget):
+    """Draggable file list for one side of the SFTP transfer view."""
+
+    FILE_MIME_TYPE = "application/x-mmu-control-sftp-file"
+    fileDropped = Signal(str, str, str)
+
+    def __init__(self, side: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.side = side
+        self.current_directory = "/tmp"
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+
+    def startDrag(self, supported_actions: Qt.DropActions) -> None:  # noqa: N802
+        item = self.currentItem()
+        if item is None:
+            return
+        path = item.data(Qt.ItemDataRole.UserRole)
+        is_dir = item.data(Qt.ItemDataRole.UserRole + 1)
+        if not isinstance(path, str) or bool(is_dir):
+            return
+        payload = json.dumps({"side": self.side, "path": path}).encode("utf-8")
+        mime_data = QMimeData()
+        mime_data.setData(self.FILE_MIME_TYPE, QByteArray(payload))
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+        drag.exec(supported_actions, Qt.DropAction.CopyAction)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        if self._accepted_transfer(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+        if self._accepted_transfer(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        data = self._transfer_data(event.mimeData())
+        if data is None:
+            super().dropEvent(event)
+            return
+        source_side, source_path = data
+        target_directory = self._drop_target_directory(event)
+        self.fileDropped.emit(source_side, source_path, target_directory)
+        event.acceptProposedAction()
+
+    def _accepted_transfer(self, mime_data: QMimeData) -> bool:
+        data = self._transfer_data(mime_data)
+        return data is not None and data[0] != self.side
+
+    def _transfer_data(self, mime_data: QMimeData) -> tuple[str, str] | None:
+        if not mime_data.hasFormat(self.FILE_MIME_TYPE):
+            return None
+        try:
+            payload = json.loads(bytes(mime_data.data(self.FILE_MIME_TYPE)).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        side = payload.get("side")
+        path = payload.get("path")
+        if side not in {"server", "mmu"} or not isinstance(path, str) or not path:
+            return None
+        return side, path
+
+    def _drop_target_directory(self, event: QDropEvent) -> str:
+        item = self.itemAt(event.position().toPoint())
+        if item is None:
+            return self.current_directory
+        path = item.data(Qt.ItemDataRole.UserRole)
+        is_dir = item.data(Qt.ItemDataRole.UserRole + 1)
+        if isinstance(path, str) and bool(is_dir):
+            return path
+        return self.current_directory
+
+
 class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
 
@@ -98,6 +179,7 @@ class MainWindow(QMainWindow):
         self._pending_echo: str | None = None
         self._echo_buffer = ""
         self._sftp_pending_echo: str | None = None
+        self._sftp_pending_listing = False
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
         self._active_sftp_settings: BoardSettings | None = None
@@ -108,6 +190,8 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_prompt_buffer = ""
         self._interactive_program = ""
         self._local_cwd = os.getcwd()
+        self._server_sftp_directory = "/tmp/mmu_control_uploads"
+        self._mmu_sftp_directory = "/tmp"
         self._closing = False
         self.setWindowTitle("MMU Control")
         self.resize(1180, 760)
@@ -139,6 +223,10 @@ class MainWindow(QMainWindow):
         self.download_sftp_button.clicked.connect(self._download_sftp)
         self.close_sftp_button.clicked.connect(self._close_sftp_session)
         self.server_path_input.localFileDropped.connect(self._handle_sftp_file_drop)
+        self.server_file_list.fileDropped.connect(self._handle_sftp_list_drop)
+        self.mmu_file_list.fileDropped.connect(self._handle_sftp_list_drop)
+        self.server_file_list.itemDoubleClicked.connect(self._open_server_list_item)
+        self.mmu_file_list.itemDoubleClicked.connect(self._open_mmu_list_item)
         self.refresh_usb_button.clicked.connect(self._refresh_usb_ports)
         self.open_minicom_button.clicked.connect(self._open_minicom)
         self.close_minicom_button.clicked.connect(self._close_minicom)
@@ -402,6 +490,7 @@ class MainWindow(QMainWindow):
         self._sftp_session_active = True
         self._sftp_pending_echo = command
         self._sftp_echo_buffer = ""
+        self._sftp_pending_listing = False
         self._sftp_prompt_buffer = ""
         self.sftp_terminal.set_prompt("sftp> ")
         self._append_sftp_output("SFTP session opened. You can type SFTP commands below.")
@@ -409,6 +498,7 @@ class MainWindow(QMainWindow):
         self._set_sftp_actions_enabled(True)
         self.board_status_label.setText("MMU: SFTP connected")
         self.statusBar().showMessage("SFTP session opened")
+        self._refresh_sftp_file_lists()
         self._poll_sftp_shell()
 
     def _upload_sftp(self) -> None:
@@ -423,16 +513,23 @@ class MainWindow(QMainWindow):
             return
         try:
             if upload:
+                server_path = self._selected_file_path(self.server_file_list)
+                board_path = posixpath.join(self._mmu_sftp_directory, posixpath.basename(server_path))
                 command = self._sftp_manager.upload(
                     self._sftp_shell,
-                    self.server_path_input.text(),
-                    self.board_path_input.text(),
+                    server_path,
+                    board_path,
                 )
             else:
+                board_path = self._selected_file_path(self.mmu_file_list)
+                server_path = posixpath.join(
+                    self._server_sftp_directory,
+                    posixpath.basename(board_path),
+                )
                 command = self._sftp_manager.download(
                     self._sftp_shell,
-                    self.board_path_input.text(),
-                    self.server_path_input.text(),
+                    board_path,
+                    server_path,
                 )
         except SFTPError as exc:
             self._append_sftp_output(f"SFTP error: {exc}")
@@ -440,6 +537,133 @@ class MainWindow(QMainWindow):
         self._sftp_pending_echo = command
         self._sftp_echo_buffer = ""
         self._append_sftp_output(f"Running: {command}")
+
+    def _selected_file_path(self, file_list: SftpFileListWidget) -> str:
+        item = file_list.currentItem()
+        if item is None:
+            raise SFTPError("Select a file from the file list first.")
+        path = item.data(Qt.ItemDataRole.UserRole)
+        is_dir = bool(item.data(Qt.ItemDataRole.UserRole + 1))
+        if not isinstance(path, str) or is_dir:
+            raise SFTPError("Select a file, not a directory.")
+        return path
+
+    def _handle_sftp_list_drop(self, source_side: str, source_path: str, target_directory: str) -> None:
+        if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
+            self._append_sftp_output("Open an SFTP session first.")
+            return
+        destination = posixpath.join(target_directory, posixpath.basename(source_path))
+        try:
+            if source_side == "server":
+                command = self._sftp_manager.upload(self._sftp_shell, source_path, destination)
+            else:
+                command = self._sftp_manager.download(self._sftp_shell, source_path, destination)
+        except SFTPError as exc:
+            self._append_sftp_output(f"SFTP error: {exc}")
+            return
+        self._sftp_pending_echo = command
+        self._sftp_echo_buffer = ""
+        self._append_sftp_output(f"Running: {command}")
+        self.statusBar().showMessage("SFTP drag-and-drop transfer started")
+
+    def _refresh_sftp_file_lists(self) -> None:
+        self._refresh_server_file_list()
+        self._refresh_mmu_file_list()
+
+    def _refresh_server_file_list(self) -> None:
+        self.server_file_list.current_directory = self._server_sftp_directory
+        try:
+            output = self._ssh_manager.execute_command(
+                "find "
+                f"{shlex.quote(self._server_sftp_directory)} "
+                "-maxdepth 1 -mindepth 1 -printf '%y\\t%p\\n' 2>/dev/null"
+            )
+        except Exception as exc:
+            self._populate_file_list(
+                self.server_file_list,
+                [(False, f"Could not list server files: {exc}", "")],
+            )
+            return
+        entries = self._parse_find_listing(output)
+        self._populate_file_list(self.server_file_list, entries)
+
+    def _refresh_mmu_file_list(self) -> None:
+        self.mmu_file_list.current_directory = self._mmu_sftp_directory
+        if self._sftp_shell is None or not self._sftp_shell.is_open:
+            self._populate_file_list(self.mmu_file_list, [])
+            return
+        command = f"ls -la {shlex.quote(self._mmu_sftp_directory)}"
+        self._sftp_shell.send_line(command)
+        self._sftp_pending_echo = command
+        self._sftp_pending_listing = True
+        self._sftp_echo_buffer = ""
+        self._append_sftp_output(f"Listing MMU files: {command}")
+        self._populate_file_list(
+            self.mmu_file_list,
+            [(True, self._mmu_sftp_directory, self._mmu_sftp_directory)],
+        )
+
+    def _parse_find_listing(self, output: str) -> list[tuple[bool, str, str]]:
+        entries: list[tuple[bool, str, str]] = []
+        for line in output.splitlines():
+            if "\t" not in line:
+                continue
+            kind, path = line.split("\t", 1)
+            entries.append((kind == "d", posixpath.basename(path.rstrip("/")), path))
+        return entries
+
+    def _parse_sftp_listing(self, output: str) -> list[tuple[bool, str, str]]:
+        entries: list[tuple[bool, str, str]] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Listing MMU files:") or line.startswith("sftp>"):
+                continue
+            parts = line.split()
+            if len(parts) < 9 or parts[-1] in {".", ".."}:
+                continue
+            name = " ".join(parts[8:])
+            is_dir = parts[0].startswith("d")
+            path = posixpath.join(self._mmu_sftp_directory, name)
+            entries.append((is_dir, name, path))
+        return entries
+
+    def _populate_file_list(
+        self,
+        file_list: SftpFileListWidget,
+        entries: list[tuple[bool, str, str]],
+    ) -> None:
+        file_list.clear()
+        parent = posixpath.dirname(file_list.current_directory.rstrip("/")) or "/"
+        parent_item = QListWidgetItem("../")
+        parent_item.setData(Qt.ItemDataRole.UserRole, parent)
+        parent_item.setData(Qt.ItemDataRole.UserRole + 1, True)
+        file_list.addItem(parent_item)
+        for is_dir, name, path in sorted(entries, key=lambda entry: (not entry[0], entry[1].lower())):
+            if not name or not path:
+                item = QListWidgetItem(name)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
+            else:
+                item = QListWidgetItem(f"{name}/" if is_dir else name)
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                item.setData(Qt.ItemDataRole.UserRole + 1, is_dir)
+            file_list.addItem(item)
+
+    def _open_server_list_item(self, item: QListWidgetItem) -> None:
+        self._open_sftp_list_item(self.server_file_list, item)
+
+    def _open_mmu_list_item(self, item: QListWidgetItem) -> None:
+        self._open_sftp_list_item(self.mmu_file_list, item)
+
+    def _open_sftp_list_item(self, file_list: SftpFileListWidget, item: QListWidgetItem) -> None:
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if not bool(item.data(Qt.ItemDataRole.UserRole + 1)) or not isinstance(path, str):
+            return
+        if file_list.side == "server":
+            self._server_sftp_directory = path
+            self._refresh_server_file_list()
+        else:
+            self._mmu_sftp_directory = path
+            self._refresh_mmu_file_list()
 
     def _handle_sftp_file_drop(self, local_path: str) -> None:
         if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
@@ -851,6 +1075,9 @@ class MainWindow(QMainWindow):
                     )
         output = self._filter_sftp_echo(output)
         output = self._without_trailing_sftp_prompt(output)
+        if self._sftp_pending_listing and output.strip():
+            self._populate_file_list(self.mmu_file_list, self._parse_sftp_listing(output))
+            self._sftp_pending_listing = False
         if output:
             self.sftp_terminal.write_stream(output)
 
@@ -1199,8 +1426,8 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.close_sftp_button)
         action_layout.addStretch(1)
 
-        path_form = QFormLayout()
         self.server_path_input = FileDropLineEdit(self)
+        self.server_path_input.hide()
         self.server_path_input.setPlaceholderText(
             "Drag a local PC file here or enter a Linux server path manually."
         )
@@ -1210,10 +1437,29 @@ class MainWindow(QMainWindow):
             "or enter the server path manually."
         )
         self.board_path_input = QLineEdit(self)
+        self.board_path_input.hide()
         self.board_path_input.setPlaceholderText("Example: /tmp/firmware.bin")
         self.board_path_input.setToolTip("A source or destination path on the connected MMU.")
-        path_form.addRow("Linux server path", self.server_path_input)
-        path_form.addRow("MMU path", self.board_path_input)
+
+        file_lists = QWidget(self)
+        file_list_layout = QHBoxLayout(file_lists)
+        file_list_layout.setContentsMargins(0, 0, 0, 0)
+        server_column = QWidget(self)
+        server_layout = QVBoxLayout(server_column)
+        server_layout.setContentsMargins(0, 0, 0, 0)
+        self.server_file_list = SftpFileListWidget("server", self)
+        self.server_file_list.setToolTip("Linux server files. Drag a file to the MMU list to upload it.")
+        server_layout.addWidget(QLabel("Linux server files", self))
+        server_layout.addWidget(self.server_file_list)
+        mmu_column = QWidget(self)
+        mmu_layout = QVBoxLayout(mmu_column)
+        mmu_layout.setContentsMargins(0, 0, 0, 0)
+        self.mmu_file_list = SftpFileListWidget("mmu", self)
+        self.mmu_file_list.setToolTip("MMU files. Drag a file to the Linux server list to download it.")
+        mmu_layout.addWidget(QLabel("MMU files", self))
+        mmu_layout.addWidget(self.mmu_file_list)
+        file_list_layout.addWidget(server_column)
+        file_list_layout.addWidget(mmu_column)
 
         transfer_buttons = QWidget(self)
         transfer_button_layout = QHBoxLayout(transfer_buttons)
@@ -1227,8 +1473,9 @@ class MainWindow(QMainWindow):
         transfer_button_layout.addStretch(1)
 
         path_help = QLabel(
-            "Server path: file on the SSH Linux server (example: /home/user/firmware.bin).  "
-            "MMU path: file on the MMU (example: /tmp/firmware.bin).",
+            "Drag a file from Linux server files to MMU files to upload, or drag a file "
+            "from MMU files to Linux server files to download. Double-click a directory "
+            "to browse into it.",
             self,
         )
         path_help.setWordWrap(True)
@@ -1239,7 +1486,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(transfer_actions)
         layout.addWidget(path_help)
-        layout.addLayout(path_form)
+        layout.addWidget(file_lists, stretch=1)
         layout.addWidget(transfer_buttons)
         layout.addWidget(self.sftp_terminal, stretch=1)
         return tab
