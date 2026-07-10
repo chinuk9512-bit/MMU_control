@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_prompt_buffer = ""
         self._interactive_program = ""
         self._local_cwd = os.getcwd()
-        self._server_sftp_directory = "/tmp/mmu_control_uploads"
+        self._server_sftp_directory = os.path.expanduser("~")
         self._mmu_sftp_directory = "/tmp"
         self._closing = False
         self.setWindowTitle("MMU Control")
@@ -343,7 +343,19 @@ class MainWindow(QMainWindow):
         self.connection_status_label.setText("SSH: connected")
         self.statusBar().showMessage("Connected")
         self._shell_timer.start()
+        self._set_server_sftp_directory_to_home()
         self._poll_shell()
+
+    def _set_server_sftp_directory_to_home(self) -> None:
+        """Use the Linux server user home directory as the server file-list root."""
+        try:
+            home = self._ssh_manager.execute_command("printf '%s\n' \"$HOME\"").strip().splitlines()[0]
+        except Exception:
+            return
+        if home.startswith("/"):
+            self._server_sftp_directory = home
+            self.server_file_list.current_directory = home
+            self.server_current_path_input.setText(home)
 
     def _send_terminal_command(self, command: str) -> None:
         if self._shell is None or not self._shell.is_open:
@@ -1054,6 +1066,14 @@ class MainWindow(QMainWindow):
             self._show_sftp_error(exc)
             return
         if not output:
+            return
+        if self._sftp_manager.connection_failed(output):
+            self._append_sftp_output("SFTP connection failed. Check the connection settings and terminal output below.")
+            filtered_output = self._filter_sftp_echo(output)
+            filtered_output = self._without_trailing_sftp_prompt(filtered_output)
+            if filtered_output:
+                self.sftp_terminal.write_stream(filtered_output)
+            self._show_sftp_error(Exception("connection failed"))
             return
         settings = self._active_sftp_settings
         if settings is not None:
