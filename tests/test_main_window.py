@@ -32,6 +32,13 @@ class FakeShell:
         self.sent.append(command)
         if command.startswith("sftp "):
             self.output += f"{command}\r\nsftp> "
+        elif command.startswith("ls -la "):
+            self.output += (
+                f"{command}\r\n"
+                "drwxr-xr-x    2 root     root         4096 Jan  1 00:00 mmu-dir\r\n"
+                "-rw-r--r--    1 root     root           42 Jan  1 00:00 mmu-file.txt\r\n"
+                "sftp> "
+            )
         else:
             self.output += f"{command}\r\n/home/user\r\nuser@server:~$ "
         return len(command) + 1
@@ -90,7 +97,10 @@ class FakeSSHManager:
 
     def execute_command(self, command: str) -> str:
         self.executed_commands.append(command)
-        return ""
+        return (
+            "d\t/tmp/mmu_control_uploads/server-dir\n"
+            "f\t/tmp/mmu_control_uploads/server-file.txt\n"
+        )
 
     def upload_file(self, local_path: str, remote_path: str) -> None:
         self.uploaded_files.append((local_path, remote_path))
@@ -306,7 +316,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertIsNotNone(manager.sftp_shell)
         self.assertEqual(
             manager.sftp_shell.sent,
-            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]"],
+            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -la /tmp"],
         )
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
@@ -318,6 +328,17 @@ class MainWindowTest(unittest.TestCase):
         )
         self.assertTrue(window.sftp_output.toPlainText().endswith("sftp> "))
         self.assertEqual(window.board_status_label.text(), "MMU: SFTP connected")
+        self.assertEqual(
+            manager.executed_commands,
+            [
+                "find /tmp/mmu_control_uploads -maxdepth 1 -mindepth 1 "
+                "-printf '%y\\t%p\\n' 2>/dev/null"
+            ],
+        )
+        self.assertEqual(window.server_file_list.item(1).text(), "server-dir/")
+        self.assertEqual(window.server_file_list.item(2).text(), "server-file.txt")
+        self.assertEqual(window.mmu_file_list.item(1).text(), "mmu-dir/")
+        self.assertEqual(window.mmu_file_list.item(2).text(), "mmu-file.txt")
 
         window.server_path_input.setText("/tmp/update file.bin")
         window.board_path_input.setText("/opt/update.bin")
@@ -330,6 +351,7 @@ class MainWindowTest(unittest.TestCase):
             [
                 "rm -f ~/.ssh/known_hosts",
                 "sftp root@[fe80::1%eth0]",
+                "ls -la /tmp",
                 "ls",
                 "put '/tmp/update file.bin' /opt/update.bin",
                 "get /opt/update.bin '/tmp/update file.bin'",

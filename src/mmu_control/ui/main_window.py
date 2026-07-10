@@ -498,6 +498,7 @@ class MainWindow(QMainWindow):
         self._set_sftp_actions_enabled(True)
         self.board_status_label.setText("MMU: SFTP connected")
         self.statusBar().showMessage("SFTP session opened")
+        self._poll_sftp_shell()
         self._refresh_sftp_file_lists()
         self._poll_sftp_shell()
 
