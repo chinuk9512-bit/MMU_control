@@ -573,6 +573,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_server_file_list(self) -> None:
         self.server_file_list.current_directory = self._server_sftp_directory
+        self.server_current_path_input.setText(self._server_sftp_directory)
         try:
             output = self._ssh_manager.execute_command(
                 "find "
@@ -590,6 +591,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_mmu_file_list(self) -> None:
         self.mmu_file_list.current_directory = self._mmu_sftp_directory
+        self.mmu_current_path_input.setText(self._mmu_sftp_directory)
         if self._sftp_shell is None or not self._sftp_shell.is_open:
             self._populate_file_list(self.mmu_file_list, [])
             return
@@ -1451,6 +1453,10 @@ class MainWindow(QMainWindow):
         self.server_file_list = SftpFileListWidget("server", self)
         self.server_file_list.setToolTip("Linux server files. Drag a file to the MMU list to upload it.")
         server_layout.addWidget(QLabel("Linux server files", self))
+        self.server_current_path_input = QLineEdit(self._server_sftp_directory, self)
+        self.server_current_path_input.setReadOnly(True)
+        self.server_current_path_input.setToolTip("Current directory on the connected Linux server.")
+        server_layout.addWidget(self.server_current_path_input)
         server_layout.addWidget(self.server_file_list)
         mmu_column = QWidget(self)
         mmu_layout = QVBoxLayout(mmu_column)
@@ -1458,6 +1464,10 @@ class MainWindow(QMainWindow):
         self.mmu_file_list = SftpFileListWidget("mmu", self)
         self.mmu_file_list.setToolTip("MMU files. Drag a file to the Linux server list to download it.")
         mmu_layout.addWidget(QLabel("MMU files", self))
+        self.mmu_current_path_input = QLineEdit(self._mmu_sftp_directory, self)
+        self.mmu_current_path_input.setReadOnly(True)
+        self.mmu_current_path_input.setToolTip("Current directory on the connected MMU.")
+        mmu_layout.addWidget(self.mmu_current_path_input)
         mmu_layout.addWidget(self.mmu_file_list)
         file_list_layout.addWidget(server_column)
         file_list_layout.addWidget(mmu_column)

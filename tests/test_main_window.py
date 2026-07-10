@@ -162,6 +162,10 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.sftp_terminal.toPlainText(), f"{window._local_cwd}> ")
         self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_password_input.echoMode(), QLineEdit.EchoMode.Normal)
+        self.assertEqual(window.server_current_path_input.text(), "/tmp/mmu_control_uploads")
+        self.assertTrue(window.server_current_path_input.isReadOnly())
+        self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
+        self.assertTrue(window.mmu_current_path_input.isReadOnly())
         self.assertFalse(window.open_sftp_button.isEnabled())
         self.assertEqual(window.connection_status_label.text(), "SSH: disconnected")
 
@@ -339,6 +343,13 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.server_file_list.item(2).text(), "server-file.txt")
         self.assertEqual(window.mmu_file_list.item(1).text(), "mmu-dir/")
         self.assertEqual(window.mmu_file_list.item(2).text(), "mmu-file.txt")
+        self.assertEqual(window.server_current_path_input.text(), "/tmp/mmu_control_uploads")
+        self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
+
+        window._open_server_list_item(window.server_file_list.item(1))
+        self.assertEqual(window.server_current_path_input.text(), "/tmp/mmu_control_uploads/server-dir")
+        window._open_mmu_list_item(window.mmu_file_list.item(1))
+        self.assertEqual(window.mmu_current_path_input.text(), "/tmp/mmu-dir")
 
         window.server_path_input.setText("/tmp/update file.bin")
         window.board_path_input.setText("/opt/update.bin")
