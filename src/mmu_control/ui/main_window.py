@@ -194,7 +194,8 @@ class MainWindow(QMainWindow):
         self._mmu_sftp_directory = "/tmp"
         self._closing = False
         self.setWindowTitle("MMU Control")
-        self.resize(1180, 760)
+        self.resize(1180, 900)
+        self.setMinimumSize(1000, 820)
         self.setCentralWidget(self._build_central_widget())
         self.setStatusBar(self._build_status_bar())
         self._shell_timer = QTimer(self)
@@ -1397,6 +1398,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(10, 10, 10, 10)
         self.terminal_widget = TerminalWidget(prompt=self._local_prompt())
+        self.terminal_widget.setMinimumHeight(520)
         layout.addWidget(self.terminal_widget, stretch=1)
         return tab
 
@@ -1424,13 +1426,15 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.run_command_set_button)
 
         self.command_set_output = QPlainTextEdit(self)
+        self.command_set_output.setMinimumHeight(320)
         self.command_set_output.setReadOnly(True)
         self.command_set_output.setPlaceholderText("Command sets will be listed here.")
 
         layout.addWidget(button_row)
         self.command_set_list = QListWidget(self)
-        layout.addWidget(self.command_set_list)
-        layout.addWidget(self.command_set_output, stretch=1)
+        self.command_set_list.setMinimumHeight(220)
+        layout.addWidget(self.command_set_list, stretch=1)
+        layout.addWidget(self.command_set_output, stretch=2)
         return tab
 
     def _build_transfer_tab(self) -> QWidget:
@@ -1471,6 +1475,7 @@ class MainWindow(QMainWindow):
         server_layout = QVBoxLayout(server_column)
         server_layout.setContentsMargins(0, 0, 0, 0)
         self.server_file_list = SftpFileListWidget("server", self)
+        self.server_file_list.setMinimumHeight(360)
         self.server_file_list.setToolTip("Linux server files. Drag a file to the MMU list to upload it.")
         server_layout.addWidget(QLabel("Linux server files", self))
         self.server_current_path_input = QLineEdit(self._server_sftp_directory, self)
@@ -1482,6 +1487,7 @@ class MainWindow(QMainWindow):
         mmu_layout = QVBoxLayout(mmu_column)
         mmu_layout.setContentsMargins(0, 0, 0, 0)
         self.mmu_file_list = SftpFileListWidget("mmu", self)
+        self.mmu_file_list.setMinimumHeight(360)
         self.mmu_file_list.setToolTip("MMU files. Drag a file to the Linux server list to download it.")
         mmu_layout.addWidget(QLabel("MMU files", self))
         self.mmu_current_path_input = QLineEdit(self._mmu_sftp_directory, self)
@@ -1512,12 +1518,13 @@ class MainWindow(QMainWindow):
         path_help.setWordWrap(True)
 
         self.sftp_terminal = TerminalWidget(prompt=self._local_prompt())
+        self.sftp_terminal.setMinimumHeight(260)
         self.sftp_terminal.setPlaceholderText("The independent SFTP terminal appears here.")
         self.sftp_output = self.sftp_terminal
 
         layout.addWidget(transfer_actions)
         layout.addWidget(path_help)
-        layout.addWidget(file_lists, stretch=1)
+        layout.addWidget(file_lists, stretch=3)
         layout.addWidget(transfer_buttons)
         layout.addWidget(self.sftp_terminal, stretch=1)
         return tab
