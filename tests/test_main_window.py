@@ -335,6 +335,29 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn(f"put '{server_path}' '/tmp/update file.bin'", manager.sftp_shell.sent)
         self.assertTrue(drop_event.isAccepted())
 
+    def test_mmu_sftp_symlink_directory_opens_target(self) -> None:
+        """MMU listings parse symlink names and allow directory symlinks to open."""
+        window = self.create_window()
+        shell = FakeShell()
+        window._sftp_shell = shell
+        window._sftp_session_active = True
+        window._mmu_sftp_directory = "/tmp"
+        window.mmu_file_list.current_directory = "/tmp"
+
+        entries = window._parse_sftp_listing(
+            "lrwxrwxrwx    1 root     root           12 Jan  1 00:00 link -> /target\r\n"
+        )
+        window._populate_file_list(window.mmu_file_list, entries)
+
+        link_item = window.mmu_file_list.item(1)
+        self.assertEqual(link_item.text(), "link/")
+
+        window._open_mmu_list_item(link_item)
+
+        self.assertEqual(window._mmu_sftp_directory, "/target")
+        self.assertIn("ls -ldL /tmp/link", shell.sent)
+        self.assertIn("ls -la /target", shell.sent)
+
     def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:
         """Open SFTP sends a board SFTP command through the connected shell."""
         manager = FakeSSHManager()

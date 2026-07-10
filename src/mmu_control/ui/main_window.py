@@ -7,6 +7,7 @@ import os
 import posixpath
 import shlex
 import subprocess
+from dataclasses import dataclass
 
 from PySide6.QtCore import QByteArray, QMimeData, QProcess, QTimer, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDragMoveEvent, QDropEvent, QDrag
@@ -44,6 +45,23 @@ from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.background_worker import TaskRunner, ThreadPoolTaskRunner
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
 from mmu_control.ui.terminal_widget import TerminalWidget
+
+
+@dataclass(frozen=True)
+class SftpListEntry:
+    """Entry shown in an SFTP file list."""
+
+    is_dir: bool
+    name: str
+    path: str
+    is_link: bool = False
+    link_target: str | None = None
+    navigate_path: str | None = None
+
+    @classmethod
+    def from_tuple(cls, entry: tuple[bool, str, str]) -> "SftpListEntry":
+        is_dir, name, path = entry
+        return cls(is_dir=is_dir, name=name, path=path)
 
 
 class FileDropLineEdit(QLineEdit):
@@ -619,49 +637,94 @@ class MainWindow(QMainWindow):
             [(True, self._mmu_sftp_directory, self._mmu_sftp_directory)],
         )
 
-    def _parse_find_listing(self, output: str) -> list[tuple[bool, str, str]]:
-        entries: list[tuple[bool, str, str]] = []
+    def _parse_find_listing(self, output: str) -> list[SftpListEntry]:
+        entries: list[SftpListEntry] = []
         for line in output.splitlines():
             if "\t" not in line:
                 continue
             kind, path = line.split("\t", 1)
-            entries.append((kind == "d", posixpath.basename(path.rstrip("/")), path))
+            entries.append(SftpListEntry(kind == "d", posixpath.basename(path.rstrip("/")), path))
         return entries
 
-    def _parse_sftp_listing(self, output: str) -> list[tuple[bool, str, str]]:
-        entries: list[tuple[bool, str, str]] = []
+    def _parse_sftp_listing(self, output: str) -> list[SftpListEntry]:
+        entries: list[SftpListEntry] = []
         for line in output.splitlines():
             line = line.strip()
             if not line or line.startswith("Listing MMU files:") or line.startswith("sftp>"):
                 continue
-            parts = line.split()
-            if len(parts) < 9 or parts[-1] in {".", ".."}:
+            parts = line.split(maxsplit=8)
+            if len(parts) < 9:
                 continue
-            name = " ".join(parts[8:])
+            raw_name = parts[8]
+            is_link = parts[0].startswith("l")
+            name, link_target = self._split_sftp_link_name(raw_name) if is_link else (raw_name, None)
+            if name in {".", ".."}:
+                continue
             is_dir = parts[0].startswith("d")
             path = posixpath.join(self._mmu_sftp_directory, name)
-            entries.append((is_dir, name, path))
+            navigate_path = self._sftp_link_navigation_path(path, link_target) if is_link else path
+            if is_link:
+                is_dir = self._sftp_link_points_to_directory(path)
+            entries.append(SftpListEntry(is_dir, name, path, is_link, link_target, navigate_path))
         return entries
+
+    def _split_sftp_link_name(self, raw_name: str) -> tuple[str, str | None]:
+        name, separator, target = raw_name.partition(" -> ")
+        if not separator:
+            return raw_name, None
+        return name, target or None
+
+    def _sftp_link_navigation_path(self, link_path: str, link_target: str | None) -> str:
+        if not link_target or not link_target.startswith("/"):
+            return link_path
+        return link_target
+
+    def _sftp_link_points_to_directory(self, link_path: str) -> bool:
+        if self._sftp_shell is None or not self._sftp_shell.is_open:
+            return False
+        try:
+            self._sftp_shell.send_line(f"ls -ldL {shlex.quote(link_path)}")
+        except Exception:
+            try:
+                self._sftp_shell.send_line(f"cd {shlex.quote(link_path)}")
+            except Exception:
+                return False
+        return True
+
+    def _coerce_file_entry(self, entry: SftpListEntry | tuple[bool, str, str]) -> SftpListEntry:
+        if isinstance(entry, SftpListEntry):
+            return entry
+        return SftpListEntry.from_tuple(entry)
 
     def _populate_file_list(
         self,
         file_list: SftpFileListWidget,
-        entries: list[tuple[bool, str, str]],
+        entries: list[SftpListEntry | tuple[bool, str, str]],
     ) -> None:
         file_list.clear()
         parent = posixpath.dirname(file_list.current_directory.rstrip("/")) or "/"
         parent_item = QListWidgetItem("../")
         parent_item.setData(Qt.ItemDataRole.UserRole, parent)
         parent_item.setData(Qt.ItemDataRole.UserRole + 1, True)
+        parent_item.setData(Qt.ItemDataRole.UserRole + 2, False)
+        parent_item.setData(Qt.ItemDataRole.UserRole + 3, None)
+        parent_item.setData(Qt.ItemDataRole.UserRole + 4, parent)
         file_list.addItem(parent_item)
-        for is_dir, name, path in sorted(entries, key=lambda entry: (not entry[0], entry[1].lower())):
-            if not name or not path:
-                item = QListWidgetItem(name)
+        sorted_entries = sorted(
+            (self._coerce_file_entry(entry) for entry in entries),
+            key=lambda entry: (not entry.is_dir, entry.name.lower()),
+        )
+        for entry in sorted_entries:
+            if not entry.name or not entry.path:
+                item = QListWidgetItem(entry.name)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
             else:
-                item = QListWidgetItem(f"{name}/" if is_dir else name)
-                item.setData(Qt.ItemDataRole.UserRole, path)
-                item.setData(Qt.ItemDataRole.UserRole + 1, is_dir)
+                item = QListWidgetItem(f"{entry.name}/" if entry.is_dir else entry.name)
+                item.setData(Qt.ItemDataRole.UserRole, entry.path)
+                item.setData(Qt.ItemDataRole.UserRole + 1, entry.is_dir)
+                item.setData(Qt.ItemDataRole.UserRole + 2, entry.is_link)
+                item.setData(Qt.ItemDataRole.UserRole + 3, entry.link_target)
+                item.setData(Qt.ItemDataRole.UserRole + 4, entry.navigate_path or entry.path)
             file_list.addItem(item)
 
     def _open_server_list_item(self, item: QListWidgetItem) -> None:
@@ -672,13 +735,16 @@ class MainWindow(QMainWindow):
 
     def _open_sftp_list_item(self, file_list: SftpFileListWidget, item: QListWidgetItem) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)
-        if not bool(item.data(Qt.ItemDataRole.UserRole + 1)) or not isinstance(path, str):
+        navigate_path = item.data(Qt.ItemDataRole.UserRole + 4)
+        is_dir = bool(item.data(Qt.ItemDataRole.UserRole + 1))
+        if not is_dir or not isinstance(path, str):
             return
+        destination = navigate_path if isinstance(navigate_path, str) and navigate_path else path
         if file_list.side == "server":
-            self._server_sftp_directory = path
+            self._server_sftp_directory = destination
             self._refresh_server_file_list()
         else:
-            self._mmu_sftp_directory = path
+            self._mmu_sftp_directory = destination
             self._refresh_mmu_file_list()
 
     def _handle_sftp_file_drop(self, local_path: str) -> None:
