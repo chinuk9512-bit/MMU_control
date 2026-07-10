@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import time
@@ -96,14 +97,46 @@ class FakeSSHManager:
         return ["/dev/ttyACM0", "/dev/ttyUSB0"]
 
     def execute_command(self, command: str) -> str:
+        if command == "printf '%s\n' \"$HOME\"":
+            return "/home/user\n"
         self.executed_commands.append(command)
         return (
-            "d\t/tmp/mmu_control_uploads/server-dir\n"
-            "f\t/tmp/mmu_control_uploads/server-file.txt\n"
+            "d\t/home/user/server-dir\n"
+            "f\t/home/user/server-file.txt\n"
         )
 
     def upload_file(self, local_path: str, remote_path: str) -> None:
         self.uploaded_files.append((local_path, remote_path))
+
+
+class FailingSftpShell(FakeShell):
+    """SFTP shell fake that reports a failed SFTP connection."""
+
+    def send_line(self, command: str) -> int:
+        self.sent.append(command)
+        if command.startswith("sftp "):
+            self.output += (
+                f"{command}\r\n"
+                "ssh: connect to host fe80::1 port 22: Connection refused\r\n"
+                "Connection closed.\r\n"
+                "user@server:~$ "
+            )
+        else:
+            self.output += f"{command}\r\n"
+        return len(command) + 1
+
+
+class FailingSftpSSHManager(FakeSSHManager):
+    """SSH manager fake whose SFTP shell cannot connect to the board."""
+
+    def open_shell(self) -> FakeShell:
+        if self._shell_open_count == 0:
+            result = self.shell
+        else:
+            self.sftp_shell = FailingSftpShell()
+            result = self.sftp_shell
+        self._shell_open_count += 1
+        return result
 
 
 class ImmediateTaskRunner:
@@ -162,7 +195,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.sftp_terminal.toPlainText(), f"{window._local_cwd}> ")
         self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_password_input.echoMode(), QLineEdit.EchoMode.Normal)
-        self.assertEqual(window.server_current_path_input.text(), "/tmp/mmu_control_uploads")
+        self.assertEqual(window.server_current_path_input.text(), os.path.expanduser("~"))
         self.assertTrue(window.server_current_path_input.isReadOnly())
         self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
         self.assertTrue(window.mmu_current_path_input.isReadOnly())
@@ -335,7 +368,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(
             manager.executed_commands,
             [
-                "find /tmp/mmu_control_uploads -maxdepth 1 -mindepth 1 "
+                "find /home/user -maxdepth 1 -mindepth 1 "
                 "-printf '%y\\t%p\\n' 2>/dev/null"
             ],
         )
@@ -343,11 +376,11 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.server_file_list.item(2).text(), "server-file.txt")
         self.assertEqual(window.mmu_file_list.item(1).text(), "mmu-dir/")
         self.assertEqual(window.mmu_file_list.item(2).text(), "mmu-file.txt")
-        self.assertEqual(window.server_current_path_input.text(), "/tmp/mmu_control_uploads")
+        self.assertEqual(window.server_current_path_input.text(), "/home/user")
         self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
 
         window._open_server_list_item(window.server_file_list.item(1))
-        self.assertEqual(window.server_current_path_input.text(), "/tmp/mmu_control_uploads/server-dir")
+        self.assertEqual(window.server_current_path_input.text(), "/home/user/server-dir")
         window._open_mmu_list_item(window.mmu_file_list.item(1))
         self.assertEqual(window.mmu_current_path_input.text(), "/tmp/mmu-dir")
 
@@ -385,6 +418,25 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn(window._local_cwd, window.sftp_terminal.toPlainText())
         self.assertEqual(window.sftp_terminal.toPlainText().splitlines()[-1], f"{window._local_cwd}> ")
         self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
+
+    def test_open_sftp_reports_connection_failure_in_terminal(self) -> None:
+        """Failed SFTP startup reports failure instead of leaving a misleading prompt."""
+        manager = FailingSftpSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+
+        self.assertIn("SFTP connection failed.", window.sftp_output.toPlainText())
+        self.assertIn("Connection refused", window.sftp_output.toPlainText())
+        self.assertEqual(window.board_status_label.text(), "MMU: SFTP failed")
+        self.assertFalse(window.close_sftp_button.isEnabled())
+        self.assertEqual(window.sftp_terminal._prompt, window._local_prompt())
 
     def test_open_sftp_reports_missing_board_ip(self) -> None:
         """Open SFTP surfaces validation errors instead of doing nothing."""

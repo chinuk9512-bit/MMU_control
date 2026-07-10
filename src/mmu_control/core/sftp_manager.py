@@ -20,6 +20,18 @@ class SFTPManager:
     AUTHENTICITY_PROMPT = "authenticity of host"
     AUTHENTICITY_RESPONSE_PROMPT = "yes/no"
     KNOWN_HOSTS_CLEANUP_COMMAND = "rm -f ~/.ssh/known_hosts"
+    CONNECTION_FAILURE_PATTERNS = (
+        "connection refused",
+        "connection timed out",
+        "connection closed",
+        "could not resolve hostname",
+        "name or service not known",
+        "no route to host",
+        "network is unreachable",
+        "permission denied",
+        "host key verification failed",
+        "lost connection",
+    )
 
     def build_command(self, settings: BoardSettings) -> str:
         """Build the Linux-side SFTP command for the MMU settings."""
@@ -56,6 +68,11 @@ class SFTPManager:
         if not settings.password:
             return False
         return shell.respond_to_prompt(output, self.PASSWORD_PROMPT, settings.password)
+
+    def connection_failed(self, output: str) -> bool:
+        """Return whether SFTP startup output contains a connection failure."""
+        output_lower = output.lower()
+        return any(pattern in output_lower for pattern in self.CONNECTION_FAILURE_PATTERNS)
 
     def upload(self, shell: InteractiveShell, server_path: str, board_path: str) -> str:
         """Upload a Linux-server file to the MMU in an open SFTP session."""
