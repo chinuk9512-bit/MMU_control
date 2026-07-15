@@ -256,6 +256,10 @@ class MainWindow(QMainWindow):
         self._sftp_timer = QTimer(self)
         self._sftp_timer.setInterval(50)
         self._sftp_timer.timeout.connect(self._poll_sftp_shell)
+        self._sftp_startup_timeout_timer = QTimer(self)
+        self._sftp_startup_timeout_timer.setSingleShot(True)
+        self._sftp_startup_timeout_timer.setInterval(3000)
+        self._sftp_startup_timeout_timer.timeout.connect(self._handle_sftp_startup_timeout)
         self._wire_events()
         self._load_command_sets()
         self._load_settings()
@@ -415,6 +419,9 @@ class MainWindow(QMainWindow):
         if self._shell is None or not self._shell.is_open:
             self._run_local_terminal_command(command)
             return
+        if command.strip().lower() in {"clear", "cls"}:
+            self.terminal_widget.clear_terminal()
+            return
         try:
             self._shell.send_line(command)
             self._interactive_program = self._interactive_program_name(command)
@@ -562,6 +569,7 @@ class MainWindow(QMainWindow):
         self.sftp_terminal.set_prompt("")
         self._append_sftp_output("SFTP session opening. Waiting for the remote sftp prompt...")
         self._sftp_timer.start()
+        self._sftp_startup_timeout_timer.start()
         self._set_sftp_actions_enabled(False)
         self.board_status_label.setText("MMU: SFTP opening")
         self.statusBar().showMessage("Opening SFTP session...")
@@ -1004,11 +1012,19 @@ class MainWindow(QMainWindow):
             self._shell.send_line("yes")
             self._mmu_ssh_prompt_buffer = ""
         elif "permission denied" in lower or "could not resolve" in lower or "connection refused" in lower:
-            self._mmu_ssh_auth_pending = False
-            self.board_status_label.setText("MMU: SSH failed")
-            self.statusBar().showMessage("MMU SSH failed")
+            self._mark_mmu_ssh_failed()
         elif output:
             self.board_status_label.setText("MMU: SSH connected")
+
+    def _mark_mmu_ssh_failed(self) -> None:
+        """Reset MMU SSH controls after the nested SSH command fails."""
+        self._mmu_ssh_session_active = False
+        self._mmu_ssh_auth_pending = False
+        self._mmu_ssh_prompt_buffer = ""
+        self.mmu_ssh_connect_button.setEnabled(self._shell is not None and self._shell.is_open)
+        self.mmu_ssh_disconnect_button.setEnabled(False)
+        self.board_status_label.setText("MMU: SSH failed")
+        self.statusBar().showMessage("MMU SSH failed")
 
     def _disconnect_mmu_ssh(self) -> None:
         if self._shell is not None and self._shell.is_open and self._mmu_ssh_session_active:
@@ -1226,6 +1242,7 @@ class MainWindow(QMainWindow):
 
     def _mark_sftp_connected(self) -> None:
         """Enable SFTP controls only after the remote prompt confirms startup."""
+        self._sftp_startup_timeout_timer.stop()
         self._sftp_startup_pending = False
         self._sftp_session_active = True
         self.sftp_terminal.set_prompt("sftp> ")
@@ -1234,6 +1251,14 @@ class MainWindow(QMainWindow):
         self.board_status_label.setText("MMU: SFTP connected")
         self.statusBar().showMessage("SFTP session opened")
         self._refresh_sftp_file_lists()
+
+
+    def _handle_sftp_startup_timeout(self) -> None:
+        """Fail SFTP startup when the remote prompt does not appear quickly."""
+        if not self._sftp_startup_pending:
+            return
+        self._append_sftp_output("SFTP connection failed: no response within 3 seconds.")
+        self._show_sftp_error(Exception("connection timed out after 3 seconds"))
 
     def _without_trailing_sftp_prompt(self, output: str) -> str:
         """Drop remote SFTP prompts because the widget already shows one locally."""
@@ -1316,6 +1341,7 @@ class MainWindow(QMainWindow):
 
     def _close_sftp_shell(self) -> None:
         self._sftp_timer.stop()
+        self._sftp_startup_timeout_timer.stop()
         if self._sftp_shell is not None:
             self._sftp_shell.close()
             self._sftp_shell = None
