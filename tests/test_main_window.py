@@ -11,12 +11,18 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
-from PySide6.QtGui import QDropEvent
+from PySide6.QtGui import QDropEvent, QValidator
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 from mmu_control.core.config_manager import ConfigManager
 from mmu_control.models.command_set import CommandSet
-from mmu_control.models.settings import AppSettings, BoardSettings, SSHSettings, WindowSettings
+from mmu_control.models.settings import (
+    AppSettings,
+    BoardSettings,
+    PowerSupplySettings,
+    SSHSettings,
+    WindowSettings,
+)
 from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.main_window import MainWindow
 
@@ -236,6 +242,17 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(window.mmu_current_path_input.isReadOnly())
         self.assertFalse(window.open_sftp_button.isEnabled())
         self.assertEqual(window.connection_status_label.text(), "SSH: disconnected")
+        self.assertEqual(window.power_supply_group.title(), "Power Supply")
+        self.assertEqual(window.power_supply_ip_input.placeholderText(), "Power Supply IPv4")
+        self.assertIsNotNone(window.power_supply_ip_input.validator())
+        valid_state = window.power_supply_ip_input.validator().validate("192.168.0.100", 13)[0]
+        invalid_state = window.power_supply_ip_input.validator().validate("fe80::1", 7)[0]
+        self.assertEqual(valid_state, QValidator.State.Acceptable)
+        self.assertNotEqual(invalid_state, QValidator.State.Acceptable)
+        self.assertEqual(window.power_on_button.text(), "ON")
+        self.assertEqual(window.power_off_button.text(), "OFF")
+        self.assertEqual(window.power_status_button.text(), "Status")
+        self.assertEqual(window.power_all_status_button.text(), "All Status")
 
     def test_connection_groups_toggle_content_visibility_without_disabling_state(self) -> None:
         """Collapsible connection groups hide content while preserving control state."""
@@ -248,6 +265,10 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.ssh_group_content.isHidden())
         self.assertTrue(window.mmu_group.isChecked())
         self.assertFalse(window.mmu_group_content.isHidden())
+
+        self.assertEqual(window.ssh_group.title(), "SSH Server")
+        self.assertEqual(window.power_supply_group.title(), "Power Supply")
+        self.assertEqual(window.mmu_group.title(), "MMU")
 
         window.ssh_group.setChecked(False)
         window.mmu_group.setChecked(False)
@@ -590,6 +611,7 @@ class MainWindowTest(unittest.TestCase):
                     username="root",
                     usb_port="/dev/ttyUSB0",
                 ),
+                power_supply=PowerSupplySettings(ip_address="192.168.0.100"),
                 window=WindowSettings(ssh_group_expanded=False, mmu_group_expanded=True),
             )
         )
@@ -600,6 +622,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.board_ip_version_combo.currentText(), "IPv6")
         self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
         self.assertEqual(window.usb_port_combo.currentText(), "/dev/ttyUSB0")
+        self.assertEqual(window.power_supply_ip_input.text(), "192.168.0.100")
         self.assertFalse(window.ssh_group.isChecked())
         self.assertTrue(window.ssh_group_content.isHidden())
         self.assertTrue(window.mmu_group.isChecked())
@@ -609,6 +632,7 @@ class MainWindowTest(unittest.TestCase):
         window.board_ip_version_combo.setCurrentText("IPv4")
         window.board_ip_input.setText("192.168.0.10")
         window.board_interface_input.setText("eth0")
+        window.power_supply_ip_input.setText("192.168.0.101")
         window.close()
 
         saved_settings = config.load()
@@ -616,6 +640,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(saved_board.interface, "eth0")
         self.assertEqual(saved_board.ip_version, "IPv4")
         self.assertEqual(saved_board.ip_address, "192.168.0.10")
+        self.assertEqual(saved_settings.power_supply.ip_address, "192.168.0.101")
         self.assertTrue(saved_settings.window.ssh_group_expanded)
         self.assertFalse(saved_settings.window.mmu_group_expanded)
 

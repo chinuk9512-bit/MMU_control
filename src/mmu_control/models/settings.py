@@ -36,6 +36,22 @@ class SSHSettings:
 
 
 @dataclass(slots=True)
+class PowerSupplySettings:
+    """Power supply connection settings."""
+
+    ip_address: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PowerSupplySettings:
+        """Create power supply settings from JSON-compatible data."""
+        return cls(ip_address=str(data.get("ip_address", "")))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert power supply settings to JSON-compatible data."""
+        return {"ip_address": self.ip_address}
+
+
+@dataclass(slots=True)
 class BoardSettings:
     """Board connection settings used by SFTP and terminal workflows."""
 
@@ -115,6 +131,7 @@ class AppSettings:
     schema_version: int = 1
     ssh: SSHSettings = field(default_factory=SSHSettings)
     board: BoardSettings = field(default_factory=BoardSettings)
+    power_supply: PowerSupplySettings = field(default_factory=PowerSupplySettings)
     window: WindowSettings = field(default_factory=WindowSettings)
     active_profile: str = "default"
 
@@ -125,6 +142,7 @@ class AppSettings:
             schema_version=int(data.get("schema_version", 1)),
             ssh=SSHSettings.from_dict(data.get("ssh", {})),
             board=BoardSettings.from_dict(data.get("board", {})),
+            power_supply=PowerSupplySettings.from_dict(data.get("power_supply", {})),
             window=WindowSettings.from_dict(data.get("window", {})),
             active_profile=str(data.get("active_profile", "default")),
         )
@@ -135,6 +153,7 @@ class AppSettings:
             "schema_version": self.schema_version,
             "ssh": self.ssh.to_dict(),
             "board": self.board.to_dict(),
+            "power_supply": self.power_supply.to_dict(),
             "window": self.window.to_dict(),
             "active_profile": self.active_profile,
         }
