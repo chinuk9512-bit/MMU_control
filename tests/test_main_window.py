@@ -544,19 +544,63 @@ class MainWindowTest(unittest.TestCase):
         config.save(
             AppSettings(
                 ssh=SSHSettings(host="server", port=2200, username="user", password="pw"),
-                board=BoardSettings(ip_address="10.0.0.2", username="root", usb_port="/dev/ttyUSB0"),
+                board=BoardSettings(
+                    ip_address="fe80::1",
+                    ip_version="IPv6",
+                    username="root",
+                    usb_port="/dev/ttyUSB0",
+                ),
             )
         )
         window = self.create_window(config_manager=config)
 
         self.assertEqual(window.ssh_host_input.text(), "server")
         self.assertEqual(window.ssh_port_input.value(), 2200)
+        self.assertEqual(window.board_ip_version_combo.currentText(), "IPv6")
+        self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
         self.assertEqual(window.usb_port_combo.currentText(), "/dev/ttyUSB0")
 
+        window.board_ip_version_combo.setCurrentText("IPv4")
+        window.board_ip_input.setText("192.168.0.10")
         window.board_interface_input.setText("eth0")
         window.close()
 
-        self.assertEqual(config.load().board.interface, "eth0")
+        saved_board = config.load().board
+        self.assertEqual(saved_board.interface, "eth0")
+        self.assertEqual(saved_board.ip_version, "IPv4")
+        self.assertEqual(saved_board.ip_address, "192.168.0.10")
+
+    def test_board_ip_version_combo_updates_placeholder_and_settings(self) -> None:
+        """IP version choice updates placeholders and is included in board settings."""
+        window = self.create_window()
+
+        self.assertEqual(window.board_ip_version_combo.currentText(), "IPv4")
+        self.assertEqual(window.board_ip_input.placeholderText(), "192.168.0.10")
+
+        window.board_ip_version_combo.setCurrentText("IPv6")
+
+        self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
+        self.assertEqual(window._board_settings().ip_version, "IPv6")
+
+    def test_board_ip_version_does_not_change_ipv6_interface_commands(self) -> None:
+        """The saved IP version does not interfere with IPv6 link-local command suffixes."""
+        window = self.create_window()
+        settings = BoardSettings(
+            ip_address="fe80::1",
+            ip_version="IPv6",
+            username="root",
+            interface="eth0",
+            ssh_port=2222,
+        )
+
+        self.assertEqual(
+            window._build_mmu_ssh_command(settings),
+            "ssh root@fe80::1%eth0 -p 2222",
+        )
+        self.assertEqual(
+            window._sftp_manager.build_command(settings),
+            "sftp root@[fe80::1%eth0]",
+        )
 
     def test_mmu_ssh_command_uses_board_inputs(self) -> None:
         """MMU SSH uses the board fields and toggles disconnect through the server shell."""

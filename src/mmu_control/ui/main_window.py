@@ -291,6 +291,7 @@ class MainWindow(QMainWindow):
         self.mmu_ssh_disconnect_button.clicked.connect(self._disconnect_mmu_ssh)
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
+        self.board_ip_version_combo.currentTextChanged.connect(self._update_board_ip_placeholder)
 
     def _ssh_settings(self) -> SSHSettings:
         return SSHSettings(
@@ -303,12 +304,17 @@ class MainWindow(QMainWindow):
     def _board_settings(self) -> BoardSettings:
         return BoardSettings(
             ip_address=self.board_ip_input.text().strip(),
+            ip_version=self.board_ip_version_combo.currentText(),
             username=self.board_username_input.text().strip(),
             password=self.board_password_input.text(),
             interface=self.board_interface_input.text().strip(),
             usb_port=self._selected_usb_port(),
             ssh_port=self.board_ssh_port_input.value(),
         )
+
+    def _update_board_ip_placeholder(self, ip_version: str) -> None:
+        placeholder = "fe80::1" if ip_version == "IPv6" else "192.168.0.10"
+        self.board_ip_input.setPlaceholderText(placeholder)
 
     def _selected_usb_port(self) -> str:
         port = self.usb_port_combo.currentText().strip()
@@ -326,6 +332,7 @@ class MainWindow(QMainWindow):
         self.ssh_port_input.setValue(settings.ssh.port)
         self.ssh_username_input.setText(settings.ssh.username)
         self.ssh_password_input.setText(settings.ssh.password)
+        self.board_ip_version_combo.setCurrentText(settings.board.ip_version)
         self.board_ip_input.setText(settings.board.ip_address)
         self.board_username_input.setText(settings.board.username)
         self.board_password_input.setText(settings.board.password)
@@ -1483,8 +1490,10 @@ class MainWindow(QMainWindow):
         layout = QFormLayout(group)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
+        self.board_ip_version_combo = QComboBox(self)
+        self.board_ip_version_combo.addItems(["IPv4", "IPv6"])
         self.board_ip_input = QLineEdit(self)
-        self.board_ip_input.setPlaceholderText("MMU IP")
+        self.board_ip_input.setPlaceholderText("192.168.0.10")
         self.board_username_input = QLineEdit(self)
         self.board_username_input.setPlaceholderText("Username")
         self.board_password_input = QLineEdit(self)
@@ -1508,13 +1517,19 @@ class MainWindow(QMainWindow):
         self.mmu_ssh_disconnect_button = QPushButton("SSH Disconnect", self)
         self.mmu_ssh_disconnect_button.setEnabled(False)
 
+        ip_row = QWidget(self)
+        ip_layout = QHBoxLayout(ip_row)
+        ip_layout.setContentsMargins(0, 0, 0, 0)
+        ip_layout.addWidget(self.board_ip_version_combo)
+        ip_layout.addWidget(self.board_ip_input, stretch=1)
+
         usb_row = QWidget(self)
         usb_layout = QHBoxLayout(usb_row)
         usb_layout.setContentsMargins(0, 0, 0, 0)
         usb_layout.addWidget(self.usb_port_combo, stretch=1)
         usb_layout.addWidget(self.refresh_usb_button)
 
-        layout.addRow("IP", self.board_ip_input)
+        layout.addRow("IP", ip_row)
         layout.addRow("User", self.board_username_input)
         layout.addRow("Password", self.board_password_input)
         layout.addRow("Interface", self.board_interface_input)

@@ -40,6 +40,7 @@ class BoardSettings:
     """Board connection settings used by SFTP and terminal workflows."""
 
     ip_address: str = ""
+    ip_version: str = "IPv4"
     username: str = ""
     password: str = ""
     interface: str = ""
@@ -52,6 +53,7 @@ class BoardSettings:
         """Create board settings from JSON-compatible data."""
         return cls(
             ip_address=str(data.get("ip_address", "")),
+            ip_version=str(data.get("ip_version", "IPv4")),
             username=str(data.get("username", "")),
             password=str(data.get("password", "")),
             interface=str(data.get("interface", "")),
@@ -64,6 +66,7 @@ class BoardSettings:
         """Convert board settings to JSON-compatible data."""
         return {
             "ip_address": self.ip_address,
+            "ip_version": self.ip_version,
             "username": self.username,
             "password": self.password,
             "interface": self.interface,
