@@ -1523,40 +1523,57 @@ class MainWindow(QMainWindow):
         ip_layout.addWidget(self.board_ip_version_combo)
         ip_layout.addWidget(self.board_ip_input, stretch=1)
 
-        usb_row = QWidget(self)
+        # The target IP identifies the MMU board for both SSH/SFTP and other
+        # board-level actions, so keep it as shared MMU configuration rather
+        # than hiding it in one console-specific tab.
+        layout.addRow("IP", ip_row)
+
+        self.board_console_tabs = QTabWidget(self)
+        self.board_console_tabs.addTab(self._build_serial_console_tab(), "Serial Console")
+        self.board_console_tabs.addTab(self._build_ssh_console_tab(), "SSH Console")
+        layout.addRow(self.board_console_tabs)
+        return group
+
+    def _build_serial_console_tab(self) -> QWidget:
+        tab = QWidget(self)
+        layout = QFormLayout(tab)
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+
+        usb_row = QWidget(tab)
         usb_layout = QHBoxLayout(usb_row)
         usb_layout.setContentsMargins(0, 0, 0, 0)
         usb_layout.addWidget(self.usb_port_combo, stretch=1)
         usb_layout.addWidget(self.refresh_usb_button)
 
-        layout.addRow("IP", ip_row)
+        button_row = QWidget(tab)
+        button_layout = QHBoxLayout(button_row)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.addWidget(self.open_minicom_button)
+        button_layout.addWidget(self.close_minicom_button)
+        button_layout.addStretch(1)
+
+        layout.addRow("USB Port", usb_row)
+        layout.addRow(button_row)
+        return tab
+
+    def _build_ssh_console_tab(self) -> QWidget:
+        tab = QWidget(self)
+        layout = QFormLayout(tab)
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+
+        button_row = QWidget(tab)
+        button_layout = QHBoxLayout(button_row)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.addWidget(self.mmu_ssh_connect_button)
+        button_layout.addWidget(self.mmu_ssh_disconnect_button)
+        button_layout.addStretch(1)
+
         layout.addRow("User", self.board_username_input)
         layout.addRow("Password", self.board_password_input)
         layout.addRow("Interface", self.board_interface_input)
         layout.addRow("SSH Port", self.board_ssh_port_input)
-        layout.addRow("USB Port", usb_row)
-        minicom_row = QWidget(self)
-        minicom_layout = QHBoxLayout(minicom_row)
-        minicom_layout.setContentsMargins(0, 0, 0, 0)
-        minicom_layout.addWidget(self.open_minicom_button)
-        minicom_layout.addWidget(self.close_minicom_button)
-
-        mmu_ssh_row = QWidget(self)
-        mmu_ssh_layout = QHBoxLayout(mmu_ssh_row)
-        mmu_ssh_layout.setContentsMargins(0, 0, 0, 0)
-        mmu_ssh_layout.addWidget(self.mmu_ssh_connect_button)
-        mmu_ssh_layout.addWidget(self.mmu_ssh_disconnect_button)
-
-        console_row = QWidget(self)
-        console_layout = QHBoxLayout(console_row)
-        console_layout.setContentsMargins(0, 0, 0, 0)
-        console_layout.addWidget(QLabel("Serial Console", self))
-        console_layout.addWidget(minicom_row, stretch=1)
-        console_layout.addSpacing(12)
-        console_layout.addWidget(QLabel("SSH Console", self))
-        console_layout.addWidget(mmu_ssh_row, stretch=1)
-        layout.addRow(console_row)
-        return group
+        layout.addRow(button_row)
+        return tab
 
     def _build_workspace(self) -> QTabWidget:
         tabs = QTabWidget(self)
