@@ -9,7 +9,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 
-from PySide6.QtCore import QByteArray, QMimeData, QProcess, QTimer, Qt, Signal
+from PySide6.QtCore import QByteArray, QMimeData, QProcess, QRegularExpression, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QCloseEvent,
@@ -19,6 +19,7 @@ from PySide6.QtGui import (
     QDropEvent,
     QPainter,
     QPixmap,
+    QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
     QComboBox,
@@ -46,10 +47,17 @@ from PySide6.QtWidgets import (
 from mmu_control.core.config_manager import ConfigError, ConfigManager
 from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.core.minicom_manager import MinicomError, MinicomManager
+from mmu_control.core.power_supply_manager import PowerSupplyManager
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
 from mmu_control.models.command_set import CommandSet
-from mmu_control.models.settings import AppSettings, BoardSettings, SSHSettings, WindowSettings
+from mmu_control.models.settings import (
+    AppSettings,
+    BoardSettings,
+    PowerSupplySettings,
+    SSHSettings,
+    WindowSettings,
+)
 from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.background_worker import TaskRunner, ThreadPoolTaskRunner
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
@@ -223,6 +231,7 @@ class MainWindow(QMainWindow):
         self._task_runner = task_runner or ThreadPoolTaskRunner(self)
         self._sftp_manager = SFTPManager()
         self._minicom_manager = MinicomManager()
+        self._power_supply_manager = PowerSupplyManager()
         self._settings = AppSettings()
         self._command_sets: dict[str, CommandSet] = {}
         self._shell: InteractiveShell | None = None
@@ -292,6 +301,10 @@ class MainWindow(QMainWindow):
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
         self.board_ip_version_combo.currentTextChanged.connect(self._update_board_ip_placeholder)
+        self.power_on_button.clicked.connect(lambda: self._handle_power_supply_stub("ON"))
+        self.power_off_button.clicked.connect(lambda: self._handle_power_supply_stub("OFF"))
+        self.power_status_button.clicked.connect(lambda: self._handle_power_supply_stub("Status"))
+        self.power_all_status_button.clicked.connect(lambda: self._handle_power_supply_stub("All Status"))
 
     def _ssh_settings(self) -> SSHSettings:
         return SSHSettings(
@@ -300,6 +313,9 @@ class MainWindow(QMainWindow):
             username=self.ssh_username_input.text().strip(),
             password=self.ssh_password_input.text(),
         )
+
+    def _power_supply_settings(self) -> PowerSupplySettings:
+        return PowerSupplySettings(ip_address=self.power_supply_ip_input.text().strip())
 
     def _board_settings(self) -> BoardSettings:
         return BoardSettings(
@@ -310,6 +326,14 @@ class MainWindow(QMainWindow):
             interface=self.board_interface_input.text().strip(),
             usb_port=self._selected_usb_port(),
             ssh_port=self.board_ssh_port_input.value(),
+        )
+
+    def _handle_power_supply_stub(self, action: str) -> None:
+        settings = self._power_supply_settings()
+        self._power_supply_manager.update_settings(settings)
+        target = settings.ip_address or "unconfigured power supply"
+        self.statusBar().showMessage(
+            f"Power Supply {action} is not implemented yet for {target}."
         )
 
     def _update_board_ip_placeholder(self, ip_version: str) -> None:
@@ -334,6 +358,8 @@ class MainWindow(QMainWindow):
         self.ssh_port_input.setValue(settings.ssh.port)
         self.ssh_username_input.setText(settings.ssh.username)
         self.ssh_password_input.setText(settings.ssh.password)
+        self.power_supply_ip_input.setText(settings.power_supply.ip_address)
+        self._power_supply_manager.update_settings(settings.power_supply)
         self.board_ip_version_combo.setCurrentText(settings.board.ip_version)
         self.board_ip_input.setText(settings.board.ip_address)
         self.board_username_input.setText(settings.board.username)
@@ -351,6 +377,8 @@ class MainWindow(QMainWindow):
         geometry = self.normalGeometry() if self.isMaximized() else self.geometry()
         self._settings.ssh = self._ssh_settings()
         self._settings.board = self._board_settings()
+        self._settings.power_supply = self._power_supply_settings()
+        self._power_supply_manager.update_settings(self._settings.power_supply)
         self._settings.window = WindowSettings(
             width=geometry.width(),
             height=geometry.height(),
@@ -1461,9 +1489,11 @@ class MainWindow(QMainWindow):
         layout.setVerticalSpacing(10)
 
         layout.addWidget(self._build_ssh_group(), 0, 0)
-        layout.addWidget(self._build_board_group(), 0, 1)
+        layout.addWidget(self._build_power_supply_group(), 0, 1)
+        layout.addWidget(self._build_board_group(), 0, 2)
         layout.setColumnStretch(0, 1)
-        layout.setColumnStretch(1, 2)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
         return panel
 
     def _make_collapsible_group(self, title: str, content: QWidget) -> QGroupBox:
@@ -1502,6 +1532,42 @@ class MainWindow(QMainWindow):
         layout.addRow(self._build_connection_buttons())
         self.ssh_group = self._make_collapsible_group("SSH Server", self.ssh_group_content)
         return self.ssh_group
+
+    def _build_power_supply_group(self) -> QGroupBox:
+        self.power_supply_group_content = QWidget(self)
+        layout = QFormLayout(self.power_supply_group_content)
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+
+        self.power_supply_ip_input = QLineEdit(self)
+        self.power_supply_ip_input.setPlaceholderText("Power Supply IPv4")
+        ipv4_pattern = (
+            r"^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}"
+            r"(?:25[0-5]|2[0-4]\d|1?\d?\d)$"
+        )
+        self.power_supply_ip_input.setValidator(
+            QRegularExpressionValidator(QRegularExpression(ipv4_pattern), self)
+        )
+
+        self.power_on_button = QPushButton("ON", self)
+        self.power_off_button = QPushButton("OFF", self)
+        self.power_status_button = QPushButton("Status", self)
+        self.power_all_status_button = QPushButton("All Status", self)
+
+        button_row = QWidget(self)
+        button_layout = QHBoxLayout(button_row)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.addWidget(self.power_on_button)
+        button_layout.addWidget(self.power_off_button)
+        button_layout.addWidget(self.power_status_button)
+        button_layout.addWidget(self.power_all_status_button)
+        button_layout.addStretch(1)
+
+        layout.addRow("IPv4", self.power_supply_ip_input)
+        layout.addRow(button_row)
+        self.power_supply_group = self._make_collapsible_group(
+            "Power Supply", self.power_supply_group_content
+        )
+        return self.power_supply_group
 
     def _build_board_group(self) -> QGroupBox:
         self.mmu_group_content = QWidget(self)
