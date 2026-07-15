@@ -83,6 +83,8 @@ class WindowSettings:
     width: int = 1180
     height: int = 760
     is_maximized: bool = False
+    ssh_group_expanded: bool = True
+    mmu_group_expanded: bool = True
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WindowSettings:
@@ -91,6 +93,8 @@ class WindowSettings:
             width=int(data.get("width", 1180)),
             height=int(data.get("height", 760)),
             is_maximized=bool(data.get("is_maximized", False)),
+            ssh_group_expanded=bool(data.get("ssh_group_expanded", True)),
+            mmu_group_expanded=bool(data.get("mmu_group_expanded", True)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -99,6 +103,8 @@ class WindowSettings:
             "width": self.width,
             "height": self.height,
             "is_maximized": self.is_maximized,
+            "ssh_group_expanded": self.ssh_group_expanded,
+            "mmu_group_expanded": self.mmu_group_expanded,
         }
 
 
