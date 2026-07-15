@@ -328,6 +328,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Could not load settings")
             return
         settings = self._settings
+        self.ssh_group.setChecked(settings.window.ssh_group_expanded)
+        self.mmu_group.setChecked(settings.window.mmu_group_expanded)
         self.ssh_host_input.setText(settings.ssh.host)
         self.ssh_port_input.setValue(settings.ssh.port)
         self.ssh_username_input.setText(settings.ssh.username)
@@ -353,6 +355,8 @@ class MainWindow(QMainWindow):
             width=geometry.width(),
             height=geometry.height(),
             is_maximized=self.isMaximized(),
+            ssh_group_expanded=self.ssh_group.isChecked(),
+            mmu_group_expanded=self.mmu_group.isChecked(),
         )
         try:
             self._config_manager.save(self._settings)
@@ -1462,9 +1466,22 @@ class MainWindow(QMainWindow):
         layout.setColumnStretch(1, 2)
         return panel
 
+    def _make_collapsible_group(self, title: str, content: QWidget) -> QGroupBox:
+        group = QGroupBox(title, self)
+        group.setCheckable(True)
+        group.setChecked(True)
+
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.addWidget(content)
+
+        group.toggled.connect(content.setVisible)
+        content.setVisible(group.isChecked())
+        return group
+
     def _build_ssh_group(self) -> QGroupBox:
-        group = QGroupBox("SSH Server", self)
-        layout = QFormLayout(group)
+        self.ssh_group_content = QWidget(self)
+        layout = QFormLayout(self.ssh_group_content)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.ssh_host_input = QLineEdit(self)
@@ -1483,11 +1500,12 @@ class MainWindow(QMainWindow):
         layout.addRow("User", self.ssh_username_input)
         layout.addRow("Password", self.ssh_password_input)
         layout.addRow(self._build_connection_buttons())
-        return group
+        self.ssh_group = self._make_collapsible_group("SSH Server", self.ssh_group_content)
+        return self.ssh_group
 
     def _build_board_group(self) -> QGroupBox:
-        group = QGroupBox("MMU", self)
-        layout = QFormLayout(group)
+        self.mmu_group_content = QWidget(self)
+        layout = QFormLayout(self.mmu_group_content)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.board_ip_version_combo = QComboBox(self)
@@ -1532,7 +1550,8 @@ class MainWindow(QMainWindow):
         self.board_console_tabs.addTab(self._build_serial_console_tab(), "Serial Console")
         self.board_console_tabs.addTab(self._build_ssh_console_tab(), "SSH Console")
         layout.addRow(self.board_console_tabs)
-        return group
+        self.mmu_group = self._make_collapsible_group("MMU", self.mmu_group_content)
+        return self.mmu_group
 
     def _build_serial_console_tab(self) -> QWidget:
         tab = QWidget(self)

@@ -15,8 +15,8 @@ from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 from mmu_control.core.config_manager import ConfigManager
-from mmu_control.models.settings import AppSettings, BoardSettings, SSHSettings
 from mmu_control.models.command_set import CommandSet
+from mmu_control.models.settings import AppSettings, BoardSettings, SSHSettings, WindowSettings
 from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.ui.main_window import MainWindow
 
@@ -236,6 +236,36 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(window.mmu_current_path_input.isReadOnly())
         self.assertFalse(window.open_sftp_button.isEnabled())
         self.assertEqual(window.connection_status_label.text(), "SSH: disconnected")
+
+    def test_connection_groups_toggle_content_visibility_without_disabling_state(self) -> None:
+        """Collapsible connection groups hide content while preserving control state."""
+        window = self.create_window()
+        window.ssh_host_input.setText("server")
+        window.connect_button.setEnabled(False)
+        window.refresh_usb_button.setEnabled(True)
+
+        self.assertTrue(window.ssh_group.isChecked())
+        self.assertFalse(window.ssh_group_content.isHidden())
+        self.assertTrue(window.mmu_group.isChecked())
+        self.assertFalse(window.mmu_group_content.isHidden())
+
+        window.ssh_group.setChecked(False)
+        window.mmu_group.setChecked(False)
+
+        self.assertTrue(window.ssh_group_content.isHidden())
+        self.assertTrue(window.mmu_group_content.isHidden())
+        self.assertEqual(window.ssh_host_input.text(), "server")
+        self.assertFalse(window.connect_button.isEnabled())
+        self.assertTrue(window.refresh_usb_button.isEnabled())
+
+        window.ssh_group.setChecked(True)
+        window.mmu_group.setChecked(True)
+
+        self.assertFalse(window.ssh_group_content.isHidden())
+        self.assertFalse(window.mmu_group_content.isHidden())
+        self.assertEqual(window.ssh_host_input.text(), "server")
+        self.assertFalse(window.connect_button.isEnabled())
+        self.assertTrue(window.refresh_usb_button.isEnabled())
 
     def test_terminal_commands_run_locally_without_ssh_shell(self) -> None:
         """Terminal input runs against the local PC when SSH is disconnected."""
@@ -560,6 +590,7 @@ class MainWindowTest(unittest.TestCase):
                     username="root",
                     usb_port="/dev/ttyUSB0",
                 ),
+                window=WindowSettings(ssh_group_expanded=False, mmu_group_expanded=True),
             )
         )
         window = self.create_window(config_manager=config)
@@ -569,16 +600,24 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.board_ip_version_combo.currentText(), "IPv6")
         self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
         self.assertEqual(window.usb_port_combo.currentText(), "/dev/ttyUSB0")
+        self.assertFalse(window.ssh_group.isChecked())
+        self.assertTrue(window.ssh_group_content.isHidden())
+        self.assertTrue(window.mmu_group.isChecked())
 
+        window.ssh_group.setChecked(True)
+        window.mmu_group.setChecked(False)
         window.board_ip_version_combo.setCurrentText("IPv4")
         window.board_ip_input.setText("192.168.0.10")
         window.board_interface_input.setText("eth0")
         window.close()
 
-        saved_board = config.load().board
+        saved_settings = config.load()
+        saved_board = saved_settings.board
         self.assertEqual(saved_board.interface, "eth0")
         self.assertEqual(saved_board.ip_version, "IPv4")
         self.assertEqual(saved_board.ip_address, "192.168.0.10")
+        self.assertTrue(saved_settings.window.ssh_group_expanded)
+        self.assertFalse(saved_settings.window.mmu_group_expanded)
 
     def test_board_ip_version_combo_updates_placeholder_and_settings(self) -> None:
         """IP version choice updates placeholders and is included in board settings."""
