@@ -109,6 +109,18 @@ class FakeSSHManager:
         self.uploaded_files.append((local_path, remote_path))
 
 
+class HangingSftpShell(FakeShell):
+    """SFTP shell fake that never reaches the remote SFTP prompt."""
+
+    def send_line(self, command: str) -> int:
+        self.sent.append(command)
+        if command.startswith("sftp "):
+            self.output += f"{command}\r\n"
+        else:
+            self.output += f"{command}\r\n"
+        return len(command) + 1
+
+
 class FailingSftpShell(FakeShell):
     """SFTP shell fake that reports a failed SFTP connection."""
 
@@ -124,6 +136,19 @@ class FailingSftpShell(FakeShell):
         else:
             self.output += f"{command}\r\n"
         return len(command) + 1
+
+
+class HangingSftpSSHManager(FakeSSHManager):
+    """SSH manager fake whose SFTP shell never reaches the SFTP prompt."""
+
+    def open_shell(self) -> FakeShell:
+        if self._shell_open_count == 0:
+            result = self.shell
+        else:
+            self.sftp_shell = HangingSftpShell()
+            result = self.sftp_shell
+        self._shell_open_count += 1
+        return result
 
 
 class FailingSftpSSHManager(FakeSSHManager):
@@ -225,6 +250,20 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
         self.assertEqual(window.connection_status_label.text(), "SSH: connected")
+
+    def test_clear_command_clears_connected_ssh_terminal(self) -> None:
+        """Clear removes prior terminal content while SSH is connected."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window._connect_ssh()
+        window.terminal_widget.write_output("old command output")
+
+        window.terminal_widget.commandSubmitted.emit("clear")
+
+        self.assertEqual(window.terminal_widget.toPlainText(), "")
+        self.assertEqual(manager.shell.sent, [])
 
     def test_empty_ssh_enter_filters_remote_echo_newline(self) -> None:
         """Blank Enter on SSH should leave a single prompt line, not a double newline."""
@@ -442,6 +481,26 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.sftp_terminal.toPlainText().splitlines()[-1], f"{window._local_cwd}> ")
         self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
 
+    def test_open_sftp_times_out_when_prompt_never_arrives(self) -> None:
+        """SFTP startup fails when the remote prompt does not appear within the timeout."""
+        manager = HangingSftpSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+        window._handle_sftp_startup_timeout()
+
+        self.assertIn("SFTP connection failed", window.sftp_terminal.toPlainText())
+        self.assertIn("3 seconds", window.sftp_terminal.toPlainText())
+        self.assertEqual(window.board_status_label.text(), "MMU: SFTP failed")
+        self.assertFalse(window.close_sftp_button.isEnabled())
+        self.assertEqual(window.sftp_terminal._prompt, window._local_prompt())
+
     def test_open_sftp_reports_connection_failure_in_terminal(self) -> None:
         """Failed SFTP startup reports failure instead of leaving a misleading prompt."""
         manager = FailingSftpSSHManager()
@@ -527,6 +586,27 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
         self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH disconnected")
+
+    def test_mmu_ssh_failure_restores_server_shell_controls(self) -> None:
+        """Failed MMU SSH startup re-enables connect without sending exit to the server shell."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+        window._connect_ssh()
+        window.mmu_ssh_connect_button.click()
+
+        window._handle_mmu_ssh_auth("ssh: connect to host fe80::1 port 22: Connection refused")
+        sent_after_failure = list(manager.shell.sent)
+        window.mmu_ssh_disconnect_button.click()
+
+        self.assertEqual(manager.shell.sent, sent_after_failure)
+        self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
+        self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
+        self.assertEqual(window.board_status_label.text(), "MMU: SSH failed")
 
     def test_mmu_ssh_password_is_sent_only_for_initial_auth_prompt(self) -> None:
         """MMU SSH password automation does not answer later shell password prompts."""
