@@ -40,15 +40,25 @@ class PowerSupplySettings:
     """Power supply connection settings."""
 
     ip_address: str = ""
+    voltage: str = ""
+    current: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PowerSupplySettings:
         """Create power supply settings from JSON-compatible data."""
-        return cls(ip_address=str(data.get("ip_address", "")))
+        return cls(
+            ip_address=str(data.get("ip_address", "")),
+            voltage=str(data.get("voltage", "")),
+            current=str(data.get("current", "")),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert power supply settings to JSON-compatible data."""
-        return {"ip_address": self.ip_address}
+        return {
+            "ip_address": self.ip_address,
+            "voltage": self.voltage,
+            "current": self.current,
+        }
 
 
 @dataclass(slots=True)

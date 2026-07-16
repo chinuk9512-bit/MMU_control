@@ -249,6 +249,11 @@ class MainWindowTest(unittest.TestCase):
         invalid_state = window.power_supply_ip_input.validator().validate("fe80::1", 7)[0]
         self.assertEqual(valid_state, QValidator.State.Acceptable)
         self.assertNotEqual(invalid_state, QValidator.State.Acceptable)
+        self.assertEqual(window.power_supply_voltage_input.placeholderText(), "Voltage")
+        self.assertIsNotNone(window.power_supply_voltage_input.validator())
+        self.assertEqual(window.power_supply_current_input.placeholderText(), "Current")
+        self.assertIsNotNone(window.power_supply_current_input.validator())
+        self.assertEqual(window.power_set_button.text(), "Set")
         self.assertEqual(window.power_on_button.text(), "ON")
         self.assertEqual(window.power_off_button.text(), "OFF")
         self.assertEqual(window.power_status_button.text(), "Status")
@@ -260,7 +265,10 @@ class MainWindowTest(unittest.TestCase):
         window = self.create_window(ssh_manager=manager)
         window._activate_shell(manager.shell)
         window.power_supply_ip_input.setText("192.168.0.50")
+        window.power_supply_voltage_input.setText("12.5")
+        window.power_supply_current_input.setText("1.25")
 
+        window.power_set_button.click()
         window.power_on_button.click()
         window.power_off_button.click()
         window.power_status_button.click()
@@ -269,6 +277,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(
             manager.shell.sent,
             [
+                "psu 192.168.0.50 12.5 1.25",
                 "psu 192.168.0.50 on",
                 "psu 192.168.0.50 off",
                 "psu 192.168.0.50 status",
@@ -641,7 +650,9 @@ class MainWindowTest(unittest.TestCase):
                     username="root",
                     usb_port="/dev/ttyUSB0",
                 ),
-                power_supply=PowerSupplySettings(ip_address="192.168.0.100"),
+                power_supply=PowerSupplySettings(
+                    ip_address="192.168.0.100", voltage="12.5", current="1.25"
+                ),
                 window=WindowSettings(ssh_group_expanded=False, mmu_group_expanded=True),
             )
         )
@@ -653,6 +664,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
         self.assertEqual(window.usb_port_combo.currentText(), "/dev/ttyUSB0")
         self.assertEqual(window.power_supply_ip_input.text(), "192.168.0.100")
+        self.assertEqual(window.power_supply_voltage_input.text(), "12.5")
+        self.assertEqual(window.power_supply_current_input.text(), "1.25")
         self.assertFalse(window.ssh_group.isChecked())
         self.assertTrue(window.ssh_group_content.isHidden())
         self.assertTrue(window.mmu_group.isChecked())
@@ -663,6 +676,8 @@ class MainWindowTest(unittest.TestCase):
         window.board_ip_input.setText("192.168.0.10")
         window.board_interface_input.setText("eth0")
         window.power_supply_ip_input.setText("192.168.0.101")
+        window.power_supply_voltage_input.setText("24")
+        window.power_supply_current_input.setText("2")
         window.close()
 
         saved_settings = config.load()
@@ -671,6 +686,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(saved_board.ip_version, "IPv4")
         self.assertEqual(saved_board.ip_address, "192.168.0.10")
         self.assertEqual(saved_settings.power_supply.ip_address, "192.168.0.101")
+        self.assertEqual(saved_settings.power_supply.voltage, "24")
+        self.assertEqual(saved_settings.power_supply.current, "2")
         self.assertTrue(saved_settings.window.ssh_group_expanded)
         self.assertFalse(saved_settings.window.mmu_group_expanded)
 

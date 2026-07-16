@@ -14,8 +14,11 @@ class PowerSupplyManagerTest(unittest.TestCase):
     """Power supply commands are loaded from JSON templates."""
 
     def test_builds_default_commands_from_json(self) -> None:
-        manager = PowerSupplyManager(PowerSupplySettings(ip_address="192.168.0.50"))
+        manager = PowerSupplyManager(
+            PowerSupplySettings(ip_address="192.168.0.50", voltage="12.5", current="1.25")
+        )
 
+        self.assertEqual(manager.build_command("set"), "psu 192.168.0.50 12.5 1.25")
         self.assertEqual(manager.build_command("on"), "psu 192.168.0.50 on")
         self.assertEqual(manager.build_command("off"), "psu 192.168.0.50 off")
         self.assertEqual(manager.build_command("status"), "psu 192.168.0.50 status")
@@ -40,6 +43,16 @@ class PowerSupplyManagerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(PowerSupplyCommandError, "IP address is required"):
             manager.build_command("on")
+
+    def test_voltage_and_current_are_required_for_set_command(self) -> None:
+        manager = PowerSupplyManager(PowerSupplySettings(ip_address="192.168.0.50"))
+
+        with self.assertRaisesRegex(PowerSupplyCommandError, "voltage is required"):
+            manager.build_command("set")
+
+        manager.update_settings(PowerSupplySettings(ip_address="192.168.0.50", voltage="12"))
+        with self.assertRaisesRegex(PowerSupplyCommandError, "current is required"):
+            manager.build_command("set")
 
 
 if __name__ == "__main__":
