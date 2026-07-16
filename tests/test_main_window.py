@@ -254,36 +254,36 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.power_status_button.text(), "Status")
         self.assertEqual(window.power_all_status_button.text(), "All Status")
 
-    def test_connection_groups_toggle_content_visibility_without_disabling_state(self) -> None:
-        """Collapsible connection groups hide content while preserving control state."""
+    def test_connection_panel_toggle_hides_all_top_groups_without_disabling_state(self) -> None:
+        """The top toggle collapses all connection groups while preserving control state."""
         window = self.create_window()
         window.ssh_host_input.setText("server")
         window.connect_button.setEnabled(False)
         window.refresh_usb_button.setEnabled(True)
 
-        self.assertTrue(window.ssh_group.isChecked())
-        self.assertFalse(window.ssh_group_content.isHidden())
-        self.assertTrue(window.mmu_group.isChecked())
-        self.assertFalse(window.mmu_group_content.isHidden())
+        self.assertTrue(window.connection_panel_toggle_button.isChecked())
+        self.assertEqual(window.connection_panel_toggle_button.text(), "Hide connection info")
+        self.assertFalse(window.connection_panel_content.isHidden())
+        self.assertFalse(window.ssh_group.isCheckable())
+        self.assertFalse(window.power_supply_group.isCheckable())
+        self.assertFalse(window.mmu_group.isCheckable())
 
         self.assertEqual(window.ssh_group.title(), "SSH Server")
         self.assertEqual(window.power_supply_group.title(), "Power Supply")
         self.assertEqual(window.mmu_group.title(), "MMU")
 
-        window.ssh_group.setChecked(False)
-        window.mmu_group.setChecked(False)
+        window.connection_panel_toggle_button.setChecked(False)
 
-        self.assertTrue(window.ssh_group_content.isHidden())
-        self.assertTrue(window.mmu_group_content.isHidden())
+        self.assertTrue(window.connection_panel_content.isHidden())
+        self.assertEqual(window.connection_panel_toggle_button.text(), "Show connection info")
         self.assertEqual(window.ssh_host_input.text(), "server")
         self.assertFalse(window.connect_button.isEnabled())
         self.assertTrue(window.refresh_usb_button.isEnabled())
 
-        window.ssh_group.setChecked(True)
-        window.mmu_group.setChecked(True)
+        window.connection_panel_toggle_button.setChecked(True)
 
-        self.assertFalse(window.ssh_group_content.isHidden())
-        self.assertFalse(window.mmu_group_content.isHidden())
+        self.assertFalse(window.connection_panel_content.isHidden())
+        self.assertEqual(window.connection_panel_toggle_button.text(), "Hide connection info")
         self.assertEqual(window.ssh_host_input.text(), "server")
         self.assertFalse(window.connect_button.isEnabled())
         self.assertTrue(window.refresh_usb_button.isEnabled())
