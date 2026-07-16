@@ -131,6 +131,48 @@ class SftpFileListWidget(QListWidget):
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+    def resizeEvent(self, event) -> None:  # noqa: N802, ANN001
+        """Keep scroll bars matched to the visible file-list viewport."""
+        super().resizeEvent(event)
+        self.update_scroll_bars()
+
+    def showEvent(self, event) -> None:  # noqa: N802, ANN001
+        """Refresh scroll bars when the list first receives a real viewport size."""
+        super().showEvent(event)
+        self.update_scroll_bars()
+
+    def update_scroll_bars(self) -> None:
+        """Show scroll bars only when file entries exceed the current list area."""
+        viewport_size = self.viewport().size()
+        if viewport_size.isEmpty():
+            return
+
+        content_height = sum(max(self.sizeHintForRow(row), 0) for row in range(self.count()))
+        vertical_needed = content_height > viewport_size.height()
+        vertical_policy = (
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            if vertical_needed
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        if self.verticalScrollBarPolicy() != vertical_policy:
+            self.setVerticalScrollBarPolicy(vertical_policy)
+
+        available_width = viewport_size.width()
+        if vertical_needed:
+            available_width -= self.verticalScrollBar().sizeHint().width()
+        max_content_width = max(
+            (self.sizeHintForColumn(column) for column in range(self.model().columnCount())),
+            default=0,
+        )
+        horizontal_needed = max_content_width > available_width
+        horizontal_policy = (
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            if horizontal_needed
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        if self.horizontalScrollBarPolicy() != horizontal_policy:
+            self.setHorizontalScrollBarPolicy(horizontal_policy)
+
     def startDrag(self, supported_actions: Qt.DropActions) -> None:  # noqa: N802
         item = self.currentItem()
         if item is None:
@@ -727,7 +769,7 @@ class MainWindow(QMainWindow):
         if self._sftp_shell is None or not self._sftp_shell.is_open:
             self._populate_file_list(self.mmu_file_list, [])
             return
-        command = f"ls -laL {shlex.quote(self._mmu_sftp_directory)}"
+        command = f"ls -al {shlex.quote(self._mmu_sftp_directory)}"
         self._sftp_shell.send_line(command)
         self._sftp_pending_echo = command
         self._sftp_pending_listing = True
@@ -827,6 +869,7 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole + 3, entry.link_target)
                 item.setData(Qt.ItemDataRole.UserRole + 4, entry.navigate_path or entry.path)
             file_list.addItem(item)
+        file_list.update_scroll_bars()
 
     def _open_server_list_item(self, item: QListWidgetItem) -> None:
         self._open_sftp_list_item(self.server_file_list, item)
