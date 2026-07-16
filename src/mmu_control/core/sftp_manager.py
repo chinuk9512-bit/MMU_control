@@ -36,9 +36,14 @@ class SFTPManager:
     def build_command(self, settings: BoardSettings) -> str:
         """Build the Linux-side SFTP command for the MMU settings."""
         self._validate_settings(settings)
-        if settings.interface:
-            return f"sftp {settings.username}@[{settings.ip_address}%{settings.interface}]"
-        return f"sftp {settings.username}@{settings.ip_address}"
+        destination = self._format_destination(settings)
+        command = ["sftp"]
+        if settings.ssh_port != 22:
+            command.extend(["-P", str(settings.ssh_port)])
+        if settings.ssh_key_path.strip():
+            command.extend(["-i", settings.ssh_key_path.strip()])
+        command.append(f"{settings.username.strip()}@{destination}")
+        return " ".join(shlex.quote(part) for part in command)
 
     def open_session(self, shell: InteractiveShell, settings: BoardSettings) -> str:
         """Start an SFTP session from the connected Linux server."""
@@ -97,6 +102,15 @@ class SFTPManager:
             raise SFTPError("Both server and MMU paths are required.")
         return f"{operation} {shlex.quote(source)} {shlex.quote(destination)}"
 
+    def _format_destination(self, settings: BoardSettings) -> str:
+        host = settings.ip_address.strip()
+        interface = settings.interface.strip()
+        if interface:
+            return f"[{host}%{interface}]"
+        if ":" in host:
+            return f"[{host}]"
+        return host
+
     def _validate_settings(self, settings: BoardSettings) -> None:
         if not settings.ip_address.strip():
             raise SFTPError("MMU IP address is required.")
@@ -104,7 +118,9 @@ class SFTPManager:
             raise SFTPError("MMU username is required.")
         if re.fullmatch(r"[A-Za-z0-9._-]+", settings.username) is None:
             raise SFTPError("MMU username contains unsupported characters.")
-        if re.fullmatch(r"[A-Fa-f0-9:.]+", settings.ip_address) is None:
-            raise SFTPError("MMU IP address contains unsupported characters.")
-        if settings.interface and re.fullmatch(r"[A-Za-z0-9_.:-]+", settings.interface) is None:
+        if not 1 <= settings.ssh_port <= 65535:
+            raise SFTPError("MMU SFTP port must be between 1 and 65535.")
+        if re.fullmatch(r"[A-Za-z0-9_.:-]+", settings.ip_address.strip()) is None:
+            raise SFTPError("MMU host contains unsupported characters.")
+        if settings.interface and re.fullmatch(r"[A-Za-z0-9_.:-]+", settings.interface.strip()) is None:
             raise SFTPError("MMU interface contains unsupported characters.")
