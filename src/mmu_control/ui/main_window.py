@@ -22,6 +22,7 @@ from PySide6.QtGui import (
     QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QSpinBox,
+    QSizePolicy,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
@@ -124,6 +126,10 @@ class SftpFileListWidget(QListWidget):
         self.setDragEnabled(True)
         self.setDropIndicatorShown(True)
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def startDrag(self, supported_actions: Qt.DropActions) -> None:  # noqa: N802
         item = self.currentItem()
@@ -836,11 +842,9 @@ class MainWindow(QMainWindow):
             return
         destination = navigate_path if isinstance(navigate_path, str) and navigate_path else path
         if file_list.side == "server":
-            self._server_sftp_directory = destination
-            self._refresh_server_file_list()
+            self._change_sftp_directory("lcd", destination, send_command=True)
         else:
-            self._mmu_sftp_directory = destination
-            self._refresh_mmu_file_list()
+            self._change_sftp_directory("cd", destination, send_command=True)
 
     def _handle_sftp_file_drop(self, local_path: str) -> None:
         if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
@@ -914,15 +918,9 @@ class MainWindow(QMainWindow):
 
     def _send_sftp_command(self, command: str) -> None:
         if self._sftp_shell is None or not self._sftp_shell.is_open:
-            if self._shell is not None and self._shell.is_open:
-                try:
-                    self._shell.send_line(command)
-                    self._pending_echo = command
-                    self._echo_buffer = ""
-                except Exception as exc:
-                    self._show_connection_error(exc)
-                return
             self._run_sftp_local_command(command)
+            return
+        if self._handle_sftp_directory_command(command):
             return
         try:
             self._sftp_shell.send_line(command)
@@ -932,32 +930,90 @@ class MainWindow(QMainWindow):
             self._show_sftp_error(exc)
 
     def _run_sftp_local_command(self, command: str) -> None:
-        """Mirror the Terminal tab local prompt before an SFTP session is open."""
-        before = self.terminal_widget.toPlainText()
-        self._run_local_terminal_command(command)
-        after = self.terminal_widget.toPlainText()
-        if after != before:
-            self._copy_new_terminal_output_to_sftp(before, after)
-            self.terminal_widget.setPlainText(before)
-            self.terminal_widget.refresh_display()
+        """Run fallback commands in the SFTP pane without touching the Terminal tab."""
+        command = command.strip()
+        if not command:
+            return
+        if command.lower() in {"clear", "cls"}:
+            self.sftp_terminal.clear_terminal()
+            return
+        if command.lower() in {"pwd", "cd"}:
+            self._append_sftp_output(self._local_cwd)
+            return
+        if command.lower().startswith("cd "):
+            self._change_sftp_fallback_local_directory(command[3:].strip())
+            return
+        try:
+            result = subprocess.run(
+                command,
+                cwd=self._local_cwd,
+                shell=True,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except OSError as exc:
+            self._append_sftp_output(str(exc))
+            return
+        output = f"{result.stdout}{result.stderr}"
+        if output:
+            self._append_sftp_output(output)
         self.sftp_terminal.set_prompt(self._local_prompt())
 
-    def _copy_new_terminal_output_to_sftp(self, before: str, after: str) -> None:
-        prompt = self._local_prompt()
-        new_text = after[len(before):] if after.startswith(before) else after
-        if new_text.endswith(prompt):
-            new_text = new_text[: -len(prompt)]
-        new_text = new_text.strip("\n")
-        if new_text:
-            self._append_sftp_output(new_text)
+    def _change_sftp_fallback_local_directory(self, path_text: str) -> None:
+        if not path_text:
+            self._append_sftp_output(self._local_cwd)
+            return
+        try:
+            parts = shlex.split(path_text)
+        except ValueError as exc:
+            self._append_sftp_output(str(exc))
+            return
+        target_text = " ".join(parts) if parts else path_text
+        target = os.path.expanduser(os.path.expandvars(target_text))
+        if not os.path.isabs(target):
+            target = os.path.join(self._local_cwd, target)
+        target = os.path.abspath(target)
+        if not os.path.isdir(target):
+            self._append_sftp_output(f"cd: no such directory: {target_text}")
+            return
+        self._local_cwd = target
+
+    def _handle_sftp_directory_command(self, command: str) -> bool:
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            return False
+        if not parts or parts[0] not in {"cd", "lcd"}:
+            return False
+        target = parts[1] if len(parts) > 1 else ""
+        self._change_sftp_directory(parts[0], target, send_command=True)
+        return True
+
+    def _change_sftp_directory(self, command: str, target: str, send_command: bool) -> None:
+        current = self._mmu_sftp_directory if command == "cd" else self._server_sftp_directory
+        destination = self._resolve_sftp_path(current, target)
+        if send_command and self._sftp_shell is not None and self._sftp_shell.is_open:
+            sftp_command = f"{command} {shlex.quote(destination)}"
+            self._sftp_shell.send_line(sftp_command)
+            self._sftp_pending_echo = sftp_command
+            self._sftp_echo_buffer = ""
+        if command == "cd":
+            self._mmu_sftp_directory = destination
+            self._refresh_mmu_file_list()
+        else:
+            self._server_sftp_directory = destination
+            self._refresh_server_file_list()
+
+    def _resolve_sftp_path(self, current: str, target: str) -> str:
+        if not target:
+            return current
+        if target.startswith("/"):
+            return posixpath.normpath(target)
+        return posixpath.normpath(posixpath.join(current, target))
 
     def _send_sftp_raw(self, text: str) -> None:
         if self._sftp_shell is None or not self._sftp_shell.is_open:
-            if self._shell is not None and self._shell.is_open:
-                try:
-                    self._shell.send(text)
-                except Exception as exc:
-                    self._show_connection_error(exc)
             return
         try:
             self._sftp_shell.send(text)
@@ -1236,8 +1292,6 @@ class MainWindow(QMainWindow):
             self._handle_mmu_ssh_auth(output)
         if output:
             self.terminal_widget.write_stream(output)
-            if self._sftp_shell is None:
-                self.sftp_terminal.write_stream(output)
 
     def _poll_sftp_shell(self) -> None:
         if self._sftp_shell is None:
