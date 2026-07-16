@@ -12,6 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
 from PySide6.QtGui import QDropEvent, QValidator
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 from mmu_control.core.config_manager import ConfigManager
@@ -39,7 +40,7 @@ class FakeShell:
         self.sent.append(command)
         if command.startswith("sftp "):
             self.output += f"{command}\r\nsftp> "
-        elif command.startswith("ls -la "):
+        elif command.startswith("ls -laL ") or command.startswith("ls -la "):
             self.output += (
                 f"{command}\r\n"
                 "drwxr-xr-x    2 root     root         4096 Jan  1 00:00 mmu-dir\r\n"
@@ -495,7 +496,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window._mmu_sftp_directory, "/target")
         self.assertIn("ls -ldL /tmp/link", shell.sent)
-        self.assertIn("ls -la /target", shell.sent)
+        self.assertIn("ls -laL /target", shell.sent)
 
     def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:
         """Open SFTP sends a board SFTP command through the connected shell."""
@@ -515,7 +516,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertIsNotNone(manager.sftp_shell)
         self.assertEqual(
             manager.sftp_shell.sent,
-            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -la /tmp"],
+            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -laL /tmp"],
         )
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
@@ -557,7 +558,7 @@ class MainWindowTest(unittest.TestCase):
             [
                 "rm -f ~/.ssh/known_hosts",
                 "sftp root@[fe80::1%eth0]",
-                "ls -la /tmp",
+                "ls -laL /tmp",
                 "ls",
                 "put '/tmp/update file.bin' /opt/update.bin",
                 "get /opt/update.bin '/tmp/update file.bin'",
@@ -809,6 +810,12 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window.usb_port_combo.count(), 2)
         self.assertEqual(manager.shell.sent, ["minicom -o -c off -D /dev/ttyUSB0"])
+
+        window.terminal_widget.show()
+        window.terminal_widget.setFocus()
+        QTest.keyClick(window.terminal_widget, Qt.Key.Key_Backspace)
+
+        self.assertEqual(manager.shell.sent[-1], "\x7f")
 
         window.close_minicom_button.click()
 
