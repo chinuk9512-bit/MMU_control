@@ -290,6 +290,7 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         self._sftp_pending_echo: str | None = None
         self._sftp_pending_listing = False
+        self._sftp_pending_pwd: str | None = None
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
         self._sftp_startup_pending = False
@@ -809,7 +810,7 @@ class MainWindow(QMainWindow):
             path = posixpath.join(self._mmu_sftp_directory, name)
             navigate_path = self._sftp_link_navigation_path(path, link_target) if is_link else path
             if is_link:
-                is_dir = self._sftp_link_points_to_directory(path)
+                is_dir = bool(link_target and link_target.startswith("/"))
             entries.append(SftpListEntry(is_dir, name, path, is_link, link_target, navigate_path))
         return entries
 
@@ -967,6 +968,10 @@ class MainWindow(QMainWindow):
             return
         if self._handle_sftp_directory_command(command):
             return
+        if self._handle_sftp_listing_command(command):
+            return
+        if self._handle_sftp_pwd_command(command):
+            return
         try:
             self._sftp_shell.send_line(command)
             self._sftp_pending_echo = command
@@ -1035,6 +1040,51 @@ class MainWindow(QMainWindow):
         self._change_sftp_directory(parts[0], target, send_command=True)
         return True
 
+    def _handle_sftp_listing_command(self, command: str) -> bool:
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            return False
+        if not parts or parts[0] not in {"ls", "dir"}:
+            return False
+        target = (
+            parts[-1]
+            if len(parts) > 1 and not parts[-1].startswith("-")
+            else self._mmu_sftp_directory
+        )
+        self._mmu_sftp_directory = self._resolve_sftp_path(self._mmu_sftp_directory, target)
+        self._refresh_mmu_file_list()
+        return True
+
+    def _handle_sftp_pwd_command(self, command: str) -> bool:
+        normalized = command.strip().lower()
+        if normalized not in {"pwd", "lpwd"}:
+            return False
+        if normalized == "lpwd":
+            self._append_sftp_output(f"Local working directory: {self._server_sftp_directory}")
+            return True
+        try:
+            self._sftp_shell.send_line("pwd")
+            self._sftp_pending_echo = "pwd"
+            self._sftp_pending_pwd = "pwd"
+            self._sftp_echo_buffer = ""
+        except Exception as exc:
+            self._show_sftp_error(exc)
+        return True
+
+    def _handle_sftp_pwd_output(self, output: str) -> None:
+        for line in output.splitlines():
+            if ":" not in line:
+                continue
+            label, path = line.split(":", 1)
+            if "remote working directory" in label.lower():
+                path = path.strip()
+                if path.startswith("/"):
+                    self._mmu_sftp_directory = path
+                    self.mmu_file_list.current_directory = path
+                    self.mmu_current_path_input.setText(path)
+                    self._refresh_mmu_file_list()
+
     def _change_sftp_directory(self, command: str, target: str, send_command: bool) -> None:
         current = self._mmu_sftp_directory if command == "cd" else self._server_sftp_directory
         destination = self._resolve_sftp_path(current, target)
@@ -1045,9 +1095,13 @@ class MainWindow(QMainWindow):
             self._sftp_echo_buffer = ""
         if command == "cd":
             self._mmu_sftp_directory = destination
+            self.mmu_file_list.current_directory = destination
+            self.mmu_current_path_input.setText(destination)
             self._refresh_mmu_file_list()
         else:
             self._server_sftp_directory = destination
+            self.server_file_list.current_directory = destination
+            self.server_current_path_input.setText(destination)
             self._refresh_server_file_list()
 
     def _resolve_sftp_path(self, current: str, target: str) -> str:
@@ -1388,6 +1442,9 @@ class MainWindow(QMainWindow):
         if self._sftp_pending_listing and output.strip():
             self._populate_file_list(self.mmu_file_list, self._parse_sftp_listing(output))
             self._sftp_pending_listing = False
+        if self._sftp_pending_pwd is not None and output.strip():
+            self._handle_sftp_pwd_output(output)
+            self._sftp_pending_pwd = None
         if output:
             self.sftp_terminal.write_stream(output)
 
@@ -1499,6 +1556,7 @@ class MainWindow(QMainWindow):
         self._sftp_session_active = False
         self._active_sftp_settings = None
         self._sftp_pending_echo = None
+        self._sftp_pending_pwd = None
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
         self._sftp_startup_pending = False
