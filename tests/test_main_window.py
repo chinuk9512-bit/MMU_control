@@ -40,7 +40,7 @@ class FakeShell:
         self.sent.append(command)
         if command.startswith("sftp "):
             self.output += f"{command}\r\nsftp> "
-        elif command.startswith("ls -laL ") or command.startswith("ls -la "):
+        elif command.startswith("ls -alL ") or command.startswith("ls -al "):
             self.output += (
                 f"{command}\r\n"
                 "drwxr-xr-x    2 root     root         4096 Jan  1 00:00 mmu-dir\r\n"
