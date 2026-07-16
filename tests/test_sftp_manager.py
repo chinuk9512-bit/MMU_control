@@ -53,10 +53,10 @@ class SFTPManagerTest(unittest.TestCase):
         command = manager.open_session(shell, settings)
         handled = manager.handle_password_prompt(shell, "root password:", settings)
 
-        self.assertEqual(command, "sftp root@[fe80::1%eth0]")
+        self.assertEqual(command, "sftp 'root@[fe80::1%eth0]'")
         self.assertEqual(
             channel.sent,
-            ["rm -f ~/.ssh/known_hosts\n", "sftp root@[fe80::1%eth0]\n", "secret\n"],
+            ["rm -f ~/.ssh/known_hosts\n", "sftp 'root@[fe80::1%eth0]'\n", "secret\n"],
         )
         self.assertTrue(handled)
 
@@ -76,12 +76,29 @@ class SFTPManagerTest(unittest.TestCase):
         self.assertTrue(handled)
         self.assertEqual(channel.sent, ["yes\n"])
 
+    def test_non_default_port_key_and_hostname_are_included(self) -> None:
+        """Manager includes SFTP port/key options and accepts hostnames."""
+        manager = SFTPManager()
+        settings = BoardSettings(
+            ip_address="board-host.local",
+            username="root",
+            ssh_port=2222,
+            ssh_key_path="/home/user/.ssh/mmu key",
+        )
+
+        self.assertEqual(
+            manager.build_command(settings),
+            "sftp -P 2222 -i '/home/user/.ssh/mmu key' root@board-host.local",
+        )
+
     def test_required_fields_are_validated(self) -> None:
-        """MMU IP and username are required."""
+        """MMU host, username, and SFTP port are validated."""
         manager = SFTPManager()
 
         with self.assertRaises(SFTPError):
             manager.build_command(BoardSettings(username="root"))
+        with self.assertRaises(SFTPError):
+            manager.build_command(BoardSettings(ip_address="board", username="root", ssh_port=0))
 
     def test_transfer_commands_are_quoted_and_session_can_close(self) -> None:
         """Put/get preserve paths with spaces and bye leaves SFTP mode."""
