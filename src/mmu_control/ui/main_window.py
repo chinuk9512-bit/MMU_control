@@ -38,8 +38,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
-    QSpinBox,
+    QScrollArea,
     QSizePolicy,
+    QSpinBox,
+    QSplitter,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
@@ -304,7 +306,7 @@ class MainWindow(QMainWindow):
         self._closing = False
         self.setWindowTitle("MMU Control")
         self.resize(1180, 900)
-        self.setMinimumSize(1000, 820)
+        self.setMinimumSize(760, 560)
         self.setCentralWidget(self._build_central_widget())
         self.setStatusBar(self._build_status_bar())
         self._shell_timer = QTimer(self)
@@ -1618,14 +1620,23 @@ class MainWindow(QMainWindow):
         content_layout.setColumnStretch(0, 1)
         content_layout.setColumnStretch(1, 1)
         content_layout.setColumnStretch(2, 1)
-        layout.addWidget(self.connection_panel_content)
+        self.connection_panel_scroll_area = QScrollArea(panel)
+        self.connection_panel_scroll_area.setWidgetResizable(True)
+        self.connection_panel_scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.connection_panel_scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.connection_panel_scroll_area.setWidget(self.connection_panel_content)
+        layout.addWidget(self.connection_panel_scroll_area)
 
         self.connection_panel_toggle_button.toggled.connect(self._set_connection_panel_visible)
         self._set_connection_panel_visible(True)
         return panel
 
     def _set_connection_panel_visible(self, visible: bool) -> None:
-        self.connection_panel_content.setVisible(visible)
+        self.connection_panel_scroll_area.setVisible(visible)
         label = "Hide connection info" if visible else "Show connection info"
         self.connection_panel_toggle_button.setText(label)
 
@@ -1809,7 +1820,9 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(10, 10, 10, 10)
         self.terminal_widget = TerminalWidget(prompt=self._local_prompt())
-        self.terminal_widget.setMinimumHeight(520)
+        self.terminal_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         layout.addWidget(self.terminal_widget, stretch=1)
         return tab
 
@@ -1837,15 +1850,24 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.run_command_set_button)
 
         self.command_set_output = QPlainTextEdit(self)
-        self.command_set_output.setMinimumHeight(320)
+        self.command_set_output.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.command_set_output.setReadOnly(True)
         self.command_set_output.setPlaceholderText("Command sets will be listed here.")
 
         layout.addWidget(button_row)
         self.command_set_list = QListWidget(self)
-        self.command_set_list.setMinimumHeight(220)
-        layout.addWidget(self.command_set_list, stretch=1)
-        layout.addWidget(self.command_set_output, stretch=2)
+        self.command_set_list.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        command_splitter = QSplitter(Qt.Orientation.Vertical, tab)
+        command_splitter.setChildrenCollapsible(False)
+        command_splitter.addWidget(self.command_set_list)
+        command_splitter.addWidget(self.command_set_output)
+        command_splitter.setStretchFactor(0, 1)
+        command_splitter.setStretchFactor(1, 2)
+        layout.addWidget(command_splitter, stretch=1)
         return tab
 
     def _build_transfer_tab(self) -> QWidget:
@@ -1882,11 +1904,15 @@ class MainWindow(QMainWindow):
         file_lists = QWidget(self)
         file_list_layout = QHBoxLayout(file_lists)
         file_list_layout.setContentsMargins(0, 0, 0, 0)
+        file_list_splitter = QSplitter(Qt.Orientation.Horizontal, file_lists)
+        file_list_splitter.setChildrenCollapsible(False)
         server_column = QWidget(self)
         server_layout = QVBoxLayout(server_column)
         server_layout.setContentsMargins(0, 0, 0, 0)
         self.server_file_list = SftpFileListWidget("server", self)
-        self.server_file_list.setMinimumHeight(360)
+        self.server_file_list.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.server_file_list.setToolTip("Linux server files. Drag a file to the MMU list to upload it.")
         server_layout.addWidget(QLabel("Linux server files", self))
         self.server_current_path_input = QLineEdit(self._server_sftp_directory, self)
@@ -1898,7 +1924,9 @@ class MainWindow(QMainWindow):
         mmu_layout = QVBoxLayout(mmu_column)
         mmu_layout.setContentsMargins(0, 0, 0, 0)
         self.mmu_file_list = SftpFileListWidget("mmu", self)
-        self.mmu_file_list.setMinimumHeight(360)
+        self.mmu_file_list.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.mmu_file_list.setToolTip("MMU files. Drag a file to the Linux server list to download it.")
         mmu_layout.addWidget(QLabel("MMU files", self))
         self.mmu_current_path_input = QLineEdit(self._mmu_sftp_directory, self)
@@ -1906,8 +1934,11 @@ class MainWindow(QMainWindow):
         self.mmu_current_path_input.setToolTip("Current directory on the connected MMU.")
         mmu_layout.addWidget(self.mmu_current_path_input)
         mmu_layout.addWidget(self.mmu_file_list)
-        file_list_layout.addWidget(server_column)
-        file_list_layout.addWidget(mmu_column)
+        file_list_splitter.addWidget(server_column)
+        file_list_splitter.addWidget(mmu_column)
+        file_list_splitter.setStretchFactor(0, 1)
+        file_list_splitter.setStretchFactor(1, 1)
+        file_list_layout.addWidget(file_list_splitter)
 
         transfer_buttons = QWidget(self)
         transfer_button_layout = QHBoxLayout(transfer_buttons)
@@ -1929,13 +1960,21 @@ class MainWindow(QMainWindow):
         path_help.setWordWrap(True)
 
         self.sftp_terminal = TerminalWidget(prompt=self._local_prompt())
-        self.sftp_terminal.setMinimumHeight(260)
+        self.sftp_terminal.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.sftp_terminal.setPlaceholderText("The independent SFTP terminal appears here.")
         self.sftp_output = self.sftp_terminal
 
         layout.addWidget(transfer_actions)
+        transfer_splitter = QSplitter(Qt.Orientation.Vertical, tab)
+        transfer_splitter.setChildrenCollapsible(False)
+        transfer_splitter.addWidget(file_lists)
+        transfer_splitter.addWidget(self.sftp_terminal)
+        transfer_splitter.setStretchFactor(0, 3)
+        transfer_splitter.setStretchFactor(1, 1)
+
         layout.addWidget(path_help)
-        layout.addWidget(file_lists, stretch=3)
+        layout.addWidget(transfer_splitter, stretch=1)
         layout.addWidget(transfer_buttons)
-        layout.addWidget(self.sftp_terminal, stretch=1)
         return tab
