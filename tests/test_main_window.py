@@ -475,6 +475,25 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn(f"put '{server_path}' '/tmp/update file.bin'", manager.sftp_shell.sent)
         self.assertTrue(drop_event.isAccepted())
 
+
+    def test_mmu_sftp_listing_keeps_parent_directory_entry(self) -> None:
+        """MMU listings keep the remote ../ row available for parent navigation."""
+        window = self.create_window()
+        window._mmu_sftp_directory = "/tmp"
+        window.mmu_file_list.current_directory = "/tmp"
+
+        entries = window._parse_sftp_listing(
+            "drwxrwxrwt    8 root     root          280 Jan  1 00:00 .\r\n"
+            "drwxr-xr-x   20 root     root         4096 Jan  1 00:00 ..\r\n"
+            "-rw-r--r--    1 root     root           42 Jan  1 00:00 mmu-file.txt\r\n"
+        )
+        window._populate_file_list(window.mmu_file_list, entries)
+
+        parent_item = window.mmu_file_list.item(0)
+        self.assertEqual(parent_item.text(), "../")
+        self.assertEqual(parent_item.data(Qt.ItemDataRole.UserRole), "/")
+        self.assertEqual(window.mmu_file_list.item(1).text(), "mmu-file.txt")
+
     def test_mmu_sftp_symlink_directory_opens_target(self) -> None:
         """MMU listings parse symlink names and allow directory symlinks to open."""
         window = self.create_window()
@@ -496,7 +515,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window._mmu_sftp_directory, "/target")
         self.assertIn("ls -ldL /tmp/link", shell.sent)
-        self.assertIn("ls -al /target", shell.sent)
+        self.assertIn("ls -la /target", shell.sent)
 
     def test_mmu_sftp_relative_symlink_directory_opens_resolved_target(self) -> None:
         """Relative MMU symlinks resolve from the link parent before opening."""
@@ -519,7 +538,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window._mmu_sftp_directory, "/target")
         self.assertIn("ls -ldL /tmp/link", shell.sent)
-        self.assertIn("ls -al /target", shell.sent)
+        self.assertIn("ls -la /target", shell.sent)
 
     def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:
         """Open SFTP sends a board SFTP command through the connected shell."""
@@ -539,7 +558,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertIsNotNone(manager.sftp_shell)
         self.assertEqual(
             manager.sftp_shell.sent,
-            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -al /tmp"],
+            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -la /tmp"],
         )
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
@@ -560,6 +579,8 @@ class MainWindowTest(unittest.TestCase):
         )
         self.assertEqual(window.server_file_list.item(1).text(), "server-dir/")
         self.assertEqual(window.server_file_list.item(2).text(), "server-file.txt")
+        self.assertEqual(window.mmu_file_list.item(0).text(), "../")
+        self.assertEqual(window.mmu_file_list.item(0).data(Qt.ItemDataRole.UserRole), "/")
         self.assertEqual(window.mmu_file_list.item(1).text(), "mmu-dir/")
         self.assertEqual(window.mmu_file_list.item(2).text(), "mmu-file.txt")
         self.assertEqual(window.server_current_path_input.text(), "/home/user")
@@ -581,7 +602,7 @@ class MainWindowTest(unittest.TestCase):
             [
                 "rm -f ~/.ssh/known_hosts",
                 "sftp root@[fe80::1%eth0]",
-                "ls -al /tmp",
+                "ls -la /tmp",
                 "ls",
                 "put '/tmp/update file.bin' /opt/update.bin",
                 "get /opt/update.bin '/tmp/update file.bin'",
