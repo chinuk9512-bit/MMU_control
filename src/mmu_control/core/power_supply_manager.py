@@ -48,9 +48,15 @@ class PowerSupplyManager:
         if not isinstance(template, str) or not template.strip():
             raise PowerSupplyCommandError(f"Power supply command is not configured: {action}")
         ip_address = self.settings.ip_address.strip()
+        voltage = self.settings.voltage.strip()
+        current = self.settings.current.strip()
         if "{ip}" in template and not ip_address:
             raise PowerSupplyCommandError("Power supply IP address is required.")
-        return template.format(ip=ip_address)
+        if "{voltage}" in template and not voltage:
+            raise PowerSupplyCommandError("Power supply voltage is required.")
+        if "{current}" in template and not current:
+            raise PowerSupplyCommandError("Power supply current is required.")
+        return template.format(ip=ip_address, voltage=voltage, current=current)
 
     def _load_commands(self) -> dict[str, str]:
         try:

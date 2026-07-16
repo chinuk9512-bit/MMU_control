@@ -305,6 +305,7 @@ class MainWindow(QMainWindow):
         self.power_off_button.clicked.connect(lambda: self._run_power_supply_command("off"))
         self.power_status_button.clicked.connect(lambda: self._run_power_supply_command("status"))
         self.power_all_status_button.clicked.connect(lambda: self._run_power_supply_command("all_status"))
+        self.power_set_button.clicked.connect(lambda: self._run_power_supply_command("set"))
 
     def _ssh_settings(self) -> SSHSettings:
         return SSHSettings(
@@ -315,7 +316,11 @@ class MainWindow(QMainWindow):
         )
 
     def _power_supply_settings(self) -> PowerSupplySettings:
-        return PowerSupplySettings(ip_address=self.power_supply_ip_input.text().strip())
+        return PowerSupplySettings(
+            ip_address=self.power_supply_ip_input.text().strip(),
+            voltage=self.power_supply_voltage_input.text().strip(),
+            current=self.power_supply_current_input.text().strip(),
+        )
 
     def _board_settings(self) -> BoardSettings:
         return BoardSettings(
@@ -365,6 +370,8 @@ class MainWindow(QMainWindow):
         self.ssh_username_input.setText(settings.ssh.username)
         self.ssh_password_input.setText(settings.ssh.password)
         self.power_supply_ip_input.setText(settings.power_supply.ip_address)
+        self.power_supply_voltage_input.setText(settings.power_supply.voltage)
+        self.power_supply_current_input.setText(settings.power_supply.current)
         self._power_supply_manager.update_settings(settings.power_supply)
         self.board_ip_version_combo.setCurrentText(settings.board.ip_version)
         self.board_ip_input.setText(settings.board.ip_address)
@@ -1572,6 +1579,16 @@ class MainWindow(QMainWindow):
             QRegularExpressionValidator(QRegularExpression(ipv4_pattern), self)
         )
 
+        decimal_pattern = r"^(?:\d+(?:\.\d*)?|\.\d+)$"
+        decimal_validator = QRegularExpressionValidator(QRegularExpression(decimal_pattern), self)
+        self.power_supply_voltage_input = QLineEdit(self)
+        self.power_supply_voltage_input.setPlaceholderText("Voltage")
+        self.power_supply_voltage_input.setValidator(decimal_validator)
+        self.power_supply_current_input = QLineEdit(self)
+        self.power_supply_current_input.setPlaceholderText("Current")
+        self.power_supply_current_input.setValidator(decimal_validator)
+
+        self.power_set_button = QPushButton("Set", self)
         self.power_on_button = QPushButton("ON", self)
         self.power_off_button = QPushButton("OFF", self)
         self.power_status_button = QPushButton("Status", self)
@@ -1580,6 +1597,7 @@ class MainWindow(QMainWindow):
         button_row = QWidget(self)
         button_layout = QHBoxLayout(button_row)
         button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.addWidget(self.power_set_button)
         button_layout.addWidget(self.power_on_button)
         button_layout.addWidget(self.power_off_button)
         button_layout.addWidget(self.power_status_button)
@@ -1587,6 +1605,8 @@ class MainWindow(QMainWindow):
         button_layout.addStretch(1)
 
         layout.addRow("IPv4", self.power_supply_ip_input)
+        layout.addRow("Voltage", self.power_supply_voltage_input)
+        layout.addRow("Current", self.power_supply_current_input)
         layout.addRow(button_row)
         self.power_supply_group = self._make_group("Power Supply", self.power_supply_group_content)
         return self.power_supply_group
