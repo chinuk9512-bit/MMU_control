@@ -18,7 +18,7 @@ class PowerSupplyManagerTest(unittest.TestCase):
             PowerSupplySettings(ip_address="192.168.0.50", voltage="12.5", current="1.25")
         )
 
-        self.assertEqual(manager.build_command("set"), "psu 192.168.0.50 12.5 1.25")
+        self.assertEqual(manager.build_command("set"), "psu 192.168.0.50 set 12.5 1.25")
         self.assertEqual(manager.build_command("on"), "psu 192.168.0.50 on")
         self.assertEqual(manager.build_command("off"), "psu 192.168.0.50 off")
         self.assertEqual(manager.build_command("status"), "psu 192.168.0.50 status")
