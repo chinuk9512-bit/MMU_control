@@ -1483,30 +1483,48 @@ class MainWindow(QMainWindow):
     def _build_connection_panel(self) -> QFrame:
         panel = QFrame(self)
         panel.setFrameShape(QFrame.Shape.StyledPanel)
-        layout = QGridLayout(panel)
+        layout = QVBoxLayout(panel)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.setHorizontalSpacing(16)
-        layout.setVerticalSpacing(10)
+        layout.setSpacing(8)
 
-        layout.addWidget(self._build_ssh_group(), 0, 0)
-        layout.addWidget(self._build_power_supply_group(), 0, 1)
-        layout.addWidget(self._build_board_group(), 0, 2)
-        layout.setColumnStretch(0, 1)
-        layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(2, 2)
+        header = QWidget(panel)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        self.connection_panel_toggle_button = QPushButton("Hide connection info", self)
+        self.connection_panel_toggle_button.setCheckable(True)
+        self.connection_panel_toggle_button.setChecked(True)
+        header_layout.addWidget(self.connection_panel_toggle_button)
+        header_layout.addStretch(1)
+        layout.addWidget(header)
+
+        self.connection_panel_content = QWidget(panel)
+        content_layout = QGridLayout(self.connection_panel_content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setHorizontalSpacing(16)
+        content_layout.setVerticalSpacing(10)
+        content_layout.addWidget(self._build_ssh_group(), 0, 0)
+        content_layout.addWidget(self._build_power_supply_group(), 0, 1)
+        content_layout.addWidget(self._build_board_group(), 0, 2)
+        content_layout.setColumnStretch(0, 1)
+        content_layout.setColumnStretch(1, 1)
+        content_layout.setColumnStretch(2, 2)
+        layout.addWidget(self.connection_panel_content)
+
+        self.connection_panel_toggle_button.toggled.connect(self._set_connection_panel_visible)
+        self._set_connection_panel_visible(True)
         return panel
 
-    def _make_collapsible_group(self, title: str, content: QWidget) -> QGroupBox:
+    def _set_connection_panel_visible(self, visible: bool) -> None:
+        self.connection_panel_content.setVisible(visible)
+        label = "Hide connection info" if visible else "Show connection info"
+        self.connection_panel_toggle_button.setText(label)
+
+    def _make_group(self, title: str, content: QWidget) -> QGroupBox:
         group = QGroupBox(title, self)
-        group.setCheckable(True)
-        group.setChecked(True)
 
         layout = QVBoxLayout(group)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.addWidget(content)
-
-        group.toggled.connect(content.setVisible)
-        content.setVisible(group.isChecked())
         return group
 
     def _build_ssh_group(self) -> QGroupBox:
@@ -1530,7 +1548,7 @@ class MainWindow(QMainWindow):
         layout.addRow("User", self.ssh_username_input)
         layout.addRow("Password", self.ssh_password_input)
         layout.addRow(self._build_connection_buttons())
-        self.ssh_group = self._make_collapsible_group("SSH Server", self.ssh_group_content)
+        self.ssh_group = self._make_group("SSH Server", self.ssh_group_content)
         return self.ssh_group
 
     def _build_power_supply_group(self) -> QGroupBox:
@@ -1564,9 +1582,7 @@ class MainWindow(QMainWindow):
 
         layout.addRow("IPv4", self.power_supply_ip_input)
         layout.addRow(button_row)
-        self.power_supply_group = self._make_collapsible_group(
-            "Power Supply", self.power_supply_group_content
-        )
+        self.power_supply_group = self._make_group("Power Supply", self.power_supply_group_content)
         return self.power_supply_group
 
     def _build_board_group(self) -> QGroupBox:
@@ -1607,16 +1623,13 @@ class MainWindow(QMainWindow):
         ip_layout.addWidget(self.board_ip_version_combo)
         ip_layout.addWidget(self.board_ip_input, stretch=1)
 
-        # The target IP identifies the MMU board for both SSH/SFTP and other
-        # board-level actions, so keep it as shared MMU configuration rather
-        # than hiding it in one console-specific tab.
-        layout.addRow("IP", ip_row)
+        self.board_ip_row = ip_row
 
         self.board_console_tabs = QTabWidget(self)
         self.board_console_tabs.addTab(self._build_serial_console_tab(), "Serial Console")
         self.board_console_tabs.addTab(self._build_ssh_console_tab(), "SSH Console")
         layout.addRow(self.board_console_tabs)
-        self.mmu_group = self._make_collapsible_group("MMU", self.mmu_group_content)
+        self.mmu_group = self._make_group("MMU", self.mmu_group_content)
         return self.mmu_group
 
     def _build_serial_console_tab(self) -> QWidget:
@@ -1653,6 +1666,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.mmu_ssh_disconnect_button)
         button_layout.addStretch(1)
 
+        layout.addRow(self.board_ip_row)
         layout.addRow("User", self.board_username_input)
         layout.addRow("Password", self.board_password_input)
         layout.addRow("Interface", self.board_interface_input)
