@@ -56,7 +56,7 @@ class TerminalStreamFilter:
                     self._shift_g1 = True
                 elif character == "\x0f":
                     self._shift_g1 = False
-                elif character in "\n\r\t":
+                elif character in "\b\n\r\t":
                     visible.append(character)
                 elif code >= 32 and code != 127 and not 0x80 <= code <= 0x9F:
                     dec_graphics = (

@@ -77,8 +77,23 @@ class TerminalWidget(QPlainTextEdit):
         if not text:
             return
         cursor = self._remove_live_input()
-        cursor.insertText(text.replace("\r\n", "\n").replace("\r", "\n"))
+        self._insert_terminal_stream_text(cursor, text)
         self._insert_live_input(cursor)
+
+    def _insert_terminal_stream_text(self, cursor: QTextCursor, text: str) -> None:
+        """Render printable stream text plus simple terminal erase characters."""
+        pending_text: list[str] = []
+        for character in text.replace("\r\n", "\n").replace("\r", "\n"):
+            if character == "\b":
+                if pending_text:
+                    pending_text.pop()
+                    continue
+                if cursor.position() > 0:
+                    cursor.deletePreviousChar()
+                continue
+            pending_text.append(character)
+        if pending_text:
+            cursor.insertText("".join(pending_text))
 
     def clear_terminal(self) -> None:
         """Clear the terminal and restore the prompt."""
