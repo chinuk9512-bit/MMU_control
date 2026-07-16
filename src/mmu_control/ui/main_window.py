@@ -810,7 +810,7 @@ class MainWindow(QMainWindow):
             path = posixpath.join(self._mmu_sftp_directory, name)
             navigate_path = self._sftp_link_navigation_path(path, link_target) if is_link else path
             if is_link:
-                is_dir = bool(link_target and link_target.startswith("/"))
+                is_dir = bool(link_target)
             entries.append(SftpListEntry(is_dir, name, path, is_link, link_target, navigate_path))
         return entries
 
@@ -821,9 +821,11 @@ class MainWindow(QMainWindow):
         return name, target or None
 
     def _sftp_link_navigation_path(self, link_path: str, link_target: str | None) -> str:
-        if not link_target or not link_target.startswith("/"):
+        if not link_target:
             return link_path
-        return link_target
+        if link_target.startswith("/"):
+            return posixpath.normpath(link_target)
+        return posixpath.normpath(posixpath.join(posixpath.dirname(link_path), link_target))
 
     def _sftp_link_points_to_directory(self, link_path: str) -> bool:
         if self._sftp_shell is None or not self._sftp_shell.is_open:
@@ -884,8 +886,11 @@ class MainWindow(QMainWindow):
         path = item.data(Qt.ItemDataRole.UserRole)
         navigate_path = item.data(Qt.ItemDataRole.UserRole + 4)
         is_dir = bool(item.data(Qt.ItemDataRole.UserRole + 1))
-        if not is_dir or not isinstance(path, str):
+        is_link = bool(item.data(Qt.ItemDataRole.UserRole + 2))
+        if not isinstance(path, str) or (not is_dir and not is_link):
             return
+        if file_list.side == "mmu" and is_link:
+            self._sftp_link_points_to_directory(path)
         destination = navigate_path if isinstance(navigate_path, str) and navigate_path else path
         if file_list.side == "server":
             self._change_sftp_directory("lcd", destination, send_command=True)
