@@ -778,10 +778,7 @@ class MainWindow(QMainWindow):
         self._sftp_pending_listing = True
         self._sftp_echo_buffer = ""
         self._append_sftp_output(f"Listing MMU files: {command}")
-        self._populate_file_list(
-            self.mmu_file_list,
-            [(True, self._mmu_sftp_directory, self._mmu_sftp_directory)],
-        )
+        self._populate_file_list(self.mmu_file_list, [])
 
     def _parse_find_listing(self, output: str) -> list[SftpListEntry]:
         entries: list[SftpListEntry] = []
@@ -795,24 +792,40 @@ class MainWindow(QMainWindow):
     def _parse_sftp_listing(self, output: str) -> list[SftpListEntry]:
         entries: list[SftpListEntry] = []
         for line in output.splitlines():
-            line = line.strip()
-            if not line or line.startswith("Listing MMU files:") or line.startswith("sftp>"):
+            line = self._normalize_sftp_listing_line(line)
+            if not line:
                 continue
             parts = line.split(maxsplit=8)
-            if len(parts) < 9:
+            if len(parts) < 9 or not parts[0] or parts[0][0] not in "-dl":
                 continue
             raw_name = parts[8]
             is_link = parts[0].startswith("l")
             name, link_target = self._split_sftp_link_name(raw_name) if is_link else (raw_name, None)
-            if name in {".", ".."}:
+            if name == ".":
                 continue
             is_dir = parts[0].startswith("d")
-            path = posixpath.join(self._mmu_sftp_directory, name)
+            path = (
+                posixpath.dirname(self._mmu_sftp_directory.rstrip("/")) or "/"
+                if name == ".."
+                else posixpath.join(self._mmu_sftp_directory, name)
+            )
             navigate_path = self._sftp_link_navigation_path(path, link_target) if is_link else path
             if is_link:
                 is_dir = bool(link_target)
             entries.append(SftpListEntry(is_dir, name, path, is_link, link_target, navigate_path))
         return entries
+
+
+    def _normalize_sftp_listing_line(self, line: str) -> str:
+        """Return a clean long-format SFTP listing row, without prompts or echoes."""
+        line = line.strip()
+        if not line or line.startswith("Listing MMU files:"):
+            return ""
+        if line.startswith("sftp>"):
+            line = line.removeprefix("sftp>").strip()
+        if line.startswith(("ls ", "dir ")):
+            return ""
+        return line
 
     def _split_sftp_link_name(self, raw_name: str) -> tuple[str, str | None]:
         name, separator, target = raw_name.partition(" -> ")
@@ -850,17 +863,19 @@ class MainWindow(QMainWindow):
         entries: list[SftpListEntry | tuple[bool, str, str]],
     ) -> None:
         file_list.clear()
-        parent = posixpath.dirname(file_list.current_directory.rstrip("/")) or "/"
-        parent_item = QListWidgetItem("../")
-        parent_item.setData(Qt.ItemDataRole.UserRole, parent)
-        parent_item.setData(Qt.ItemDataRole.UserRole + 1, True)
-        parent_item.setData(Qt.ItemDataRole.UserRole + 2, False)
-        parent_item.setData(Qt.ItemDataRole.UserRole + 3, None)
-        parent_item.setData(Qt.ItemDataRole.UserRole + 4, parent)
-        file_list.addItem(parent_item)
+        coerced_entries = [self._coerce_file_entry(entry) for entry in entries]
+        if not any(entry.name == ".." for entry in coerced_entries):
+            parent = posixpath.dirname(file_list.current_directory.rstrip("/")) or "/"
+            parent_item = QListWidgetItem("../")
+            parent_item.setData(Qt.ItemDataRole.UserRole, parent)
+            parent_item.setData(Qt.ItemDataRole.UserRole + 1, True)
+            parent_item.setData(Qt.ItemDataRole.UserRole + 2, False)
+            parent_item.setData(Qt.ItemDataRole.UserRole + 3, None)
+            parent_item.setData(Qt.ItemDataRole.UserRole + 4, parent)
+            file_list.addItem(parent_item)
         sorted_entries = sorted(
-            (self._coerce_file_entry(entry) for entry in entries),
-            key=lambda entry: (not entry.is_dir, entry.name.lower()),
+            coerced_entries,
+            key=lambda entry: (entry.name != "..", not entry.is_dir, entry.name.lower()),
         )
         for entry in sorted_entries:
             if not entry.name or not entry.path:
