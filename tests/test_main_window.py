@@ -254,6 +254,36 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.power_status_button.text(), "Status")
         self.assertEqual(window.power_all_status_button.text(), "All Status")
 
+    def test_power_supply_buttons_send_configured_commands(self) -> None:
+        """Power supply buttons send JSON-configured commands to the SSH shell."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window._activate_shell(manager.shell)
+        window.power_supply_ip_input.setText("192.168.0.50")
+
+        window.power_on_button.click()
+        window.power_off_button.click()
+        window.power_status_button.click()
+        window.power_all_status_button.click()
+
+        self.assertEqual(
+            manager.shell.sent,
+            [
+                "psu 192.168.0.50 on",
+                "psu 192.168.0.50 off",
+                "psu 192.168.0.50 status",
+                "psu all-status",
+            ],
+        )
+
+    def test_power_supply_button_requires_ssh_shell(self) -> None:
+        """Power supply commands are sent through the connected SSH shell."""
+        window = self.create_window()
+
+        window.power_all_status_button.click()
+
+        self.assertIn("Not connected to an SSH shell.", window.terminal_widget.toPlainText())
+
     def test_connection_panel_toggle_hides_all_top_groups_without_disabling_state(self) -> None:
         """The top toggle collapses all connection groups while preserving control state."""
         window = self.create_window()

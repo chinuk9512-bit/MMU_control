@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 from mmu_control.core.config_manager import ConfigError, ConfigManager
 from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.core.minicom_manager import MinicomError, MinicomManager
-from mmu_control.core.power_supply_manager import PowerSupplyManager
+from mmu_control.core.power_supply_manager import PowerSupplyCommandError, PowerSupplyManager
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
 from mmu_control.models.command_set import CommandSet
@@ -301,10 +301,10 @@ class MainWindow(QMainWindow):
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
         self.board_ip_version_combo.currentTextChanged.connect(self._update_board_ip_placeholder)
-        self.power_on_button.clicked.connect(lambda: self._handle_power_supply_stub("ON"))
-        self.power_off_button.clicked.connect(lambda: self._handle_power_supply_stub("OFF"))
-        self.power_status_button.clicked.connect(lambda: self._handle_power_supply_stub("Status"))
-        self.power_all_status_button.clicked.connect(lambda: self._handle_power_supply_stub("All Status"))
+        self.power_on_button.clicked.connect(lambda: self._run_power_supply_command("on"))
+        self.power_off_button.clicked.connect(lambda: self._run_power_supply_command("off"))
+        self.power_status_button.clicked.connect(lambda: self._run_power_supply_command("status"))
+        self.power_all_status_button.clicked.connect(lambda: self._run_power_supply_command("all_status"))
 
     def _ssh_settings(self) -> SSHSettings:
         return SSHSettings(
@@ -328,13 +328,19 @@ class MainWindow(QMainWindow):
             ssh_port=self.board_ssh_port_input.value(),
         )
 
-    def _handle_power_supply_stub(self, action: str) -> None:
+    def _run_power_supply_command(self, action: str) -> None:
         settings = self._power_supply_settings()
         self._power_supply_manager.update_settings(settings)
-        target = settings.ip_address or "unconfigured power supply"
-        self.statusBar().showMessage(
-            f"Power Supply {action} is not implemented yet for {target}."
-        )
+        if self._shell is None or not self._shell.is_open:
+            self.terminal_widget.write_output("Not connected to an SSH shell.")
+            return
+        try:
+            command = self._power_supply_manager.build_command(action)
+            self._shell.send_line(command)
+        except PowerSupplyCommandError as exc:
+            self.terminal_widget.write_output(f"Power Supply error: {exc}")
+            return
+        self.statusBar().showMessage(f"Power Supply command sent: {command}")
 
     def _update_board_ip_placeholder(self, ip_version: str) -> None:
         placeholder = "fe80::1" if ip_version == "IPv6" else "192.168.0.10"

@@ -1,0 +1,8 @@
+{
+  "commands": {
+    "on": "psu {ip} on",
+    "off": "psu {ip} off",
+    "status": "psu {ip} status",
+    "all_status": "psu all-status"
+  }
+}
