@@ -277,7 +277,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(
             manager.shell.sent,
             [
-                "psu 192.168.0.50 12.5 1.25",
+                "psu 192.168.0.50 set 12.5 1.25",
                 "psu 192.168.0.50 on",
                 "psu 192.168.0.50 off",
                 "psu 192.168.0.50 status",
@@ -309,7 +309,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window.ssh_group.title(), "SSH Server")
         self.assertEqual(window.power_supply_group.title(), "Power Supply")
-        self.assertEqual(window.mmu_group.title(), "MMU")
+        self.assertEqual(window.mmu_group.title(), "Client")
 
         window.connection_panel_toggle_button.setChecked(False)
 

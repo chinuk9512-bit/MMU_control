@@ -1520,7 +1520,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self._build_board_group(), 0, 2)
         content_layout.setColumnStretch(0, 1)
         content_layout.setColumnStretch(1, 1)
-        content_layout.setColumnStretch(2, 2)
+        content_layout.setColumnStretch(2, 1)
         layout.addWidget(self.connection_panel_content)
 
         self.connection_panel_toggle_button.toggled.connect(self._set_connection_panel_visible)
@@ -1595,14 +1595,14 @@ class MainWindow(QMainWindow):
         self.power_all_status_button = QPushButton("All Status", self)
 
         button_row = QWidget(self)
-        button_layout = QHBoxLayout(button_row)
+        button_layout = QGridLayout(button_row)
         button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.addWidget(self.power_set_button)
-        button_layout.addWidget(self.power_on_button)
-        button_layout.addWidget(self.power_off_button)
-        button_layout.addWidget(self.power_status_button)
-        button_layout.addWidget(self.power_all_status_button)
-        button_layout.addStretch(1)
+        button_layout.addWidget(self.power_set_button, 0, 0)
+        button_layout.addWidget(self.power_status_button, 0, 1)
+        button_layout.addWidget(self.power_all_status_button, 0, 2)
+        button_layout.addWidget(self.power_on_button, 1, 0)
+        button_layout.addWidget(self.power_off_button, 1, 1)
+        button_layout.setColumnStretch(3, 1)
 
         layout.addRow("IPv4", self.power_supply_ip_input)
         layout.addRow("Voltage", self.power_supply_voltage_input)
@@ -1655,7 +1655,7 @@ class MainWindow(QMainWindow):
         self.board_console_tabs.addTab(self._build_serial_console_tab(), "Serial Console")
         self.board_console_tabs.addTab(self._build_ssh_console_tab(), "SSH Console")
         layout.addRow(self.board_console_tabs)
-        self.mmu_group = self._make_group("MMU", self.mmu_group_content)
+        self.mmu_group = self._make_group("Client", self.mmu_group_content)
         return self.mmu_group
 
     def _build_serial_console_tab(self) -> QWidget:
