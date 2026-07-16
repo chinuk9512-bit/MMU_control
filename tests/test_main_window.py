@@ -496,7 +496,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window._mmu_sftp_directory, "/target")
         self.assertIn("ls -ldL /tmp/link", shell.sent)
-        self.assertIn("ls -al /target", shell.sent)
+        self.assertIn("ls -la /target", shell.sent)
 
     def test_mmu_sftp_relative_symlink_directory_opens_resolved_target(self) -> None:
         """Relative MMU symlinks resolve from the link parent before opening."""
@@ -519,7 +519,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window._mmu_sftp_directory, "/target")
         self.assertIn("ls -ldL /tmp/link", shell.sent)
-        self.assertIn("ls -al /target", shell.sent)
+        self.assertIn("ls -la /target", shell.sent)
 
     def test_open_sftp_starts_session_from_connected_ssh_shell(self) -> None:
         """Open SFTP sends a board SFTP command through the connected shell."""
@@ -539,7 +539,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertIsNotNone(manager.sftp_shell)
         self.assertEqual(
             manager.sftp_shell.sent,
-            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -al /tmp"],
+            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -la /tmp"],
         )
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
@@ -581,7 +581,7 @@ class MainWindowTest(unittest.TestCase):
             [
                 "rm -f ~/.ssh/known_hosts",
                 "sftp root@[fe80::1%eth0]",
-                "ls -al /tmp",
+                "ls -la /tmp",
                 "ls",
                 "put '/tmp/update file.bin' /opt/update.bin",
                 "get /opt/update.bin '/tmp/update file.bin'",

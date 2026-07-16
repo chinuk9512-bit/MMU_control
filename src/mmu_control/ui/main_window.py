@@ -772,7 +772,7 @@ class MainWindow(QMainWindow):
         if self._sftp_shell is None or not self._sftp_shell.is_open:
             self._populate_file_list(self.mmu_file_list, [])
             return
-        command = f"ls -al {shlex.quote(self._mmu_sftp_directory)}"
+        command = f"ls -la {shlex.quote(self._mmu_sftp_directory)}"
         self._sftp_shell.send_line(command)
         self._sftp_pending_echo = command
         self._sftp_pending_listing = True
@@ -795,11 +795,11 @@ class MainWindow(QMainWindow):
     def _parse_sftp_listing(self, output: str) -> list[SftpListEntry]:
         entries: list[SftpListEntry] = []
         for line in output.splitlines():
-            line = line.strip()
-            if not line or line.startswith("Listing MMU files:") or line.startswith("sftp>"):
+            line = self._normalize_sftp_listing_line(line)
+            if not line:
                 continue
             parts = line.split(maxsplit=8)
-            if len(parts) < 9:
+            if len(parts) < 9 or not parts[0] or parts[0][0] not in "-dl":
                 continue
             raw_name = parts[8]
             is_link = parts[0].startswith("l")
@@ -813,6 +813,18 @@ class MainWindow(QMainWindow):
                 is_dir = bool(link_target)
             entries.append(SftpListEntry(is_dir, name, path, is_link, link_target, navigate_path))
         return entries
+
+
+    def _normalize_sftp_listing_line(self, line: str) -> str:
+        """Return a clean long-format SFTP listing row, without prompts or echoes."""
+        line = line.strip()
+        if not line or line.startswith("Listing MMU files:"):
+            return ""
+        if line.startswith("sftp>"):
+            line = line.removeprefix("sftp>").strip()
+        if line.startswith(("ls ", "dir ")):
+            return ""
+        return line
 
     def _split_sftp_link_name(self, raw_name: str) -> tuple[str, str | None]:
         name, separator, target = raw_name.partition(" -> ")
