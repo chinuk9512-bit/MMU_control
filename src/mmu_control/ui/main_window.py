@@ -721,7 +721,7 @@ class MainWindow(QMainWindow):
         if self._sftp_shell is None or not self._sftp_shell.is_open:
             self._populate_file_list(self.mmu_file_list, [])
             return
-        command = f"ls -la {shlex.quote(self._mmu_sftp_directory)}"
+        command = f"ls -laL {shlex.quote(self._mmu_sftp_directory)}"
         self._sftp_shell.send_line(command)
         self._sftp_pending_echo = command
         self._sftp_pending_listing = True
@@ -1103,7 +1103,7 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         self._minicom_session_active = True
         self._interactive_program = "minicom"
-        self.terminal_widget.set_backspace_sequence("\x08")
+        self.terminal_widget.set_backspace_sequence("\x7f")
         self.terminal_widget.set_interactive_mode(True)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(True)

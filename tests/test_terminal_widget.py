@@ -136,7 +136,7 @@ class TerminalWidgetTest(unittest.TestCase):
         self.assertEqual(raw_input, ["show status"])
 
     def test_interactive_backspace_sequence_is_configurable(self) -> None:
-        """Minicom can use Ctrl-H/BS instead of the default DEL byte."""
+        """Interactive programs can use Ctrl-H/BS instead of the default DEL byte."""
         widget = TerminalWidget(prompt="")
         raw_input: list[str] = []
         widget.rawInput.connect(raw_input.append)
