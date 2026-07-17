@@ -40,13 +40,17 @@ class FakeShell:
         self.sent.append(command)
         if command.startswith("sftp "):
             self.output += f"{command}\r\nsftp> "
-        elif command.startswith("ls -alL ") or command.startswith("ls -al "):
+        elif command.startswith("ls -alL ") or command.startswith("ls -al ") or command == "ls":
             self.output += (
                 f"{command}\r\n"
                 "drwxr-xr-x    2 root     root         4096 Jan  1 00:00 mmu-dir\r\n"
                 "-rw-r--r--    1 root     root           42 Jan  1 00:00 mmu-file.txt\r\n"
                 "sftp> "
             )
+        elif command == "pwd":
+            self.output += f'{command}\r\nRemote working directory: "/tmp"\r\nsftp> '
+        elif command.startswith("cd "):
+            self.output += f"{command}\r\nsftp> "
         else:
             self.output += f"{command}\r\n/home/user\r\nuser@server:~$ "
         return len(command) + 1
@@ -632,6 +636,45 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertTrue(manager.shell.is_open)
         self.assertFalse(manager.sftp_shell.is_open)
+
+
+    def test_sftp_terminal_shows_user_commands_and_remote_responses(self) -> None:
+        """SFTP user commands remain visible with the remote shell response."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_password_input.setText("secret")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+        window.sftp_terminal.clear_terminal()
+        window.sftp_terminal.set_prompt("sftp> ")
+
+        window.sftp_terminal.commandSubmitted.emit("ls")
+        window._poll_sftp_shell()
+
+        terminal_text = window.sftp_terminal.toPlainText()
+        self.assertIn("sftp> ls", terminal_text)
+        self.assertIn("mmu-file.txt", terminal_text)
+
+        window.sftp_terminal.commandSubmitted.emit("pwd")
+        window._poll_sftp_shell()
+
+        terminal_text = window.sftp_terminal.toPlainText()
+        self.assertIn("sftp> pwd", terminal_text)
+        self.assertIn('Remote working directory: "/tmp"', terminal_text)
+
+        window.sftp_terminal.commandSubmitted.emit("cd /tmp")
+        window._poll_sftp_shell()
+
+        terminal_text = window.sftp_terminal.toPlainText()
+        self.assertIn("sftp> cd /tmp", terminal_text)
+        self.assertIn("mmu-dir", terminal_text)
+        self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
 
 
     def test_sftp_progress_carriage_return_is_not_hidden_by_echo_filter(self) -> None:

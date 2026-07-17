@@ -989,6 +989,8 @@ class MainWindow(QMainWindow):
         if self._sftp_shell is None or not self._sftp_shell.is_open:
             self._run_sftp_local_command(command)
             return
+        if command.strip():
+            self._echo_sftp_command(command)
         if self._handle_sftp_directory_command(command):
             return
         if self._handle_sftp_listing_command(command):
@@ -1001,6 +1003,14 @@ class MainWindow(QMainWindow):
             self._sftp_echo_buffer = ""
         except Exception as exc:
             self._show_sftp_error(exc)
+
+    def _echo_sftp_command(self, command: str) -> None:
+        """Ensure programmatically submitted SFTP commands are visible once."""
+        prompt = self.sftp_terminal._prompt
+        text = self.sftp_terminal.toPlainText()
+        if text.endswith(f"{prompt}{command}\n{prompt}"):
+            return
+        self.sftp_terminal.write_stream(f"{prompt}{command}\r\n")
 
     def _run_sftp_local_command(self, command: str) -> None:
         """Run fallback commands in the SFTP pane without touching the Terminal tab."""
