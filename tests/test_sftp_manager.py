@@ -106,6 +106,7 @@ class SFTPManagerTest(unittest.TestCase):
         shell = InteractiveShell(channel)
         manager = SFTPManager()
 
+        manager.change_directory(shell, "/tmp")
         manager.upload(shell, "/tmp/update file.bin", "/opt/update.bin")
         manager.download(shell, "/opt/result.bin", "/tmp/result file.bin")
         manager.close_session(shell)
@@ -113,6 +114,7 @@ class SFTPManagerTest(unittest.TestCase):
         self.assertEqual(
             channel.sent,
             [
+                "cd /tmp\n",
                 "put '/tmp/update file.bin' /opt/update.bin\n",
                 "get /opt/result.bin '/tmp/result file.bin'\n",
                 "bye\n",

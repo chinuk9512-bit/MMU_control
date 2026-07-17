@@ -1475,6 +1475,14 @@ class MainWindow(QMainWindow):
         self._sftp_session_active = True
         self.sftp_terminal.set_prompt("sftp> ")
         self._append_sftp_output("SFTP session opened. You can type SFTP commands below.")
+        if self._sftp_shell is not None and self._sftp_shell.is_open:
+            command = self._sftp_manager.change_directory(
+                self._sftp_shell,
+                self._mmu_sftp_directory,
+            )
+            self._sftp_pending_echo = command
+            self._sftp_echo_buffer = ""
+            self._append_sftp_output(f"Changed MMU SFTP directory: {command}")
         self._set_sftp_actions_enabled(True)
         self.board_status_label.setText("MMU: SFTP connected")
         self.statusBar().showMessage("SFTP session opened")

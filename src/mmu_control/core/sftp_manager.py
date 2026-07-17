@@ -91,6 +91,15 @@ class SFTPManager:
         shell.send_line(command)
         return command
 
+    def change_directory(self, shell: InteractiveShell, path: str) -> str:
+        """Change the remote working directory in an open SFTP session."""
+        path = path.strip()
+        if not path:
+            raise SFTPError("MMU directory path is required.")
+        command = f"cd {shlex.quote(path)}"
+        shell.send_line(command)
+        return command
+
     def close_session(self, shell: InteractiveShell) -> None:
         """Leave the active SFTP session."""
         shell.send_line("bye")
