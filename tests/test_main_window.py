@@ -657,6 +657,34 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.sftp_terminal.toPlainText().splitlines()[-1], f"{window._local_cwd}> ")
         self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
 
+
+    def test_sftp_pwd_parser_accepts_common_remote_path_formats(self) -> None:
+        """SFTP pwd parsing handles OpenSSH quotes and bare remote paths."""
+        window = self.create_window()
+
+        self.assertEqual(
+            window._extract_sftp_pwd_path('Remote working directory: "/opt/mmu"\r\nsftp> '),
+            "/opt/mmu",
+        )
+        self.assertEqual(window._extract_sftp_pwd_path("/var/log\nsftp> "), "/var/log")
+        self.assertIsNone(window._extract_sftp_pwd_path("Local working directory: /home/user"))
+
+    def test_sftp_pwd_pending_survives_echo_only_chunk(self) -> None:
+        """A chunk split between pwd echo and path still updates the MMU path."""
+        window = self.create_window()
+        window._sftp_pending_pwd = "pwd"
+        window._sftp_pending_echo = "pwd"
+
+        echo_output = window._filter_sftp_echo("pwd\r\n")
+        if echo_output.strip():
+            handled_pwd = window._handle_sftp_pwd_output(echo_output)
+            if handled_pwd or "sftp>" in echo_output:
+                window._sftp_pending_pwd = None
+
+        self.assertEqual(window._sftp_pending_pwd, "pwd")
+        self.assertTrue(window._handle_sftp_pwd_output('Remote working directory: "/opt/mmu"\r\nsftp> '))
+        self.assertEqual(window.mmu_current_path_input.text(), "/opt/mmu")
+
     def test_open_sftp_times_out_when_prompt_never_arrives(self) -> None:
         """SFTP startup fails when the remote prompt does not appear within the timeout."""
         manager = HangingSftpSSHManager()
