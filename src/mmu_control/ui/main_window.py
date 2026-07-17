@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import posixpath
+import re
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QProgressDialog,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
@@ -295,6 +297,9 @@ class MainWindow(QMainWindow):
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
         self._sftp_startup_pending = False
+        self._sftp_transfer_progress_dialog: QProgressDialog | None = None
+        self._sftp_transfer_refresh_target: str | None = None
+        self._sftp_transfer_seen_progress = False
         self._active_sftp_settings: BoardSettings | None = None
         self._sftp_session_active = False
         self._minicom_session_active = False
@@ -744,8 +749,61 @@ class MainWindow(QMainWindow):
             return
         self._sftp_pending_echo = command
         self._sftp_echo_buffer = ""
+        self._start_sftp_transfer_progress(
+            "Uploading to MMU" if source_side == "server" else "Downloading to server",
+            "mmu" if source_side == "server" else "server",
+        )
         self._append_sftp_output(f"Running: {command}")
         self.statusBar().showMessage("SFTP drag-and-drop transfer started")
+
+    def _start_sftp_transfer_progress(self, title: str, refresh_target: str) -> None:
+        """Show transfer progress and remember which file list to refresh when done."""
+        self._close_sftp_transfer_progress()
+        dialog = QProgressDialog("Transfer progress: 0%", "", 0, 100, self)
+        dialog.setCancelButton(None)
+        dialog.setWindowTitle(title)
+        dialog.setWindowModality(Qt.WindowModality.NonModal)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setMinimumDuration(0)
+        dialog.setValue(0)
+        dialog.show()
+        self._sftp_transfer_progress_dialog = dialog
+        self._sftp_transfer_refresh_target = refresh_target
+        self._sftp_transfer_seen_progress = False
+
+    def _update_sftp_transfer_progress(self, output: str) -> None:
+        """Update and close the drag-and-drop transfer progress popup from SFTP output."""
+        if self._sftp_transfer_progress_dialog is None:
+            return
+        percentages = [min(int(match), 100) for match in re.findall(r"(?<!\d)(\d{1,3})%", output)]
+        if percentages:
+            percent = max(percentages)
+            self._sftp_transfer_seen_progress = True
+            self._sftp_transfer_progress_dialog.setLabelText(f"Transfer progress: {percent}%")
+            self._sftp_transfer_progress_dialog.setValue(percent)
+        if "sftp>" in output and (self._sftp_transfer_seen_progress or not percentages):
+            self._finish_sftp_transfer_progress()
+
+    def _finish_sftp_transfer_progress(self) -> None:
+        """Close the progress popup and refresh the side that received the file."""
+        refresh_target = self._sftp_transfer_refresh_target
+        if self._sftp_transfer_progress_dialog is not None:
+            self._sftp_transfer_progress_dialog.setValue(100)
+            self._close_sftp_transfer_progress()
+        if refresh_target == "server":
+            self._refresh_server_file_list()
+        elif refresh_target == "mmu":
+            self._refresh_mmu_file_list()
+
+    def _close_sftp_transfer_progress(self) -> None:
+        """Close and forget any active SFTP transfer progress popup."""
+        if self._sftp_transfer_progress_dialog is not None:
+            self._sftp_transfer_progress_dialog.close()
+            self._sftp_transfer_progress_dialog.deleteLater()
+        self._sftp_transfer_progress_dialog = None
+        self._sftp_transfer_refresh_target = None
+        self._sftp_transfer_seen_progress = False
 
     def _refresh_sftp_file_lists(self) -> None:
         self._refresh_server_file_list()
@@ -966,6 +1024,7 @@ class MainWindow(QMainWindow):
             return
         self._sftp_pending_echo = command
         self._sftp_echo_buffer = ""
+        self._start_sftp_transfer_progress("Uploading to MMU", "mmu")
         self._append_sftp_output(f"Running: {command}")
         self.statusBar().showMessage("Dropped file upload started")
 
@@ -1488,6 +1547,7 @@ class MainWindow(QMainWindow):
                         f"SFTP password sent: {settings.password or '(empty)'}"
                     )
         output = self._filter_sftp_echo(output)
+        self._update_sftp_transfer_progress(output)
         pwd_response_complete = self._sftp_pending_pwd is not None and "sftp>" in output
         output = self._without_trailing_sftp_prompt(output)
         if startup_reached:
@@ -1633,6 +1693,7 @@ class MainWindow(QMainWindow):
         self._sftp_echo_buffer = ""
         self._sftp_prompt_buffer = ""
         self._sftp_startup_pending = False
+        self._close_sftp_transfer_progress()
         self._set_sftp_actions_enabled(False)
         self.sftp_terminal.set_prompt(self._local_prompt())
         self.open_sftp_button.setEnabled(self._shell is not None and self._shell.is_open)
