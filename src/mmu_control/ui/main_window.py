@@ -1095,18 +1095,35 @@ class MainWindow(QMainWindow):
             self._show_sftp_error(exc)
         return True
 
-    def _handle_sftp_pwd_output(self, output: str) -> None:
+    def _handle_sftp_pwd_output(self, output: str) -> bool:
+        path = self._extract_sftp_pwd_path(output)
+        if path is None:
+            return False
+        self._mmu_sftp_directory = path
+        self.mmu_file_list.current_directory = path
+        self.mmu_current_path_input.setText(path)
+        self._refresh_mmu_file_list()
+        return True
+
+    def _extract_sftp_pwd_path(self, output: str) -> str | None:
         for line in output.splitlines():
-            if ":" not in line:
+            line = line.strip()
+            if not line or line.startswith("sftp>"):
                 continue
+            path = self._path_from_sftp_pwd_line(line)
+            if path is not None:
+                return path
+        return None
+
+    def _path_from_sftp_pwd_line(self, line: str) -> str | None:
+        if ":" in line:
             label, path = line.split(":", 1)
-            if "remote working directory" in label.lower():
-                path = path.strip()
-                if path.startswith("/"):
-                    self._mmu_sftp_directory = path
-                    self.mmu_file_list.current_directory = path
-                    self.mmu_current_path_input.setText(path)
-                    self._refresh_mmu_file_list()
+            if "remote working directory" not in label.lower():
+                return None
+        else:
+            path = line
+        path = path.strip().strip('"')
+        return posixpath.normpath(path) if path.startswith("/") else None
 
     def _change_sftp_directory(self, command: str, target: str, send_command: bool) -> None:
         current = self._mmu_sftp_directory if command == "cd" else self._server_sftp_directory
@@ -1461,6 +1478,7 @@ class MainWindow(QMainWindow):
                         f"SFTP password sent: {settings.password or '(empty)'}"
                     )
         output = self._filter_sftp_echo(output)
+        pwd_response_complete = self._sftp_pending_pwd is not None and "sftp>" in output
         output = self._without_trailing_sftp_prompt(output)
         if startup_reached:
             self._mark_sftp_connected()
@@ -1468,8 +1486,9 @@ class MainWindow(QMainWindow):
             self._populate_file_list(self.mmu_file_list, self._parse_sftp_listing(output))
             self._sftp_pending_listing = False
         if self._sftp_pending_pwd is not None and output.strip():
-            self._handle_sftp_pwd_output(output)
-            self._sftp_pending_pwd = None
+            handled_pwd = self._handle_sftp_pwd_output(output)
+            if handled_pwd or pwd_response_complete:
+                self._sftp_pending_pwd = None
         if output:
             self.sftp_terminal.write_stream(output)
 
