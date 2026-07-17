@@ -2084,21 +2084,34 @@ class MainWindow(QMainWindow):
         return tab
 
     def _build_workspace(self) -> QTabWidget:
-        tabs = QTabWidget(self)
-        tabs.addTab(self._build_terminal_tab(), "Terminal")
-        tabs.addTab(self._build_commands_tab(), "Commands")
-        tabs.addTab(self._build_transfer_tab(), "SFTP")
-        return tabs
+        self.workspace_tabs = QTabWidget(self)
+        self.workspace_tabs.addTab(self._build_terminal_tab(), "Terminal")
+        self.workspace_tabs.addTab(self._build_transfer_tab(), "SFTP")
+        return self.workspace_tabs
 
     def _build_terminal_tab(self) -> QWidget:
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(10, 10, 10, 10)
+
+        terminal_splitter = QSplitter(Qt.Orientation.Horizontal, tab)
+        terminal_splitter.setChildrenCollapsible(False)
+
+        terminal_panel = QWidget(tab)
+        terminal_layout = QVBoxLayout(terminal_panel)
+        terminal_layout.setContentsMargins(0, 0, 0, 0)
         self.terminal_widget = TerminalWidget(prompt=self._local_prompt())
         self.terminal_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        layout.addWidget(self.terminal_widget, stretch=1)
+        terminal_layout.addWidget(self.terminal_widget, stretch=1)
+
+        terminal_splitter.addWidget(terminal_panel)
+        terminal_splitter.addWidget(self._build_commands_tab())
+        terminal_splitter.setStretchFactor(0, 3)
+        terminal_splitter.setStretchFactor(1, 2)
+
+        layout.addWidget(terminal_splitter, stretch=1)
         return tab
 
     def _build_commands_tab(self) -> QWidget:
