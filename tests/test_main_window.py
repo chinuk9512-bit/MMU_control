@@ -242,6 +242,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
         self.assertTrue(window.mmu_current_path_input.isReadOnly())
         self.assertFalse(window.open_sftp_button.isEnabled())
+        self.assertFalse(window.refresh_server_file_list_button.isEnabled())
+        self.assertFalse(window.refresh_mmu_file_list_button.isEnabled())
         self.assertEqual(window.connection_status_label.text(), "SSH: disconnected")
         self.assertEqual(window.power_supply_group.title(), "Power Supply")
         self.assertEqual(window.power_supply_ip_input.placeholderText(), "Power Supply IPv4")
@@ -590,6 +592,15 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.mmu_file_list.item(2).text(), "mmu-file.txt")
         self.assertEqual(window.server_current_path_input.text(), "/home/user")
         self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
+        self.assertTrue(window.refresh_server_file_list_button.isEnabled())
+        self.assertTrue(window.refresh_mmu_file_list_button.isEnabled())
+
+        command_count = len(manager.executed_commands)
+        window.refresh_server_file_list_button.click()
+        self.assertEqual(len(manager.executed_commands), command_count + 1)
+        sftp_command_count = len(manager.sftp_shell.sent)
+        window.refresh_mmu_file_list_button.click()
+        self.assertEqual(manager.sftp_shell.sent[sftp_command_count], "ls -la /tmp")
 
         window._open_server_list_item(window.server_file_list.item(1))
         self.assertEqual(window.server_current_path_input.text(), "/home/user/server-dir")
@@ -621,6 +632,20 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertTrue(manager.shell.is_open)
         self.assertFalse(manager.sftp_shell.is_open)
+
+
+    def test_sftp_progress_carriage_return_is_not_hidden_by_echo_filter(self) -> None:
+        """SFTP progress updates that use carriage returns are shown in the terminal."""
+        window = self.create_window()
+        window._sftp_pending_echo = "put /tmp/file.bin /tmp/file.bin"
+        output = window._filter_sftp_echo(
+            "put /tmp/file.bin /tmp/file.bin\rUploading /tmp/file.bin to /tmp/file.bin\r"
+            "file.bin 50% 512KB 1.0MB/s 00:01 ETA\r"
+        )
+
+        self.assertIn("Uploading /tmp/file.bin", output)
+        self.assertIn("50%", output)
+        self.assertIsNone(window._sftp_pending_echo)
 
     def test_sftp_tab_runs_local_commands_before_session(self) -> None:
         """The SFTP command pane mirrors the local prompt before SFTP is connected."""
