@@ -558,7 +558,12 @@ class MainWindowTest(unittest.TestCase):
         self.assertIsNotNone(manager.sftp_shell)
         self.assertEqual(
             manager.sftp_shell.sent,
-            ["rm -f ~/.ssh/known_hosts", "sftp root@[fe80::1%eth0]", "ls -la /tmp"],
+            [
+                "rm -f ~/.ssh/known_hosts",
+                "sftp root@[fe80::1%eth0]",
+                "cd /tmp",
+                "ls -la /tmp",
+            ],
         )
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
@@ -602,6 +607,7 @@ class MainWindowTest(unittest.TestCase):
             [
                 "rm -f ~/.ssh/known_hosts",
                 "sftp root@[fe80::1%eth0]",
+                "cd /tmp",
                 "ls -la /tmp",
                 "ls",
                 "put '/tmp/update file.bin' /opt/update.bin",
