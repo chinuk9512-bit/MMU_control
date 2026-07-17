@@ -109,6 +109,7 @@ class SFTPManagerTest(unittest.TestCase):
         manager.change_directory(shell, "/tmp")
         manager.upload(shell, "/tmp/update file.bin", "/opt/update.bin")
         manager.download(shell, "/opt/result.bin", "/tmp/result file.bin")
+        manager.remove(shell, "/opt/old file.bin")
         manager.close_session(shell)
 
         self.assertEqual(
@@ -117,6 +118,7 @@ class SFTPManagerTest(unittest.TestCase):
                 "cd /tmp\n",
                 "put '/tmp/update file.bin' /opt/update.bin\n",
                 "get /opt/result.bin '/tmp/result file.bin'\n",
+                "rm '/opt/old file.bin'\n",
                 "bye\n",
             ],
         )

@@ -20,6 +20,7 @@ from PySide6.QtGui import (
     QDropEvent,
     QPainter,
     QPixmap,
+    QKeyEvent,
     QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
@@ -120,7 +121,8 @@ class SftpFileListWidget(QListWidget):
     """Draggable file list for one side of the SFTP transfer view."""
 
     FILE_MIME_TYPE = "application/x-mmu-control-sftp-file"
-    fileDropped = Signal(str, str, str)
+    fileDropped = Signal(str, list, str)
+    deleteRequested = Signal(str, list)
 
     def __init__(self, side: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -129,6 +131,7 @@ class SftpFileListWidget(QListWidget):
         self.setAcceptDrops(True)
         self.setDragEnabled(True)
         self.setDropIndicatorShown(True)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -178,19 +181,15 @@ class SftpFileListWidget(QListWidget):
             self.setHorizontalScrollBarPolicy(horizontal_policy)
 
     def startDrag(self, supported_actions: Qt.DropActions) -> None:  # noqa: N802
-        item = self.currentItem()
-        if item is None:
+        selected_paths = self._selected_file_paths()
+        if not selected_paths:
             return
-        path = item.data(Qt.ItemDataRole.UserRole)
-        is_dir = item.data(Qt.ItemDataRole.UserRole + 1)
-        if not isinstance(path, str) or bool(is_dir):
-            return
-        payload = json.dumps({"side": self.side, "path": path}).encode("utf-8")
+        payload = json.dumps({"side": self.side, "paths": selected_paths}).encode("utf-8")
         mime_data = QMimeData()
         mime_data.setData(self.FILE_MIME_TYPE, QByteArray(payload))
         drag = QDrag(self)
         drag.setMimeData(mime_data)
-        pixmap = self._drag_pixmap(item)
+        pixmap = self._drag_pixmap(selected_paths)
         drag.setPixmap(pixmap)
         drag.setHotSpot(QPoint(12, pixmap.height() // 2))
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -199,9 +198,28 @@ class SftpFileListWidget(QListWidget):
         finally:
             self.unsetCursor()
 
-    def _drag_pixmap(self, item: QListWidgetItem) -> QPixmap:
-        """Build a visible drag badge so transfers feel like grabbing a file."""
-        text = item.text()
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        """Request deletion for selected file rows when Delete is pressed."""
+        if event.key() in {Qt.Key.Key_Delete, Qt.Key.Key_Backspace}:
+            selected_paths = self._selected_file_paths()
+            if selected_paths:
+                self.deleteRequested.emit(self.side, selected_paths)
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def _selected_file_paths(self) -> list[str]:
+        paths: list[str] = []
+        for item in self.selectedItems():
+            path = item.data(Qt.ItemDataRole.UserRole)
+            is_dir = bool(item.data(Qt.ItemDataRole.UserRole + 1))
+            if isinstance(path, str) and path and not is_dir:
+                paths.append(path)
+        return paths
+
+    def _drag_pixmap(self, paths: list[str]) -> QPixmap:
+        """Build a visible drag badge so transfers feel like grabbing files."""
+        text = posixpath.basename(paths[0]) if len(paths) == 1 else f"{len(paths)} files"
         metrics = self.fontMetrics()
         width = min(max(metrics.horizontalAdvance(text) + 28, 140), 360)
         height = max(metrics.height() + 14, 34)
@@ -234,16 +252,16 @@ class SftpFileListWidget(QListWidget):
         if data is None:
             super().dropEvent(event)
             return
-        source_side, source_path = data
+        source_side, source_paths = data
         target_directory = self._drop_target_directory(event)
-        self.fileDropped.emit(source_side, source_path, target_directory)
+        self.fileDropped.emit(source_side, source_paths, target_directory)
         event.acceptProposedAction()
 
     def _accepted_transfer(self, mime_data: QMimeData) -> bool:
         data = self._transfer_data(mime_data)
         return data is not None and data[0] != self.side
 
-    def _transfer_data(self, mime_data: QMimeData) -> tuple[str, str] | None:
+    def _transfer_data(self, mime_data: QMimeData) -> tuple[str, list[str]] | None:
         if not mime_data.hasFormat(self.FILE_MIME_TYPE):
             return None
         try:
@@ -251,10 +269,16 @@ class SftpFileListWidget(QListWidget):
         except (UnicodeDecodeError, json.JSONDecodeError):
             return None
         side = payload.get("side")
-        path = payload.get("path")
-        if side not in {"server", "mmu"} or not isinstance(path, str) or not path:
+        paths = payload.get("paths")
+        if paths is None:
+            path = payload.get("path")
+            paths = [path] if isinstance(path, str) else []
+        if not isinstance(paths, list):
             return None
-        return side, path
+        clean_paths = [path for path in paths if isinstance(path, str) and path]
+        if side not in {"server", "mmu"} or not clean_paths:
+            return None
+        return side, clean_paths
 
     def _drop_target_directory(self, event: QDropEvent) -> str:
         item = self.itemAt(event.position().toPoint())
@@ -348,6 +372,8 @@ class MainWindow(QMainWindow):
         self.server_path_input.localFileDropped.connect(self._handle_sftp_file_drop)
         self.server_file_list.fileDropped.connect(self._handle_sftp_list_drop)
         self.mmu_file_list.fileDropped.connect(self._handle_sftp_list_drop)
+        self.server_file_list.deleteRequested.connect(self._delete_sftp_files)
+        self.mmu_file_list.deleteRequested.connect(self._delete_sftp_files)
         self.server_file_list.itemDoubleClicked.connect(self._open_server_list_item)
         self.mmu_file_list.itemDoubleClicked.connect(self._open_mmu_list_item)
         self.refresh_server_file_list_button.clicked.connect(self._refresh_server_file_list)
@@ -697,64 +723,121 @@ class MainWindow(QMainWindow):
         if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
             self._append_sftp_output("Open an SFTP session first.")
             return
+        commands: list[str] = []
         try:
             if upload:
-                server_path = self._selected_file_path(self.server_file_list)
-                board_path = posixpath.join(self._mmu_sftp_directory, posixpath.basename(server_path))
-                command = self._sftp_manager.upload(
-                    self._sftp_shell,
-                    server_path,
-                    board_path,
-                )
+                for server_path in self._selected_file_paths(self.server_file_list):
+                    board_path = posixpath.join(
+                        self._mmu_sftp_directory, posixpath.basename(server_path)
+                    )
+                    commands.append(
+                        self._sftp_manager.upload(
+                            self._sftp_shell,
+                            server_path,
+                            board_path,
+                        )
+                    )
             else:
-                board_path = self._selected_file_path(self.mmu_file_list)
-                server_path = posixpath.join(
-                    self._server_sftp_directory,
-                    posixpath.basename(board_path),
-                )
-                command = self._sftp_manager.download(
-                    self._sftp_shell,
-                    board_path,
-                    server_path,
-                )
+                for board_path in self._selected_file_paths(self.mmu_file_list):
+                    server_path = posixpath.join(
+                        self._server_sftp_directory,
+                        posixpath.basename(board_path),
+                    )
+                    commands.append(
+                        self._sftp_manager.download(
+                            self._sftp_shell,
+                            board_path,
+                            server_path,
+                        )
+                    )
         except SFTPError as exc:
             self._append_sftp_output(f"SFTP error: {exc}")
             return
-        self._sftp_pending_echo = command
+        self._sftp_pending_echo = commands[-1] if commands else None
         self._sftp_echo_buffer = ""
-        self._append_sftp_output(f"Running: {command}")
+        for command in commands:
+            self._append_sftp_output(f"Running: {command}")
 
     def _selected_file_path(self, file_list: SftpFileListWidget) -> str:
-        item = file_list.currentItem()
-        if item is None:
-            raise SFTPError("Select a file from the file list first.")
-        path = item.data(Qt.ItemDataRole.UserRole)
-        is_dir = bool(item.data(Qt.ItemDataRole.UserRole + 1))
-        if not isinstance(path, str) or is_dir:
-            raise SFTPError("Select a file, not a directory.")
-        return path
+        return self._selected_file_paths(file_list)[0]
 
-    def _handle_sftp_list_drop(self, source_side: str, source_path: str, target_directory: str) -> None:
+    def _selected_file_paths(self, file_list: SftpFileListWidget) -> list[str]:
+        items = file_list.selectedItems() or ([file_list.currentItem()] if file_list.currentItem() else [])
+        paths: list[str] = []
+        for item in items:
+            if item is None:
+                continue
+            path = item.data(Qt.ItemDataRole.UserRole)
+            is_dir = bool(item.data(Qt.ItemDataRole.UserRole + 1))
+            if isinstance(path, str) and path and not is_dir:
+                paths.append(path)
+        if not paths:
+            raise SFTPError("Select one or more files from the file list first.")
+        return paths
+
+    def _handle_sftp_list_drop(
+        self, source_side: str, source_paths: list[str] | str, target_directory: str
+    ) -> None:
         if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
             self._append_sftp_output("Open an SFTP session first.")
             return
-        destination = posixpath.join(target_directory, posixpath.basename(source_path))
+        paths = [source_paths] if isinstance(source_paths, str) else source_paths
+        commands: list[str] = []
         try:
-            if source_side == "server":
-                command = self._sftp_manager.upload(self._sftp_shell, source_path, destination)
-            else:
-                command = self._sftp_manager.download(self._sftp_shell, source_path, destination)
+            for source_path in paths:
+                destination = posixpath.join(target_directory, posixpath.basename(source_path))
+                if source_side == "server":
+                    command = self._sftp_manager.upload(self._sftp_shell, source_path, destination)
+                else:
+                    command = self._sftp_manager.download(self._sftp_shell, source_path, destination)
+                commands.append(command)
         except SFTPError as exc:
             self._append_sftp_output(f"SFTP error: {exc}")
             return
-        self._sftp_pending_echo = command
+        self._sftp_pending_echo = commands[-1] if commands else None
         self._sftp_echo_buffer = ""
+        file_count = len(commands)
+        action = "Uploading to MMU" if source_side == "server" else "Downloading to server"
+        if file_count > 1:
+            action = f"{action} ({file_count} files)"
         self._start_sftp_transfer_progress(
-            "Uploading to MMU" if source_side == "server" else "Downloading to server",
+            action,
             "mmu" if source_side == "server" else "server",
         )
-        self._append_sftp_output(f"Running: {command}")
+        for command in commands:
+            self._append_sftp_output(f"Running: {command}")
         self.statusBar().showMessage("SFTP drag-and-drop transfer started")
+
+    def _delete_sftp_files(self, side: str, paths: list[str]) -> None:
+        if not paths:
+            return
+        file_word = "file" if len(paths) == 1 else "files"
+        result = QMessageBox.question(
+            self,
+            "Delete SFTP Files",
+            f"Delete {len(paths)} selected {file_word}?",
+        )
+        if result != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            if side == "mmu":
+                if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
+                    raise SFTPError("Open an SFTP session first.")
+                commands = [self._sftp_manager.remove(self._sftp_shell, path) for path in paths]
+                self._sftp_pending_echo = commands[-1] if commands else None
+                self._sftp_echo_buffer = ""
+                self._refresh_mmu_file_list()
+            elif side == "server":
+                command = "rm -f -- " + " ".join(shlex.quote(path) for path in paths)
+                self._ssh_manager.execute_command(command)
+                self._refresh_server_file_list()
+            else:
+                raise SFTPError("Unknown SFTP file list.")
+        except Exception as exc:
+            self._append_sftp_output(f"SFTP error: {exc}")
+            return
+        self._append_sftp_output(f"Deleted {len(paths)} selected {file_word}.")
+        self.statusBar().showMessage("SFTP delete completed")
 
     def _start_sftp_transfer_progress(self, title: str, refresh_target: str) -> None:
         """Show transfer progress and remember which file list to refresh when done."""

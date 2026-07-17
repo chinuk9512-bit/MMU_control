@@ -7,13 +7,14 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
 from PySide6.QtGui import QDropEvent, QValidator
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QLineEdit, QMessageBox
 
 from mmu_control.core.config_manager import ConfigManager
 from mmu_control.models.command_set import CommandSet
@@ -482,6 +483,107 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(drop_event.isAccepted())
 
 
+    def test_sftp_file_lists_allow_multiple_selection(self) -> None:
+        """SFTP file lists support multi-select file operations."""
+        window = self.create_window()
+
+        self.assertEqual(
+            window.server_file_list.selectionMode(),
+            QAbstractItemView.SelectionMode.ExtendedSelection,
+        )
+        self.assertEqual(
+            window.mmu_file_list.selectionMode(),
+            QAbstractItemView.SelectionMode.ExtendedSelection,
+        )
+
+    def test_upload_button_transfers_multiple_selected_server_files(self) -> None:
+        """Upload handles every selected Linux server file."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+        window._populate_file_list(
+            window.server_file_list,
+            [
+                (False, "one.bin", "/home/user/one.bin"),
+                (False, "two.bin", "/home/user/two.bin"),
+            ],
+        )
+        window.server_file_list.item(1).setSelected(True)
+        window.server_file_list.item(2).setSelected(True)
+
+        window.upload_sftp_button.click()
+
+        self.assertIn("put /home/user/one.bin /tmp/one.bin", manager.sftp_shell.sent)
+        self.assertIn("put /home/user/two.bin /tmp/two.bin", manager.sftp_shell.sent)
+
+    def test_delete_key_requests_confirmed_mmu_file_delete(self) -> None:
+        """Delete key confirms, removes all selected MMU files, and refreshes the list."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+        window._populate_file_list(
+            window.mmu_file_list,
+            [
+                (False, "one.bin", "/tmp/one.bin"),
+                (False, "two file.bin", "/tmp/two file.bin"),
+            ],
+        )
+        window.mmu_file_list.item(1).setSelected(True)
+        window.mmu_file_list.item(2).setSelected(True)
+
+        with patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as question:
+            QTest.keyClick(window.mmu_file_list, Qt.Key.Key_Delete)
+
+        question.assert_called_once()
+        self.assertIn("rm /tmp/one.bin", manager.sftp_shell.sent)
+        self.assertIn("rm '/tmp/two file.bin'", manager.sftp_shell.sent)
+        self.assertEqual(manager.sftp_shell.sent[-1], "ls -la /tmp")
+
+    def test_delete_key_can_delete_multiple_server_files(self) -> None:
+        """Delete key also removes selected Linux server files after confirmation."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window._server_sftp_directory = "/home/user"
+        window._populate_file_list(
+            window.server_file_list,
+            [
+                (False, "one.bin", "/home/user/one.bin"),
+                (False, "two file.bin", "/home/user/two file.bin"),
+            ],
+        )
+        window.server_file_list.item(1).setSelected(True)
+        window.server_file_list.item(2).setSelected(True)
+
+        with patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            QTest.keyClick(window.server_file_list, Qt.Key.Key_Delete)
+
+        self.assertIn(
+            "rm -f -- /home/user/one.bin '/home/user/two file.bin'",
+            manager.executed_commands,
+        )
+
     def test_drag_drop_sftp_transfer_shows_progress_and_refreshes_target(self) -> None:
         """SFTP list drag-and-drop shows percentage progress and refreshes the destination."""
         manager = FakeSSHManager()
@@ -506,6 +608,27 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertIsNone(window._sftp_transfer_progress_dialog)
         self.assertEqual(manager.sftp_shell.sent[-1], "ls -la /tmp")
+
+    def test_drag_drop_sftp_transfer_handles_multiple_files(self) -> None:
+        """SFTP list drag-and-drop sends transfer commands for all dropped files."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+        window._handle_sftp_list_drop(
+            "server",
+            ["/home/user/one.bin", "/home/user/two.bin"],
+            "/tmp",
+        )
+
+        self.assertIn("put /home/user/one.bin /tmp/one.bin", manager.sftp_shell.sent)
+        self.assertIn("put /home/user/two.bin /tmp/two.bin", manager.sftp_shell.sent)
 
     def test_mmu_sftp_listing_keeps_parent_directory_entry(self) -> None:
         """MMU listings keep the remote ../ row available for parent navigation."""

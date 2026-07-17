@@ -100,6 +100,15 @@ class SFTPManager:
         shell.send_line(command)
         return command
 
+    def remove(self, shell: InteractiveShell, board_path: str) -> str:
+        """Delete a file from the MMU in an open SFTP session."""
+        board_path = board_path.strip()
+        if not board_path:
+            raise SFTPError("MMU file path is required.")
+        command = f"rm {shlex.quote(board_path)}"
+        shell.send_line(command)
+        return command
+
     def close_session(self, shell: InteractiveShell) -> None:
         """Leave the active SFTP session."""
         shell.send_line("bye")
