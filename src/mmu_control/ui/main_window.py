@@ -9,7 +9,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 
-from PySide6.QtCore import QByteArray, QMimeData, QProcess, QRegularExpression, QTimer, Qt, Signal
+from PySide6.QtCore import QByteArray, QMimeData, QPoint, QProcess, QRegularExpression, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QCloseEvent,
@@ -188,8 +188,9 @@ class SftpFileListWidget(QListWidget):
         mime_data.setData(self.FILE_MIME_TYPE, QByteArray(payload))
         drag = QDrag(self)
         drag.setMimeData(mime_data)
-        drag.setPixmap(self._drag_pixmap(item))
-        drag.setHotSpot(self.visualItemRect(item).center())
+        pixmap = self._drag_pixmap(item)
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(QPoint(12, pixmap.height() // 2))
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
         try:
             drag.exec(supported_actions, Qt.DropAction.CopyAction)
@@ -344,6 +345,8 @@ class MainWindow(QMainWindow):
         self.mmu_file_list.fileDropped.connect(self._handle_sftp_list_drop)
         self.server_file_list.itemDoubleClicked.connect(self._open_server_list_item)
         self.mmu_file_list.itemDoubleClicked.connect(self._open_mmu_list_item)
+        self.refresh_server_file_list_button.clicked.connect(self._refresh_server_file_list)
+        self.refresh_mmu_file_list_button.clicked.connect(self._refresh_mmu_file_list)
         self.refresh_usb_button.clicked.connect(self._refresh_usb_ports)
         self.open_minicom_button.clicked.connect(self._open_minicom)
         self.close_minicom_button.clicked.connect(self._close_minicom)
@@ -1143,6 +1146,8 @@ class MainWindow(QMainWindow):
         self.upload_sftp_button.setEnabled(enabled)
         self.download_sftp_button.setEnabled(enabled)
         self.close_sftp_button.setEnabled(enabled)
+        self.refresh_server_file_list_button.setEnabled(enabled)
+        self.refresh_mmu_file_list_button.setEnabled(enabled)
 
     def _refresh_usb_ports(self) -> None:
         if self._shell is None or not self._shell.is_open:
@@ -1526,9 +1531,20 @@ class MainWindow(QMainWindow):
     def _filter_sftp_echo(self, output: str) -> str:
         if self._sftp_pending_echo is None or not output:
             return output
-        self._sftp_echo_buffer += output.replace("\r\n", "\n").replace("\r", "\n")
+        self._sftp_echo_buffer += output.replace("\r\n", "\n")
         if "\n" not in self._sftp_echo_buffer:
-            return ""
+            if "\r" not in self._sftp_echo_buffer:
+                return ""
+            normalized_echo_buffer = self._sftp_echo_buffer.replace("\r", "\n")
+            first_line, remainder = normalized_echo_buffer.split("\n", 1)
+            result = (
+                remainder
+                if first_line == self._sftp_pending_echo
+                else self._sftp_echo_buffer
+            )
+            self._sftp_pending_echo = None
+            self._sftp_echo_buffer = ""
+            return result
         first_line, remainder = self._sftp_echo_buffer.split("\n", 1)
         result = (
             self._without_extra_echo_newline(remainder)
@@ -2000,7 +2016,15 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.server_file_list.setToolTip("Linux server files. Drag a file to the MMU list to upload it.")
-        server_layout.addWidget(QLabel("Linux server files", self))
+        server_header = QWidget(self)
+        server_header_layout = QHBoxLayout(server_header)
+        server_header_layout.setContentsMargins(0, 0, 0, 0)
+        server_header_layout.addWidget(QLabel("Linux server files", self))
+        server_header_layout.addStretch(1)
+        self.refresh_server_file_list_button = QPushButton("Refresh", self)
+        self.refresh_server_file_list_button.setEnabled(False)
+        server_header_layout.addWidget(self.refresh_server_file_list_button)
+        server_layout.addWidget(server_header)
         self.server_current_path_input = QLineEdit(self._server_sftp_directory, self)
         self.server_current_path_input.setReadOnly(True)
         self.server_current_path_input.setToolTip("Current directory on the connected Linux server.")
@@ -2014,7 +2038,15 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.mmu_file_list.setToolTip("MMU files. Drag a file to the Linux server list to download it.")
-        mmu_layout.addWidget(QLabel("MMU files", self))
+        mmu_header = QWidget(self)
+        mmu_header_layout = QHBoxLayout(mmu_header)
+        mmu_header_layout.setContentsMargins(0, 0, 0, 0)
+        mmu_header_layout.addWidget(QLabel("MMU files", self))
+        mmu_header_layout.addStretch(1)
+        self.refresh_mmu_file_list_button = QPushButton("Refresh", self)
+        self.refresh_mmu_file_list_button.setEnabled(False)
+        mmu_header_layout.addWidget(self.refresh_mmu_file_list_button)
+        mmu_layout.addWidget(mmu_header)
         self.mmu_current_path_input = QLineEdit(self._mmu_sftp_directory, self)
         self.mmu_current_path_input.setReadOnly(True)
         self.mmu_current_path_input.setToolTip("Current directory on the connected MMU.")
