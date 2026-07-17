@@ -482,6 +482,31 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(drop_event.isAccepted())
 
 
+    def test_drag_drop_sftp_transfer_shows_progress_and_refreshes_target(self) -> None:
+        """SFTP list drag-and-drop shows percentage progress and refreshes the destination."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window.board_interface_input.setText("eth0")
+
+        window._connect_ssh()
+        window.open_sftp_button.click()
+        window._handle_sftp_list_drop("server", "/home/user/update.bin", "/tmp")
+
+        self.assertIsNotNone(window._sftp_transfer_progress_dialog)
+        self.assertIn("put /home/user/update.bin /tmp/update.bin", manager.sftp_shell.sent)
+        manager.sftp_shell.output += (
+            "update.bin 45% 45KB 1.0MB/s 00:01 ETA\r"
+            "update.bin 100% 100KB 1.0MB/s 00:00\r\nsftp> "
+        )
+        window._poll_sftp_shell()
+
+        self.assertIsNone(window._sftp_transfer_progress_dialog)
+        self.assertEqual(manager.sftp_shell.sent[-1], "ls -la /tmp")
+
     def test_mmu_sftp_listing_keeps_parent_directory_entry(self) -> None:
         """MMU listings keep the remote ../ row available for parent navigation."""
         window = self.create_window()
