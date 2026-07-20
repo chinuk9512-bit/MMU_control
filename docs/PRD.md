@@ -80,6 +80,15 @@ Windows PC
 - 선택된 명령 세트의 여러 줄 명령을 순서대로 Terminal shell에 전송할 수 있어야 한다.
 - 기존 JSON schema와 하위 호환되어야 한다.
 
+### 6a. Automation Scenarios
+
+- 사용자는 SSH shell 또는 minicom 중 하나의 transport에서 실행할 자동화 시나리오를 생성, 수정, 삭제할 수 있어야 한다.
+- 시나리오는 임의 개수의 순차 Step을 가지며, 각 Step의 명령, timeout, 완료 조건을 사용자가 편집할 수 있어야 한다.
+- 완료 조건은 콘솔 문자열/정규식, 최신 프롬프트 정규식, 장비 파일의 문자열/정규식, 시간 대기를 지원해야 한다.
+- 다음 Step은 현재 Step의 완료 조건이 만족될 때만 실행되어야 한다.
+- Step 실패 또는 timeout 시 해당 Step만 2초 후 한 번 재시도하고, 재시도 실패 시 전체 시나리오를 실패 처리해야 한다.
+- 실행 중인 상태, 현재 Step, 실패 사유를 화면에 표시하고 사용자가 중지할 수 있어야 한다.
+
 ### 7. Settings
 
 - SSH 정보, Board/MMU 정보, Power Supply 정보, 선택된 USB port, window 크기/최대화 상태, connection panel 확장 상태를 저장해야 한다.

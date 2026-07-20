@@ -81,6 +81,9 @@ src/mmu_control/
   - ANSI/VT escape sequence와 제어 문자를 제거하면서 출력 chunk 사이의 상태를 유지합니다.
 - `run_with_retry`
   - 재연결 등 일시 실패 가능 작업에 사용할 retry/backoff helper입니다.
+- `AutomationRunner`
+  - 하나의 SSH 또는 minicom terminal에서 사용자 정의 Step을 순서대로 실행합니다.
+  - 콘솔/프롬프트/장비 파일/시간 완료 조건을 판정하며, 실패 Step만 2초 뒤 한 번 재시도합니다.
 
 ### Model / Storage Layer
 
@@ -90,11 +93,15 @@ src/mmu_control/
   - 각 설정 그룹의 직렬화/역직렬화를 담당합니다.
 - `CommandSet`, `CommandSetCollection`
   - Commands 탭에서 생성/수정/삭제/실행하는 명령 묶음입니다.
+- `AutomationScenario`, `AutomationStep`
+  - 명령, 완료 조건, timeout을 가진 순차 장비 자동화 모델입니다.
 - `ConnectionProfile`, `ProfileCollection`, `ProfileStore`
   - SSH/Board 연결 설정을 이름별 프로필로 저장하기 위한 모델과 저장소입니다.
   - 현재 UI는 기본 설정 저장을 중심으로 동작하며, 프로필 저장소는 확장 기반으로 준비되어 있습니다.
 - `CommandSetStore`
   - `%APPDATA%/MMUControl/command_sets.json`에 명령 세트를 저장합니다.
+- `AutomationStore`
+  - `%APPDATA%/MMUControl/automation_scenarios.json`에 자동화 시나리오를 저장합니다.
 
 ## 런타임 데이터 흐름
 
