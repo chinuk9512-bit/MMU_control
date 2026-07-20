@@ -2430,46 +2430,49 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        button_row = QWidget(self)
+        self.commands_group = QGroupBox("Commands", tab)
+        commands_layout = QVBoxLayout(self.commands_group)
+
+        button_row = QWidget(self.commands_group)
         button_layout = QHBoxLayout(button_row)
         button_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.new_command_button = QPushButton("New Command Group", self)
-        self.new_folder_button = QPushButton("New Folder", self)
-        self.edit_command_button = QPushButton("Edit", self)
-        self.delete_command_button = QPushButton("Delete", self)
-        self.run_command_set_button = QPushButton("Run Selected", self)
+        self.new_command_button = QPushButton("New Command", self.commands_group)
+        self.new_folder_button = QPushButton("New Folder", self.commands_group)
+        self.edit_command_button = QPushButton("Edit", self.commands_group)
+        self.delete_command_button = QPushButton("Delete", self.commands_group)
+        self.run_command_set_button = QPushButton("Run Selected", self.commands_group)
         self.edit_command_button.setEnabled(False)
         self.delete_command_button.setEnabled(False)
         self.run_command_set_button.setEnabled(False)
 
-        button_layout.addWidget(self.new_command_button)
         button_layout.addWidget(self.new_folder_button)
+        button_layout.addWidget(self.new_command_button)
         button_layout.addWidget(self.edit_command_button)
         button_layout.addWidget(self.delete_command_button)
         button_layout.addStretch(1)
         button_layout.addWidget(self.run_command_set_button)
 
-        self.command_set_output = QPlainTextEdit(self)
+        self.command_set_output = QPlainTextEdit(self.commands_group)
         self.command_set_output.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.command_set_output.setReadOnly(True)
         self.command_set_output.setPlaceholderText("Selected command group details appear here.")
 
-        self.command_list = QListWidget(self)
+        self.command_list = QListWidget(self.commands_group)
         self.command_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.command_list.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
 
-        layout.addWidget(button_row)
-        self.command_set_list = QTreeWidget(self)
+        commands_layout.addWidget(button_row)
+        self.command_set_list = QTreeWidget(self.commands_group)
         self.command_set_list.setHeaderHidden(True)
         self.command_set_list.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        command_splitter = QSplitter(Qt.Orientation.Vertical, tab)
+        command_splitter = QSplitter(Qt.Orientation.Vertical, self.commands_group)
         command_splitter.setChildrenCollapsible(False)
         command_splitter.addWidget(self.command_set_list)
         command_splitter.addWidget(self.command_list)
@@ -2477,7 +2480,8 @@ class MainWindow(QMainWindow):
         command_splitter.setStretchFactor(0, 1)
         command_splitter.setStretchFactor(1, 1)
         command_splitter.setStretchFactor(2, 1)
-        layout.addWidget(command_splitter, stretch=1)
+        commands_layout.addWidget(command_splitter, stretch=1)
+        layout.addWidget(self.commands_group, stretch=1)
 
         automation_group = QGroupBox("Automation Scenarios", tab)
         automation_layout = QVBoxLayout(automation_group)
