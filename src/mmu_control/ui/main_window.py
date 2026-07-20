@@ -1685,33 +1685,36 @@ class MainWindow(QMainWindow):
         """Remove the PTY echo because the widget already displays local input."""
         if self._pending_echo is None or not output:
             return output
-        self._echo_buffer += output.replace("\r\n", "\n").replace("\r", "\n")
-        if "\n" not in self._echo_buffer:
+        normalized_output = output.replace("\r\n", "\n").replace("\r", "\n")
+        chunk_start = len(self._echo_buffer)
+        self._echo_buffer += normalized_output
+        echo = self._pending_echo
+
+        # The initial shell banner, prompt, and command echo can each arrive
+        # in a different read_available() result.  Keep accumulating until a
+        # complete echo is present; releasing the pending state based on a
+        # non-echo first line would render a later echo as duplicate input.
+        echo_end = self._echo_buffer.find(f"{echo}\n")
+        while echo_end != -1 and (
+            echo_end not in {0, chunk_start}
+            and self._echo_buffer[echo_end - 1] != "\n"
+        ):
+            echo_end = self._echo_buffer.find(f"{echo}\n", echo_end + 1)
+        if echo_end == -1:
             return ""
-        first_line, remainder = self._echo_buffer.split("\n", 1)
-        # Some SSH servers emit a line advance immediately before echoing the
-        # first command after a new shell is opened.  The command is already
-        # displayed locally, so rendering that advance produces a spurious
-        # blank line that looks like Enter was pressed before the command.
-        # Treat it as part of the PTY echo only when it is directly followed
-        # by the command currently awaiting its echo.
-        if not first_line and "\n" in remainder:
-            echoed_line, echoed_remainder = remainder.split("\n", 1)
-            if echoed_line == self._pending_echo:
-                first_line = echoed_line
-                remainder = echoed_remainder
-        if first_line == self._pending_echo:
-            # The local terminal has already advanced to the next line when
-            # Enter is pressed.  Some SSH PTYs send an additional blank echo
-            # line for an empty command, which used to place a visibly blank
-            # line between two identical prompts.
-            result = (
-                remainder.lstrip("\n")
-                if not self._pending_echo
-                else self._without_extra_echo_newline(remainder)
-            )
+
+        before_echo = self._echo_buffer[:echo_end]
+        remainder = self._echo_buffer[echo_end + len(echo) + 1 :]
+        # A line advance emitted immediately before the first echoed command
+        # is not visible input.  Drop it only when it is the entire prefix,
+        # so banner output received before the echo is retained.
+        if before_echo == "\n":
+            before_echo = ""
+        result = before_echo + remainder
+        if not echo:
+            result = result.lstrip("\n")
         else:
-            result = self._echo_buffer
+            result = self._without_extra_echo_newline(result)
         self._pending_echo = None
         self._echo_buffer = ""
         return result
