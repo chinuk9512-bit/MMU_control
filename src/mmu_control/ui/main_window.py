@@ -1516,7 +1516,7 @@ class MainWindow(QMainWindow):
             self._set_command_actions_enabled(False)
 
     def _create_command_set(self) -> None:
-        dialog = CommandEditorDialog()
+        dialog = CommandEditorDialog(parent=self)
         if dialog.exec() != CommandEditorDialog.DialogCode.Accepted:
             return
         command_set = dialog.command_set()
@@ -2385,7 +2385,7 @@ class MainWindow(QMainWindow):
         button_layout = QHBoxLayout(button_row)
         button_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.new_command_button = QPushButton("New", self)
+        self.new_command_button = QPushButton("New Command Group", self)
         self.edit_command_button = QPushButton("Edit", self)
         self.delete_command_button = QPushButton("Delete", self)
         self.run_command_set_button = QPushButton("Run", self)

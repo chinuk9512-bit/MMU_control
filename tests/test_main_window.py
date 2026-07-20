@@ -21,10 +21,11 @@ pytest.importorskip("PySide6.QtGui", exc_type=ImportError)
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
 from PySide6.QtGui import QDropEvent, QValidator
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QDialog, QLineEdit, QMessageBox
 
 from mmu_control.core.config_manager import ConfigManager
 from mmu_control.models.command_set import CommandSet
+from mmu_control.models.automation import AutomationScenario, AutomationStep, CompletionType
 from mmu_control.models.settings import (
     AppSettings,
     BoardSettings,
@@ -33,6 +34,7 @@ from mmu_control.models.settings import (
     WindowSettings,
 )
 from mmu_control.storage.command_set_store import CommandSetStore
+from mmu_control.storage.automation_store import AutomationStore
 from mmu_control.ui.main_window import MainWindow
 
 
@@ -531,6 +533,33 @@ class MainWindowTest(unittest.TestCase):
             window._run_command_set()
 
             self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
+
+    def test_new_automation_button_opens_editor_and_saves_scenario(self) -> None:
+        """The New Automation action creates an editor with the main window as parent."""
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        window = self.create_window(automation_store=store)
+        scenario = AutomationScenario(
+            name="boot",
+            steps=[AutomationStep("wait", "start", CompletionType.DELAY, timeout_seconds=1)],
+        )
+        created_parents: list[MainWindow] = []
+
+        class AcceptedAutomationDialog:
+            def __init__(self, parent: MainWindow) -> None:
+                self.parent = parent
+                created_parents.append(parent)
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def scenario(self) -> AutomationScenario:
+                return scenario
+
+        with patch("mmu_control.ui.main_window.AutomationEditorDialog", AcceptedAutomationDialog):
+            window.new_automation_button.click()
+
+        self.assertEqual(created_parents, [window])
+        self.assertEqual(store.load().scenarios, {"boot": scenario})
 
     def test_server_path_input_accepts_dropped_local_file(self) -> None:
         """Dropping a local file path fills the Linux server path input."""
