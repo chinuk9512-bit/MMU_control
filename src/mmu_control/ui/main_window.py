@@ -299,6 +299,54 @@ class SftpFileListWidget(QListWidget):
         return self.current_directory
 
 
+class CommandSetTreeWidget(QTreeWidget):
+    """Command-set tree that persists drops onto command folders."""
+
+    COMMAND_SET_MIME_TYPE = "application/x-mmu-control-command-set"
+    commandSetDropped = Signal(str, str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+    def startDrag(self, supported_actions: Qt.DropActions) -> None:  # noqa: N802
+        item = self.currentItem()
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        if not isinstance(data, tuple) or data[0] != "group":
+            return
+        mime_data = QMimeData()
+        mime_data.setData(self.COMMAND_SET_MIME_TYPE, QByteArray(data[1].encode("utf-8")))
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+        drag.exec(supported_actions, Qt.DropAction.MoveAction)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(self.COMMAND_SET_MIME_TYPE):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(self.COMMAND_SET_MIME_TYPE):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        if not event.mimeData().hasFormat(self.COMMAND_SET_MIME_TYPE):
+            super().dropEvent(event)
+            return
+        name = bytes(event.mimeData().data(self.COMMAND_SET_MIME_TYPE)).decode("utf-8")
+        target = self.itemAt(event.position().toPoint())
+        target_data = target.data(0, Qt.ItemDataRole.UserRole) if target else None
+        parent_path = target_data[1] if isinstance(target_data, tuple) and target_data[0] == "folder" else ""
+        self.commandSetDropped.emit(name, parent_path)
+        event.acceptProposedAction()
+
+
 class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
 
@@ -412,7 +460,7 @@ class MainWindow(QMainWindow):
         self.mmu_ssh_disconnect_button.clicked.connect(self._disconnect_mmu_ssh)
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
-        self.command_list.currentItemChanged.connect(self._update_selected_command_action)
+        self.command_set_list.commandSetDropped.connect(self._move_command_set)
         self.board_ip_version_combo.currentTextChanged.connect(self._update_board_ip_placeholder)
         self.power_on_button.clicked.connect(lambda: self._run_power_supply_command("on"))
         self.power_off_button.clicked.connect(lambda: self._run_power_supply_command("off"))
@@ -1600,6 +1648,20 @@ class MainWindow(QMainWindow):
         self._command_sets, self._command_folders = dict(collection.command_sets or {}), dict(collection.folders or {})
         self._refresh_command_set_list(command_set.name.strip())
 
+    def _move_command_set(self, name: str, parent_path: str) -> None:
+        """Move a command set when it is dropped on a command folder."""
+        command_set = self._command_sets.get(name)
+        if command_set is None or command_set.parent_path == parent_path:
+            return
+        try:
+            collection = self._command_set_store.move_command_set(name, parent_path)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Could not move command set: {exc}")
+            return
+        self._command_sets = dict(collection.command_sets or {})
+        self._command_folders = dict(collection.folders or {})
+        self._refresh_command_set_list(name)
+
     def _selected_folder_path(self) -> str | None:
         item = self.command_set_list.currentItem()
         data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
@@ -1615,18 +1677,14 @@ class MainWindow(QMainWindow):
         if command_set is None:
             folder_path = self._selected_folder_path()
             self.command_set_output.setPlainText(f"Folder: {folder_path}" if folder_path else "")
-            self.command_list.clear()
             self._set_command_actions_enabled(False)
             self.delete_command_button.setEnabled(folder_path is not None)
             return
-        self.command_set_output.setPlainText(f"Name: {command_set.name}\nDescription: {command_set.description}")
-        self.command_list.clear()
-        for command in self._commands_in(command_set):
-            item = QListWidgetItem(command)
-            item.setData(Qt.ItemDataRole.UserRole, command)
-            self.command_list.addItem(item)
-        if self.command_list.count():
-            self.command_list.setCurrentRow(0)
+        self.command_set_output.setPlainText(
+            f"Name: {command_set.name}\n"
+            f"Description: {command_set.description}\n\n"
+            f"{command_set.commands}"
+        )
         self._set_command_actions_enabled(True)
 
     def _set_command_actions_enabled(self, enabled: bool) -> None:
@@ -1637,14 +1695,6 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _commands_in(command_set: CommandSet) -> list[str]:
         return [command.strip() for command in command_set.commands.splitlines() if command.strip()]
-
-    def _selected_command(self) -> str | None:
-        item = self.command_list.currentItem()
-        command = item.data(Qt.ItemDataRole.UserRole) if item else None
-        return command if isinstance(command, str) and command else None
-
-    def _update_selected_command_action(self, *_items: QListWidgetItem | None) -> None:
-        self.run_command_set_button.setEnabled(self._selected_command_set() is not None)
 
     def _load_automation_scenarios(self) -> None:
         """Load persisted automation scenarios without preventing app startup."""
@@ -2359,6 +2409,7 @@ class MainWindow(QMainWindow):
     def _build_workspace(self) -> QTabWidget:
         self.workspace_tabs = QTabWidget(self)
         self.workspace_tabs.addTab(self._build_terminal_tab(), "Terminal")
+        self.workspace_tabs.addTab(self._build_scenarios_tab(), "Scenarios")
         self.workspace_tabs.addTab(self._build_transfer_tab(), "SFTP")
         return self.workspace_tabs
 
@@ -2464,14 +2515,8 @@ class MainWindow(QMainWindow):
         self.command_set_output.setReadOnly(True)
         self.command_set_output.setPlaceholderText("Selected command group details appear here.")
 
-        self.command_list = QListWidget(self.commands_group)
-        self.command_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.command_list.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-
         commands_layout.addWidget(button_row)
-        self.command_set_list = QTreeWidget(self.commands_group)
+        self.command_set_list = CommandSetTreeWidget(self.commands_group)
         self.command_set_list.setHeaderHidden(True)
         self.command_set_list.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -2479,22 +2524,27 @@ class MainWindow(QMainWindow):
         command_splitter = QSplitter(Qt.Orientation.Vertical, self.commands_group)
         command_splitter.setChildrenCollapsible(False)
         command_splitter.addWidget(self.command_set_list)
-        command_splitter.addWidget(self.command_list)
         command_splitter.addWidget(self.command_set_output)
         command_splitter.setStretchFactor(0, 1)
         command_splitter.setStretchFactor(1, 1)
-        command_splitter.setStretchFactor(2, 1)
         commands_layout.addWidget(command_splitter, stretch=1)
         layout.addWidget(self.commands_group, stretch=1)
+        return tab
+
+    def _build_scenarios_tab(self) -> QWidget:
+        """Build the dedicated workspace for automation scenarios."""
+        tab = QWidget(self)
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(10, 10, 10, 10)
 
         automation_group = QGroupBox("Automation Scenarios", tab)
         automation_layout = QVBoxLayout(automation_group)
         automation_actions = QHBoxLayout()
-        self.new_automation_button = QPushButton("New Automation", self)
-        self.edit_automation_button = QPushButton("Edit", self)
-        self.delete_automation_button = QPushButton("Delete", self)
-        self.run_automation_button = QPushButton("Run Automation", self)
-        self.stop_automation_button = QPushButton("Stop", self)
+        self.new_automation_button = QPushButton("New Automation", automation_group)
+        self.edit_automation_button = QPushButton("Edit", automation_group)
+        self.delete_automation_button = QPushButton("Delete", automation_group)
+        self.run_automation_button = QPushButton("Run Automation", automation_group)
+        self.stop_automation_button = QPushButton("Stop", automation_group)
         self.edit_automation_button.setEnabled(False)
         self.delete_automation_button.setEnabled(False)
         self.run_automation_button.setEnabled(False)
@@ -2508,11 +2558,11 @@ class MainWindow(QMainWindow):
         ):
             automation_actions.addWidget(button)
         automation_actions.addStretch(1)
-        self.automation_list = QListWidget(self)
-        self.automation_output = QPlainTextEdit(self)
+        self.automation_list = QListWidget(automation_group)
+        self.automation_output = QPlainTextEdit(automation_group)
         self.automation_output.setReadOnly(True)
         self.automation_output.setPlaceholderText("Automation steps and completion conditions appear here.")
-        self.automation_status_label = QLabel("Automation: idle", self)
+        self.automation_status_label = QLabel("Automation: idle", automation_group)
         automation_splitter = QSplitter(Qt.Orientation.Vertical, automation_group)
         automation_splitter.addWidget(self.automation_list)
         automation_splitter.addWidget(self.automation_output)

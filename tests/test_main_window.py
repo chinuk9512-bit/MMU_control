@@ -242,9 +242,10 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_console_tabs.count(), 2)
         self.assertEqual(window.board_console_tabs.tabText(0), "Serial Console")
-        self.assertEqual(window.workspace_tabs.count(), 2)
+        self.assertEqual(window.workspace_tabs.count(), 3)
         self.assertEqual(window.workspace_tabs.tabText(0), "Terminal")
-        self.assertEqual(window.workspace_tabs.tabText(1), "SFTP")
+        self.assertEqual(window.workspace_tabs.tabText(1), "Scenarios")
+        self.assertEqual(window.workspace_tabs.tabText(2), "SFTP")
         self.assertIsNotNone(window.command_set_list)
         self.assertEqual(window.commands_group.title(), "Commands")
         self.assertEqual(window.new_command_button.text(), "New Command")
@@ -530,16 +531,13 @@ class MainWindowTest(unittest.TestCase):
 
             self.assertEqual(window.command_set_list.count(), 1)
             self.assertEqual(window.command_set_list.currentItem().text(), "diagnostics")
-            self.assertEqual(window.command_list.count(), 2)
-            self.assertEqual(window.command_list.item(0).text(), "pwd")
-            self.assertEqual(window.command_list.item(1).text(), "uname -a")
             self.assertTrue(window.edit_command_button.isEnabled())
             self.assertIn("Collect status", window.command_set_output.toPlainText())
+            self.assertIn("pwd\nuname -a", window.command_set_output.toPlainText())
 
             window.ssh_host_input.setText("server")
             window.ssh_username_input.setText("user")
             window._connect_ssh()
-            window.command_list.clearSelection()
             self.assertTrue(window.run_command_set_button.isEnabled())
             window._run_command_set()
 
@@ -1280,13 +1278,26 @@ class MainWindowTest(unittest.TestCase):
 
         group = folder.child(1)
         window.command_set_list.setCurrentItem(group)
-        self.assertEqual(window.command_list.item(0).text(), "echo c")
+        self.assertIn("echo c", window.command_set_output.toPlainText())
         window.ssh_host_input.setText("server")
         window.ssh_username_input.setText("user")
         window._connect_ssh()
         window._run_command_set()
         self.assertEqual(manager.shell.sent, ["echo c"])
 
+    def test_dragged_command_set_moves_into_folder(self) -> None:
+        """Dropping a command set on a folder persists its new parent folder."""
+        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
+        store.create_folder("Diagnostics")
+        store.upsert(CommandSet(name="status", commands="uname -a"))
+        window = self.create_window(command_set_store=store)
+
+        window._move_command_set("status", "Diagnostics")
+
+        self.assertEqual(store.load().command_sets["status"].parent_path, "Diagnostics")
+        folder = window.command_set_list.topLevelItem(0)
+        self.assertEqual(folder.text(0), "Diagnostics")
+        self.assertEqual(folder.child(0).text(0), "status")
 
 
 if __name__ == "__main__":
