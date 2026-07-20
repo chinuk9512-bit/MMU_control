@@ -59,6 +59,21 @@ class AutomationRunnerTest(unittest.TestCase):
         self.runner.receive_output("\r\nushell>")
         self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
 
+    def test_step_without_completion_condition_advances_immediately(self) -> None:
+        scenario = AutomationScenario(
+            name="no-condition",
+            steps=[
+                AutomationStep("prepare", "prepare", CompletionType.NONE),
+                AutomationStep("wait", "wait", CompletionType.DELAY, timeout_seconds=1),
+            ],
+        )
+
+        self.runner.start(scenario)
+
+        self.assertEqual(self.sent, ["prepare", "wait"])
+        self.assertEqual(self.runner.status.state, AutomationState.WAITING)
+        self.assertEqual(self.runner.status.step_index, 1)
+
     def test_file_condition_uses_safe_terminal_command_and_marker(self) -> None:
         scenario = AutomationScenario(
             name="file",

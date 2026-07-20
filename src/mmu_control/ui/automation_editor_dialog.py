@@ -48,6 +48,7 @@ class AutomationEditorDialog(QDialog):
         self.command_input.setPlaceholderText("Command to send to the selected SSH shell or minicom session")
         self.condition_type_input = QComboBox(self)
         for completion_type, label in (
+            (CompletionType.NONE, "No completion condition required"),
             (CompletionType.OUTPUT_CONTAINS, "Console contains text"),
             (CompletionType.OUTPUT_REGEX, "Console matches regular expression"),
             (CompletionType.PROMPT_REGEX, "Latest prompt matches regular expression"),
@@ -133,7 +134,7 @@ class AutomationEditorDialog(QDialog):
             if not step.command.strip():
                 self.error_label.setText(f"Step {index}: command is required.")
                 return
-            if step.completion_type == CompletionType.DELAY:
+            if step.completion_type in {CompletionType.NONE, CompletionType.DELAY}:
                 continue
             if not step.completion_value:
                 self.error_label.setText(f"Step {index}: completion value is required.")
@@ -187,10 +188,13 @@ class AutomationEditorDialog(QDialog):
         completion_type = self.condition_type_input.currentData()
         file_condition = completion_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}
         delay = completion_type == CompletionType.DELAY
-        self.condition_value_input.setEnabled(not delay)
+        no_completion_condition = completion_type == CompletionType.NONE
+        self.condition_value_input.setEnabled(not delay and not no_completion_condition)
         self.file_path_input.setEnabled(file_condition)
         self.file_path_input.setPlaceholderText("Absolute device path" if file_condition else "Not used for this condition")
-        self.condition_value_input.setPlaceholderText("Not used for delay" if delay else "Text or regular expression")
+        self.condition_value_input.setPlaceholderText(
+            "Not used for this completion type" if no_completion_condition or delay else "Text or regular expression"
+        )
 
     def _add_step(self) -> None:
         self._store_current_step()

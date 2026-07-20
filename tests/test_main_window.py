@@ -569,6 +569,8 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(created_parents, [window])
         self.assertEqual(store.load().scenarios, {"boot": scenario})
+        self.assertEqual(window.automation_list.count(), 1)
+        self.assertEqual(window.automation_list.currentItem().text(), "boot")
 
     def test_server_path_input_accepts_dropped_local_file(self) -> None:
         """Dropping a local file path fills the Linux server path input."""

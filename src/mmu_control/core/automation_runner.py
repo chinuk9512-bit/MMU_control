@@ -181,6 +181,9 @@ class AutomationRunner:
             self._send_line(step.command)
         except Exception as exc:
             self.fail_current_step(f"Could not send command: {exc}")
+            return
+        if step.completion_type == CompletionType.NONE:
+            self._advance()
 
     def _advance(self) -> None:
         assert self._scenario is not None

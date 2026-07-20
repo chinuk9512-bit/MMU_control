@@ -10,6 +10,7 @@ from typing import Any
 class CompletionType(StrEnum):
     """Ways an automation step can determine that it has completed."""
 
+    NONE = "none"
     OUTPUT_CONTAINS = "output_contains"
     OUTPUT_REGEX = "output_regex"
     PROMPT_REGEX = "prompt_regex"
@@ -24,7 +25,7 @@ class AutomationStep:
 
     name: str = ""
     command: str = ""
-    completion_type: CompletionType = CompletionType.OUTPUT_CONTAINS
+    completion_type: CompletionType = CompletionType.NONE
     completion_value: str = ""
     file_path: str = ""
     timeout_seconds: int = 60
@@ -33,9 +34,9 @@ class AutomationStep:
     def from_dict(cls, data: dict[str, Any]) -> "AutomationStep":
         """Create a step from JSON-compatible data with safe defaults."""
         try:
-            completion_type = CompletionType(str(data.get("completion_type", CompletionType.OUTPUT_CONTAINS)))
+            completion_type = CompletionType(str(data.get("completion_type", CompletionType.NONE)))
         except ValueError:
-            completion_type = CompletionType.OUTPUT_CONTAINS
+            completion_type = CompletionType.NONE
         return cls(
             name=str(data.get("name", "")),
             command=str(data.get("command", "")),
