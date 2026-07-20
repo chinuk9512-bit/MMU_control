@@ -401,6 +401,43 @@ class MainWindowTest(unittest.TestCase):
         self.assertNotIn("\n\npwd", window.terminal_widget.toPlainText())
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
 
+    def test_pending_echo_survives_initial_prompt_in_a_separate_chunk(self) -> None:
+        """A startup prompt must not discard the command echo awaited next."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window._activate_shell(manager.shell)
+        window.terminal_widget.commandSubmitted.emit("pwd")
+
+        manager.shell.output = "\r\nuser@server:~$ "
+        window._poll_shell()
+
+        self.assertEqual(window._pending_echo, "pwd")
+        manager.shell.output = "pwd\r\n/home/user\r\nuser@server:~$ "
+        window._poll_shell()
+
+        self.assertIsNone(window._pending_echo)
+        self.assertIn("/home/user", window.terminal_widget.toPlainText())
+        self.assertFalse(window.terminal_widget.toPlainText().startswith("\n"))
+        self.assertNotIn("\n\n", window.terminal_widget.toPlainText())
+
+    def test_pending_echo_survives_a_split_command_echo(self) -> None:
+        """A command echo split between reads is removed only once complete."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window._activate_shell(manager.shell)
+        window.terminal_widget.commandSubmitted.emit("pwd")
+
+        manager.shell.output = "pw"
+        window._poll_shell()
+
+        self.assertEqual(window._pending_echo, "pwd")
+        manager.shell.output = "d\r\n/home/user\r\nuser@server:~$ "
+        window._poll_shell()
+
+        self.assertIsNone(window._pending_echo)
+        self.assertIn("/home/user", window.terminal_widget.toPlainText())
+        self.assertNotIn("\n\n", window.terminal_widget.toPlainText())
+
     def test_terminal_commands_run_locally_without_ssh_shell(self) -> None:
         """Terminal input runs against the local PC when SSH is disconnected."""
         window = self.create_window()
