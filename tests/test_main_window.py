@@ -649,6 +649,21 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
         self.assertEqual(dialog.scenario(), AutomationScenario(name="new scenario"))
 
+    def test_save_step_button_saves_current_step_without_closing_dialog(self) -> None:
+        """Saving a step commits its editor fields while the dialog stays open."""
+        dialog = AutomationEditorDialog(parent=self.create_window())
+        dialog._add_step()
+        dialog.command_input.setPlainText("echo ready")
+        dialog.show()
+        self.app.processEvents()
+
+        dialog.save_step_button.click()
+
+        self.assertEqual(dialog.scenario().steps[0].command, "echo ready")
+        self.assertTrue(dialog.isVisible())
+        self.assertEqual(dialog.error_label.text(), "Step saved.")
+        dialog.close()
+
     def test_server_path_input_accepts_dropped_local_file(self) -> None:
         """Dropping a local file path fills the Linux server path input."""
         window = self.create_window()
