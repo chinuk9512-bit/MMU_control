@@ -407,6 +407,7 @@ class MainWindow(QMainWindow):
         self.mmu_ssh_disconnect_button.clicked.connect(self._disconnect_mmu_ssh)
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
+        self.command_list.currentItemChanged.connect(self._update_selected_command_action)
         self.board_ip_version_combo.currentTextChanged.connect(self._update_board_ip_placeholder)
         self.power_on_button.clicked.connect(lambda: self._run_power_supply_command("on"))
         self.power_off_button.clicked.connect(lambda: self._run_power_supply_command("off"))
@@ -1513,6 +1514,7 @@ class MainWindow(QMainWindow):
             self.command_set_list.setCurrentRow(0)
         if self.command_set_list.currentItem() is None:
             self.command_set_output.clear()
+            self.command_list.clear()
             self._set_command_actions_enabled(False)
 
     def _create_command_set(self) -> None:
@@ -1550,16 +1552,16 @@ class MainWindow(QMainWindow):
         self._refresh_command_set_list()
 
     def _run_command_set(self) -> None:
+        """Run the command selected within the current command group."""
         command_set = self._selected_command_set()
-        if command_set is None:
+        command = self._selected_command()
+        if command_set is None or command is None:
             return
         if self._shell is None or not self._shell.is_open:
             self.terminal_widget.write_output("Not connected to an SSH shell.")
             return
-        for command in command_set.commands.splitlines():
-            command = command.strip()
-            if command:
-                self._shell.send_line(command)
+        self._shell.send_line(command)
+        self.statusBar().showMessage(f"Command sent from group '{command_set.name}': {command}")
 
     def _save_command_set(self, command_set: CommandSet) -> None:
         collection = self._command_set_store.upsert(command_set)
@@ -1579,19 +1581,45 @@ class MainWindow(QMainWindow):
         command_set = self._selected_command_set()
         if command_set is None:
             self.command_set_output.clear()
+            self.command_list.clear()
             self._set_command_actions_enabled(False)
             return
         self.command_set_output.setPlainText(
             f"Name: {command_set.name}\n"
-            f"Description: {command_set.description}\n\n"
-            f"{command_set.commands}"
+            f"Description: {command_set.description}"
         )
+        self.command_list.clear()
+        for command in self._commands_in(command_set):
+            item = QListWidgetItem(command)
+            item.setData(Qt.ItemDataRole.UserRole, command)
+            self.command_list.addItem(item)
+        if self.command_list.count():
+            self.command_list.setCurrentRow(0)
         self._set_command_actions_enabled(True)
 
     def _set_command_actions_enabled(self, enabled: bool) -> None:
         self.edit_command_button.setEnabled(enabled)
         self.delete_command_button.setEnabled(enabled)
-        self.run_command_set_button.setEnabled(enabled)
+        self.run_command_set_button.setEnabled(enabled and self._selected_command() is not None)
+
+    @staticmethod
+    def _commands_in(command_set: CommandSet) -> list[str]:
+        """Return the non-empty commands configured in a command group."""
+        return [command.strip() for command in command_set.commands.splitlines() if command.strip()]
+
+    def _selected_command(self) -> str | None:
+        """Return the command currently selected in the command group."""
+        item = self.command_list.currentItem()
+        if item is None:
+            return None
+        command = item.data(Qt.ItemDataRole.UserRole)
+        return command if isinstance(command, str) and command else None
+
+    def _update_selected_command_action(self, *_items: QListWidgetItem | None) -> None:
+        """Enable running only when a command within the group is selected."""
+        self.run_command_set_button.setEnabled(
+            self._selected_command_set() is not None and self._selected_command() is not None
+        )
 
     def _load_automation_scenarios(self) -> None:
         """Load persisted automation scenarios without preventing app startup."""
@@ -2388,7 +2416,7 @@ class MainWindow(QMainWindow):
         self.new_command_button = QPushButton("New Command Group", self)
         self.edit_command_button = QPushButton("Edit", self)
         self.delete_command_button = QPushButton("Delete", self)
-        self.run_command_set_button = QPushButton("Run", self)
+        self.run_command_set_button = QPushButton("Run Selected", self)
         self.edit_command_button.setEnabled(False)
         self.delete_command_button.setEnabled(False)
         self.run_command_set_button.setEnabled(False)
@@ -2404,7 +2432,13 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.command_set_output.setReadOnly(True)
-        self.command_set_output.setPlaceholderText("Command sets will be listed here.")
+        self.command_set_output.setPlaceholderText("Selected command group details appear here.")
+
+        self.command_list = QListWidget(self)
+        self.command_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.command_list.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         layout.addWidget(button_row)
         self.command_set_list = QListWidget(self)
@@ -2414,9 +2448,11 @@ class MainWindow(QMainWindow):
         command_splitter = QSplitter(Qt.Orientation.Vertical, tab)
         command_splitter.setChildrenCollapsible(False)
         command_splitter.addWidget(self.command_set_list)
+        command_splitter.addWidget(self.command_list)
         command_splitter.addWidget(self.command_set_output)
         command_splitter.setStretchFactor(0, 1)
-        command_splitter.setStretchFactor(1, 2)
+        command_splitter.setStretchFactor(1, 1)
+        command_splitter.setStretchFactor(2, 1)
         layout.addWidget(command_splitter, stretch=1)
 
         automation_group = QGroupBox("Automation Scenarios", tab)
