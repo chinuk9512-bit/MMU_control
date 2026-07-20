@@ -1253,5 +1253,32 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent[-1], "\x01x\n")
 
 
+    def test_command_group_tree_and_folder_selection(self) -> None:
+        """Folders render groups as children and cannot execute commands themselves."""
+        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
+        store.create_folder("A")
+        for name, command in (("B", "echo b"), ("C", "echo c"), ("D", "echo d")):
+            store.upsert(CommandSet(name=name, commands=command, parent_path="A"))
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager, command_set_store=store)
+
+        self.assertEqual(window.command_set_list.topLevelItemCount(), 1)
+        folder = window.command_set_list.topLevelItem(0)
+        self.assertEqual(folder.text(0), "A")
+        self.assertEqual(folder.childCount(), 3)
+        window.command_set_list.setCurrentItem(folder)
+        self.assertFalse(window.run_command_set_button.isEnabled())
+
+        group = folder.child(1)
+        window.command_set_list.setCurrentItem(group)
+        self.assertEqual(window.command_list.item(0).text(), "echo c")
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window._connect_ssh()
+        window._run_command_set()
+        self.assertEqual(manager.shell.sent, ["echo c"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

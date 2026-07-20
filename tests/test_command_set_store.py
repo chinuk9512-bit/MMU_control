@@ -37,5 +37,34 @@ class CommandSetStoreTest(unittest.TestCase):
             self.assertEqual(deleted.command_sets, {})
 
 
+    def test_legacy_flat_json_loads_at_top_level(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "command_sets.json"
+            path.write_text('{"command_sets": {"legacy": {"commands": "pwd"}}}', encoding="utf-8")
+            collection = CommandSetStore(path).load()
+            self.assertEqual(collection.schema_version, 2)
+            self.assertEqual(collection.command_sets["legacy"].parent_path, "")
+            self.assertEqual(collection.folders, {})
+
+    def test_folder_move_reload_and_delete_policies(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = CommandSetStore(Path(temp_dir) / "command_sets.json")
+            store.create_folder("A")
+            store.create_folder("B", "A")
+            store.upsert(CommandSet("nested", commands="pwd", parent_path="A/B"))
+            store.move_command_set("nested", "A")
+            reloaded = store.load()
+            self.assertEqual(reloaded.command_sets["nested"].parent_path, "A")
+            self.assertIn("A/B", reloaded.folders)
+            self.assertEqual(__import__("json").loads(store.command_sets_path.read_text())["schema_version"], 2)
+
+            store.delete_folder("A", delete_contents=False)
+            promoted = store.load()
+            self.assertIn("B", promoted.folders)
+            self.assertEqual(promoted.command_sets["nested"].parent_path, "")
+            store.delete_folder("B", delete_contents=True)
+            self.assertNotIn("B", store.load().folders)
+
+
 if __name__ == "__main__":
     unittest.main()
