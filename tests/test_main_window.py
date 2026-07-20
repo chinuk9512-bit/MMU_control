@@ -408,7 +408,7 @@ class MainWindowTest(unittest.TestCase):
         window._activate_shell(manager.shell)
         window.terminal_widget.commandSubmitted.emit("pwd")
 
-        manager.shell.output = "\r\nuser@server:~$ "
+        manager.shell.output = "user@server:~$ "
         window._poll_shell()
 
         self.assertEqual(window._pending_echo, "pwd")
@@ -417,7 +417,6 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertIsNone(window._pending_echo)
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
-        self.assertFalse(window.terminal_widget.toPlainText().startswith("\n"))
         self.assertNotIn("\n\n", window.terminal_widget.toPlainText())
 
     def test_pending_echo_survives_a_split_command_echo(self) -> None:

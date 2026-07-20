@@ -1705,15 +1705,15 @@ class MainWindow(QMainWindow):
 
         before_echo = self._echo_buffer[:echo_end]
         remainder = self._echo_buffer[echo_end + len(echo) + 1 :]
+        # A line advance emitted immediately before the first echoed command
+        # is not visible input.  Drop it only when it is the entire prefix,
+        # so banner output received before the echo is retained.
+        if before_echo == "\n":
+            before_echo = ""
         result = before_echo + remainder
         if not echo:
             result = result.lstrip("\n")
         else:
-            # A PTY can send its initial line advance in a prior chunk and
-            # its prompt in another one.  The command is already followed by
-            # a local newline, so retain prompt/banner text but remove that
-            # first remote advance to avoid a blank line before the output.
-            result = result.removeprefix("\n")
             result = self._without_extra_echo_newline(result)
         self._pending_echo = None
         self._echo_buffer = ""
