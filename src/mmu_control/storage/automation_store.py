@@ -20,6 +20,11 @@ class AutomationStore:
     def __init__(self, path: Path) -> None:
         self._path = path
 
+    @property
+    def path(self) -> Path:
+        """Return the file used to persist automation scenarios."""
+        return self._path
+
     @classmethod
     def create_default(cls) -> "AutomationStore":
         """Create a store at the standard per-user configuration path."""

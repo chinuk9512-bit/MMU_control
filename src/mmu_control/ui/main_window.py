@@ -1758,7 +1758,11 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             edited = dialog.scenario()
             if edited.name != scenario.name:
-                self._automation_store.delete(scenario.name)
+                try:
+                    self._automation_store.delete(scenario.name)
+                except Exception as exc:
+                    self._show_automation_save_error("renaming scenario", exc)
+                    return
             self._save_automation_scenario(edited)
 
     def _delete_automation_scenario(self) -> None:
@@ -1770,9 +1774,26 @@ class MainWindow(QMainWindow):
         self._automation_scenarios = dict(self._automation_store.delete(scenario.name).scenarios)
         self._refresh_automation_list()
 
-    def _save_automation_scenario(self, scenario: AutomationScenario) -> None:
-        self._automation_scenarios = dict(self._automation_store.upsert(scenario).scenarios)
+    def _save_automation_scenario(self, scenario: AutomationScenario) -> bool:
+        """Persist a scenario, leaving the displayed scenarios unchanged on failure."""
+        try:
+            collection = self._automation_store.upsert(scenario)
+        except Exception as exc:
+            self._show_automation_save_error("saving scenario", exc)
+            return False
+        self._automation_scenarios = dict(collection.scenarios)
         self._refresh_automation_list(scenario.name)
+        return True
+
+    def _show_automation_save_error(self, action: str, error: Exception) -> None:
+        """Expose a scenario persistence error without changing the current list state."""
+        reason = str(error) or error.__class__.__name__
+        message = (
+            f"Automation save failed while {action}: {reason} "
+            f"(storage: {self._automation_store.path})"
+        )
+        self.automation_status_label.setText(message)
+        self.statusBar().showMessage(message)
 
     def _run_automation_scenario(self) -> None:
         scenario = self._selected_automation_scenario()
