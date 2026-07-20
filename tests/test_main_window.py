@@ -649,20 +649,72 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
         self.assertEqual(dialog.scenario(), AutomationScenario(name="new scenario"))
 
-    def test_save_step_button_saves_current_step_without_closing_dialog(self) -> None:
-        """Saving a step commits its editor fields while the dialog stays open."""
-        dialog = AutomationEditorDialog(parent=self.create_window())
-        dialog._add_step()
-        dialog.command_input.setPlainText("echo ready")
-        dialog.show()
-        self.app.processEvents()
+    def test_automation_editor_saves_none_condition_without_value_or_file_path(self) -> None:
+        """No-condition steps discard irrelevant completion values and paths."""
+        dialog = self._automation_editor_dialog(CompletionType.NONE)
+        dialog.condition_value_input.setText("stale value")
+        dialog.file_path_input.setText("/tmp/stale")
 
-        dialog.save_step_button.click()
+        dialog.accept()
 
-        self.assertEqual(dialog.scenario().steps[0].command, "echo ready")
-        self.assertTrue(dialog.isVisible())
-        self.assertEqual(dialog.error_label.text(), "Step saved.")
-        dialog.close()
+        step = dialog.scenario().steps[0]
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        self.assertEqual(step.completion_value, "")
+        self.assertEqual(step.file_path, "")
+
+    def test_automation_editor_saves_delay_condition_without_value_or_file_path(self) -> None:
+        """Delay steps discard irrelevant completion values and paths."""
+        dialog = self._automation_editor_dialog(CompletionType.DELAY)
+        dialog.condition_value_input.setText("stale value")
+        dialog.file_path_input.setText("/tmp/stale")
+
+        dialog.accept()
+
+        step = dialog.scenario().steps[0]
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        self.assertEqual(step.completion_value, "")
+        self.assertEqual(step.file_path, "")
+
+    def test_automation_editor_saves_output_contains_text_without_file_path(self) -> None:
+        """Console text conditions retain text while discarding a device path."""
+        dialog = self._automation_editor_dialog(CompletionType.OUTPUT_CONTAINS)
+        dialog.condition_value_input.setText("ready")
+        dialog.file_path_input.setText("/tmp/stale")
+
+        dialog.accept()
+
+        step = dialog.scenario().steps[0]
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        self.assertEqual(step.completion_value, "ready")
+        self.assertEqual(step.file_path, "")
+
+    def test_automation_editor_rejects_remote_file_contains_without_text_or_path(self) -> None:
+        """Remote-file text conditions require both a value and a device path."""
+        for value, file_path, error in (
+            ("", "/tmp/state", "completion value is required"),
+            ("ready", "", "device file path is required"),
+        ):
+            with self.subTest(value=value, file_path=file_path):
+                dialog = self._automation_editor_dialog(CompletionType.REMOTE_FILE_CONTAINS)
+                dialog.condition_value_input.setText(value)
+                dialog.file_path_input.setText(file_path)
+
+                dialog.accept()
+
+                self.assertNotEqual(dialog.result(), QDialog.DialogCode.Accepted)
+                self.assertIn(error, dialog.error_label.text())
+
+    def _automation_editor_dialog(self, completion_type: CompletionType) -> AutomationEditorDialog:
+        """Create an editor with one valid command step of ``completion_type``."""
+        dialog = AutomationEditorDialog(
+            AutomationScenario(
+                name="test scenario",
+                steps=[AutomationStep("test step", "echo ready", completion_type)],
+            ),
+            self.create_window(),
+        )
+        dialog.condition_type_input.setCurrentIndex(dialog.condition_type_input.findData(completion_type))
+        return dialog
 
     def test_server_path_input_accepts_dropped_local_file(self) -> None:
         """Dropping a local file path fills the Linux server path input."""
