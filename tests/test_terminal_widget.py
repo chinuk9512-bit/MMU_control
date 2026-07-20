@@ -5,6 +5,13 @@ from __future__ import annotations
 import sys
 import unittest
 
+import pytest
+
+# PySide6 loads native Qt GUI libraries during import.  Skip these widget
+# tests when a minimal test container does not provide that runtime instead
+# of aborting collection for the entire test suite.
+pytest.importorskip("PySide6.QtGui", exc_type=ImportError)
+
 from PySide6.QtCore import QMimeData, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
