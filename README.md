@@ -27,6 +27,11 @@ mmu-control
 - You can drag and drop a file into the `Server path` input to fill in a local PC path as an entry aid; use it only when that same path is accessible from the SSH Linux server, otherwise enter the Linux server path manually.
 - Use `Upload to Board` for SFTP `put` and `Download to Server` for SFTP `get`.
 
+## Automation scenarios
+
+- Automation scenarios are saved in `src/mmu_control/user_scenario/automation_scenarios.json`.
+- The Scenarios tab loads this file when the application starts and refreshes the scenario list after a scenario is saved.
+
 ## Test
 
 ```powershell

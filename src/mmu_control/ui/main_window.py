@@ -1799,6 +1799,16 @@ class MainWindow(QMainWindow):
         scenario = self._selected_automation_scenario()
         if scenario is None:
             return
+        try:
+            self._automation_scenarios = dict(self._automation_store.load().scenarios)
+        except Exception as exc:
+            self.automation_status_label.setText(f"Automation: could not load scenarios: {exc}")
+            return
+        scenario = self._automation_scenarios.get(scenario.name)
+        if scenario is None:
+            self.automation_status_label.setText("Automation: selected scenario no longer exists")
+            self._refresh_automation_list()
+            return
         if self._shell is None or not self._shell.is_open:
             self.automation_status_label.setText("Automation: SSH shell is not connected")
             return

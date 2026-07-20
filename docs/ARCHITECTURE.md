@@ -101,7 +101,7 @@ src/mmu_control/
 - `CommandSetStore`
   - `%APPDATA%/MMUControl/command_sets.json`에 명령 세트를 저장합니다.
 - `AutomationStore`
-  - `%APPDATA%/MMUControl/automation_scenarios.json`에 자동화 시나리오를 저장합니다.
+  - `src/mmu_control/user_scenario/automation_scenarios.json`에 자동화 시나리오를 저장합니다.
 
 ## 런타임 데이터 흐름
 
