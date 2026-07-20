@@ -26,8 +26,12 @@ from mmu_control.models.automation import AutomationScenario, AutomationStep, Co
 class AutomationEditorDialog(QDialog):
     """Edit any number of commands and their individual completion conditions."""
 
-    def __init__(self, scenario: AutomationScenario | None = None) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        scenario: AutomationScenario | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
         self.setWindowTitle("Automation Scenario")
         self._steps = list(scenario.steps) if scenario is not None else [AutomationStep(name="Step 1")]
         self._current_index = -1

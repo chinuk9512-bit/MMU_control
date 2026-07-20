@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from mmu_control.models.command_set import CommandSet
@@ -18,9 +19,13 @@ from mmu_control.models.command_set import CommandSet
 class CommandEditorDialog(QDialog):
     """Modal editor for one command set."""
 
-    def __init__(self, command_set: CommandSet | None = None) -> None:
-        super().__init__()
-        self.setWindowTitle("Command Set")
+    def __init__(
+        self,
+        command_set: CommandSet | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Command Group")
         self._error_label = QLabel("", self)
         self._error_label.setStyleSheet("color: #b00020;")
 
@@ -35,9 +40,7 @@ class CommandEditorDialog(QDialog):
             self.commands_input.setPlainText(command_set.commands)
 
         form = QFormLayout()
-        form.addRow("Name", self.name_input)
-        form.addRow("Description", self.description_input)
-        form.addRow("Commands", self.commands_input)
+        form.addRow("Group name", self.name_input)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -48,6 +51,10 @@ class CommandEditorDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(QLabel("Commands", self))
+        layout.addWidget(self.commands_input)
+        layout.addWidget(QLabel("Description", self))
+        layout.addWidget(self.description_input)
         layout.addWidget(self._error_label)
         layout.addWidget(buttons)
         self.resize(560, 420)
