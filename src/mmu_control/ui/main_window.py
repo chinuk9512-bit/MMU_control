@@ -336,8 +336,10 @@ class MainWindow(QMainWindow):
         self._mmu_sftp_directory = "/tmp"
         self._closing = False
         self.setWindowTitle("MMU Control")
-        self.resize(1180, 900)
-        self.setMinimumSize(760, 560)
+        # The response pane is a persistent right-hand workspace, so start
+        # wide enough for the terminal, command list, and response output.
+        self.resize(1600, 900)
+        self.setMinimumSize(1040, 560)
         self.setCentralWidget(self._build_central_widget())
         self.setStatusBar(self._build_status_bar())
         self._shell_timer = QTimer(self)
@@ -1687,6 +1689,17 @@ class MainWindow(QMainWindow):
         if "\n" not in self._echo_buffer:
             return ""
         first_line, remainder = self._echo_buffer.split("\n", 1)
+        # Some SSH servers emit a line advance immediately before echoing the
+        # first command after a new shell is opened.  The command is already
+        # displayed locally, so rendering that advance produces a spurious
+        # blank line that looks like Enter was pressed before the command.
+        # Treat it as part of the PTY echo only when it is directly followed
+        # by the command currently awaiting its echo.
+        if not first_line and "\n" in remainder:
+            echoed_line, echoed_remainder = remainder.split("\n", 1)
+            if echoed_line == self._pending_echo:
+                first_line = echoed_line
+                remainder = echoed_remainder
         if first_line == self._pending_echo:
             # The local terminal has already advanced to the next line when
             # Enter is pressed.  Some SSH PTYs send an additional blank echo
@@ -1844,11 +1857,27 @@ class MainWindow(QMainWindow):
 
     def _build_central_widget(self) -> QWidget:
         container = QWidget(self)
-        layout = QVBoxLayout(container)
+        layout = QHBoxLayout(container)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
-        layout.addWidget(self._build_connection_panel())
-        layout.addWidget(self._build_workspace(), stretch=1)
+
+        self.main_response_splitter = QSplitter(Qt.Orientation.Horizontal, container)
+        self.main_response_splitter.setChildrenCollapsible(False)
+
+        main_content = QWidget(self.main_response_splitter)
+        main_layout = QVBoxLayout(main_content)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(10)
+        main_layout.addWidget(self._build_connection_panel())
+        main_layout.addWidget(self._build_workspace(), stretch=1)
+
+        self.response_panel = self._build_response_panel()
+        self.main_response_splitter.addWidget(main_content)
+        self.main_response_splitter.addWidget(self.response_panel)
+        self.main_response_splitter.setStretchFactor(0, 1)
+        self.main_response_splitter.setStretchFactor(1, 0)
+        self.main_response_splitter.setSizes([1100, 460])
+
+        layout.addWidget(self.main_response_splitter)
         return container
 
     def _build_connection_buttons(self) -> QWidget:
@@ -2122,10 +2151,8 @@ class MainWindow(QMainWindow):
 
         terminal_splitter.addWidget(terminal_panel)
         terminal_splitter.addWidget(self._build_commands_tab())
-        terminal_splitter.addWidget(self._build_response_panel())
         terminal_splitter.setStretchFactor(0, 3)
         terminal_splitter.setStretchFactor(1, 2)
-        terminal_splitter.setStretchFactor(2, 1)
 
         layout.addWidget(terminal_splitter, stretch=1)
         return tab
@@ -2139,7 +2166,7 @@ class MainWindow(QMainWindow):
         header = QWidget(panel)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        title = QLabel("Reponse", header)
+        title = QLabel("Response", header)
         self.response_panel_toggle_button = QPushButton("Hide", header)
         self.response_panel_toggle_button.setCheckable(True)
         self.response_panel_toggle_button.setChecked(True)
@@ -2158,9 +2185,20 @@ class MainWindow(QMainWindow):
         return panel
 
     def _set_response_panel_visible(self, visible: bool) -> None:
-        """Show or hide the response output while retaining its contents."""
+        """Slide the right response pane open or closed without losing output."""
         self.response_panel_content.setVisible(visible)
         self.response_panel_toggle_button.setText("Hide" if visible else "Show")
+        if not hasattr(self, "main_response_splitter"):
+            return
+        if visible:
+            self.response_panel.setMinimumWidth(280)
+            self.main_response_splitter.setSizes([1100, 460])
+        else:
+            # Keep the header and its Show button reachable while collapsing
+            # the output area against the right edge of the window.
+            collapsed_width = self.response_panel_toggle_button.sizeHint().width() + 36
+            self.response_panel.setMinimumWidth(collapsed_width)
+            self.main_response_splitter.setSizes([1500, collapsed_width])
 
     def _build_commands_tab(self) -> QWidget:
         tab = QWidget(self)

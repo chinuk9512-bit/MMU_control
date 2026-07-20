@@ -349,10 +349,11 @@ class MainWindowTest(unittest.TestCase):
         )
 
     def test_response_panel_can_be_hidden_and_shown(self) -> None:
-        """The terminal response pane keeps its output while its view is toggled."""
+        """The right response pane slides closed while retaining its output."""
         window = self.create_window()
         window.response_panel_content.setPlainText("response output")
 
+        self.assertEqual(window.response_panel.parent(), window.main_response_splitter)
         self.assertTrue(window.response_panel_toggle_button.isChecked())
         self.assertEqual(window.response_panel_toggle_button.text(), "Hide")
         self.assertFalse(window.response_panel_content.isHidden())
@@ -367,6 +368,20 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertFalse(window.response_panel_content.isHidden())
         self.assertEqual(window.response_panel_toggle_button.text(), "Hide")
+
+    def test_initial_shell_echo_newline_is_not_rendered_as_a_blank_command(self) -> None:
+        """A leading PTY line advance before the first echo is filtered out."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window._activate_shell(manager.shell)
+        manager.shell.output = "\r\npwd\r\n/home/user\r\nuser@server:~$ "
+
+        window.terminal_widget.commandSubmitted.emit("pwd")
+        window._poll_shell()
+
+        self.assertEqual(manager.shell.sent, ["pwd"])
+        self.assertNotIn("\n\npwd", window.terminal_widget.toPlainText())
+        self.assertIn("/home/user", window.terminal_widget.toPlainText())
 
     def test_terminal_commands_run_locally_without_ssh_shell(self) -> None:
         """Terminal input runs against the local PC when SSH is disconnected."""
