@@ -1687,11 +1687,18 @@ class MainWindow(QMainWindow):
         if "\n" not in self._echo_buffer:
             return ""
         first_line, remainder = self._echo_buffer.split("\n", 1)
-        result = (
-            self._without_extra_echo_newline(remainder)
-            if first_line == self._pending_echo
-            else self._echo_buffer
-        )
+        if first_line == self._pending_echo:
+            # The local terminal has already advanced to the next line when
+            # Enter is pressed.  Some SSH PTYs send an additional blank echo
+            # line for an empty command, which used to place a visibly blank
+            # line between two identical prompts.
+            result = (
+                remainder.lstrip("\n")
+                if not self._pending_echo
+                else self._without_extra_echo_newline(remainder)
+            )
+        else:
+            result = self._echo_buffer
         self._pending_echo = None
         self._echo_buffer = ""
         return result
@@ -1870,6 +1877,10 @@ class MainWindow(QMainWindow):
     def _build_connection_panel(self) -> QFrame:
         panel = QFrame(self)
         panel.setFrameShape(QFrame.Shape.StyledPanel)
+        # QScrollArea uses the platform's inactive-window colour by default on
+        # some Windows themes.  Keep the connection inputs visually aligned
+        # with the white workspace below them.
+        panel.setStyleSheet("QFrame { background-color: white; }")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -1902,6 +1913,9 @@ class MainWindow(QMainWindow):
         )
         self.connection_panel_scroll_area.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.connection_panel_scroll_area.setStyleSheet(
+            "QScrollArea, QScrollArea > QWidget > QWidget { background-color: white; }"
         )
         self.connection_panel_scroll_area.setWidget(self.connection_panel_content)
         layout.addWidget(self.connection_panel_scroll_area)
@@ -2108,11 +2122,45 @@ class MainWindow(QMainWindow):
 
         terminal_splitter.addWidget(terminal_panel)
         terminal_splitter.addWidget(self._build_commands_tab())
+        terminal_splitter.addWidget(self._build_response_panel())
         terminal_splitter.setStretchFactor(0, 3)
         terminal_splitter.setStretchFactor(1, 2)
+        terminal_splitter.setStretchFactor(2, 1)
 
         layout.addWidget(terminal_splitter, stretch=1)
         return tab
+
+    def _build_response_panel(self) -> QWidget:
+        """Build the collapsible pane reserved for command-response output."""
+        panel = QWidget(self)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        header = QWidget(panel)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("Reponse", header)
+        self.response_panel_toggle_button = QPushButton("Hide", header)
+        self.response_panel_toggle_button.setCheckable(True)
+        self.response_panel_toggle_button.setChecked(True)
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.response_panel_toggle_button)
+
+        self.response_panel_content = QPlainTextEdit(panel)
+        self.response_panel_content.setReadOnly(True)
+        self.response_panel_content.setPlaceholderText(
+            "Results for configured terminal commands will appear here."
+        )
+        layout.addWidget(header)
+        layout.addWidget(self.response_panel_content, stretch=1)
+        self.response_panel_toggle_button.toggled.connect(self._set_response_panel_visible)
+        return panel
+
+    def _set_response_panel_visible(self, visible: bool) -> None:
+        """Show or hide the response output while retaining its contents."""
+        self.response_panel_content.setVisible(visible)
+        self.response_panel_toggle_button.setText("Hide" if visible else "Show")
 
     def _build_commands_tab(self) -> QWidget:
         tab = QWidget(self)
