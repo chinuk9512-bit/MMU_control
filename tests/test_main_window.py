@@ -514,8 +514,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["htop", "q"])
         self.assertFalse(window.terminal_widget.is_interactive_mode)
 
-    def test_command_groups_can_run_a_selected_command(self) -> None:
-        """A command group runs only the command selected by the user."""
+    def test_command_groups_run_all_commands_in_order(self) -> None:
+        """A command group runs each of its commands in order."""
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = FakeSSHManager()
             store = CommandSetStore(Path(temp_dir) / "command_sets.json")
@@ -539,10 +539,11 @@ class MainWindowTest(unittest.TestCase):
             window.ssh_host_input.setText("server")
             window.ssh_username_input.setText("user")
             window._connect_ssh()
-            window.command_list.setCurrentRow(1)
+            window.command_list.clearSelection()
+            self.assertTrue(window.run_command_set_button.isEnabled())
             window._run_command_set()
 
-            self.assertEqual(manager.shell.sent, ["uname -a"])
+            self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
 
     def test_new_automation_button_opens_editor_and_saves_scenario(self) -> None:
         """The New Automation action creates an editor with the main window as parent."""
@@ -1267,6 +1268,8 @@ class MainWindowTest(unittest.TestCase):
             store.upsert(CommandSet(name=name, commands=command, parent_path="A"))
         manager = FakeSSHManager()
         window = self.create_window(ssh_manager=manager, command_set_store=store)
+
+        self.assertEqual(window.run_command_set_button.text(), "Run")
 
         self.assertEqual(window.command_set_list.topLevelItemCount(), 1)
         folder = window.command_set_list.topLevelItem(0)

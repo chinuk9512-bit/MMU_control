@@ -1582,14 +1582,18 @@ class MainWindow(QMainWindow):
         self._refresh_command_set_list()
 
     def _run_command_set(self) -> None:
-        command_set, command = self._selected_command_set(), self._selected_command()
-        if command_set is None or command is None:
+        command_set = self._selected_command_set()
+        if command_set is None:
             return
         if self._shell is None or not self._shell.is_open:
             self.terminal_widget.write_output("Not connected to an SSH shell.")
             return
-        self._shell.send_line(command)
-        self.statusBar().showMessage(f"Command sent from group '{command_set.name}': {command}")
+        commands = self._commands_in(command_set)
+        if not commands:
+            return
+        for command in commands:
+            self._shell.send_line(command)
+        self.statusBar().showMessage(f"Commands sent from group '{command_set.name}'.")
 
     def _save_command_set(self, command_set: CommandSet) -> None:
         collection = self._command_set_store.upsert(command_set)
@@ -1628,7 +1632,7 @@ class MainWindow(QMainWindow):
     def _set_command_actions_enabled(self, enabled: bool) -> None:
         self.edit_command_button.setEnabled(enabled)
         self.delete_command_button.setEnabled(enabled)
-        self.run_command_set_button.setEnabled(enabled and self._selected_command() is not None)
+        self.run_command_set_button.setEnabled(enabled)
 
     @staticmethod
     def _commands_in(command_set: CommandSet) -> list[str]:
@@ -1640,7 +1644,7 @@ class MainWindow(QMainWindow):
         return command if isinstance(command, str) and command else None
 
     def _update_selected_command_action(self, *_items: QListWidgetItem | None) -> None:
-        self.run_command_set_button.setEnabled(self._selected_command_set() is not None and self._selected_command() is not None)
+        self.run_command_set_button.setEnabled(self._selected_command_set() is not None)
 
     def _load_automation_scenarios(self) -> None:
         """Load persisted automation scenarios without preventing app startup."""
@@ -2441,7 +2445,7 @@ class MainWindow(QMainWindow):
         self.new_folder_button = QPushButton("New Folder", self.commands_group)
         self.edit_command_button = QPushButton("Edit", self.commands_group)
         self.delete_command_button = QPushButton("Delete", self.commands_group)
-        self.run_command_set_button = QPushButton("Run Selected", self.commands_group)
+        self.run_command_set_button = QPushButton("Run", self.commands_group)
         self.edit_command_button.setEnabled(False)
         self.delete_command_button.setEnabled(False)
         self.run_command_set_button.setEnabled(False)
