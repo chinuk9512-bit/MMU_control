@@ -508,8 +508,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["htop", "q"])
         self.assertFalse(window.terminal_widget.is_interactive_mode)
 
-    def test_command_sets_can_be_saved_selected_and_run(self) -> None:
-        """The Commands tab persists command sets and runs them in the SSH shell."""
+    def test_command_groups_can_run_a_selected_command(self) -> None:
+        """A command group runs only the command selected by the user."""
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = FakeSSHManager()
             store = CommandSetStore(Path(temp_dir) / "command_sets.json")
@@ -524,15 +524,19 @@ class MainWindowTest(unittest.TestCase):
 
             self.assertEqual(window.command_set_list.count(), 1)
             self.assertEqual(window.command_set_list.currentItem().text(), "diagnostics")
+            self.assertEqual(window.command_list.count(), 2)
+            self.assertEqual(window.command_list.item(0).text(), "pwd")
+            self.assertEqual(window.command_list.item(1).text(), "uname -a")
             self.assertTrue(window.edit_command_button.isEnabled())
             self.assertIn("Collect status", window.command_set_output.toPlainText())
 
             window.ssh_host_input.setText("server")
             window.ssh_username_input.setText("user")
             window._connect_ssh()
+            window.command_list.setCurrentRow(1)
             window._run_command_set()
 
-            self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
+            self.assertEqual(manager.shell.sent, ["uname -a"])
 
     def test_new_automation_button_opens_editor_and_saves_scenario(self) -> None:
         """The New Automation action creates an editor with the main window as parent."""

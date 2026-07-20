@@ -32,7 +32,7 @@ class CommandEditorDialog(QDialog):
         self.name_input = QLineEdit(self)
         self.description_input = QLineEdit(self)
         self.commands_input = QPlainTextEdit(self)
-        self.commands_input.setPlaceholderText("Enter one or more shell commands.")
+        self.commands_input.setPlaceholderText("Enter one shell command per line. Each command can be selected and run separately.")
 
         if command_set is not None:
             self.name_input.setText(command_set.name)
@@ -51,7 +51,7 @@ class CommandEditorDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
-        layout.addWidget(QLabel("Commands", self))
+        layout.addWidget(QLabel("Commands (one per line)", self))
         layout.addWidget(self.commands_input)
         layout.addWidget(QLabel("Description", self))
         layout.addWidget(self.description_input)
