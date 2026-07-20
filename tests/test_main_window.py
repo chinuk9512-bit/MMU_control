@@ -575,6 +575,70 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.automation_list.count(), 1)
         self.assertEqual(window.automation_list.currentItem().text(), "boot")
 
+    def test_create_automation_scenario_keeps_list_when_store_save_fails(self) -> None:
+        """A failed new scenario save reports its path without changing the selected scenario."""
+        path = Path(self.temp_dir.name) / "automation.json"
+        store = AutomationStore(path)
+        existing = AutomationScenario(name="existing")
+        store.upsert(existing)
+        window = self.create_window(automation_store=store)
+        created = AutomationScenario(name="new")
+
+        class AcceptedAutomationDialog:
+            def __init__(self, parent: MainWindow) -> None:
+                self.parent = parent
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def scenario(self) -> AutomationScenario:
+                return created
+
+        with (
+            patch("mmu_control.ui.main_window.AutomationEditorDialog", AcceptedAutomationDialog),
+            patch.object(store, "upsert", side_effect=OSError("disk is full")),
+        ):
+            window._create_automation_scenario()
+
+        self.assertEqual(window.automation_list.count(), 1)
+        self.assertEqual(window.automation_list.currentItem().text(), "existing")
+        self.assertIn("disk is full", window.automation_status_label.text())
+        self.assertIn(str(path), window.automation_status_label.text())
+        self.assertEqual(window.statusBar().currentMessage(), window.automation_status_label.text())
+
+    def test_rename_automation_scenario_keeps_list_when_store_delete_fails(self) -> None:
+        """A failed rename deletion preserves the existing scenario and its selection."""
+        path = Path(self.temp_dir.name) / "automation.json"
+        store = AutomationStore(path)
+        existing = AutomationScenario(name="existing")
+        store.upsert(existing)
+        window = self.create_window(automation_store=store)
+        renamed = AutomationScenario(name="renamed")
+
+        class AcceptedAutomationDialog:
+            def __init__(self, scenario: AutomationScenario, parent: MainWindow) -> None:
+                self.scenario_arg = scenario
+                self.parent = parent
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def scenario(self) -> AutomationScenario:
+                return renamed
+
+        with (
+            patch("mmu_control.ui.main_window.AutomationEditorDialog", AcceptedAutomationDialog),
+            patch.object(store, "delete", side_effect=OSError("permission denied")) as delete,
+        ):
+            window._edit_automation_scenario()
+
+        delete.assert_called_once_with("existing")
+        self.assertEqual(window.automation_list.count(), 1)
+        self.assertEqual(window.automation_list.currentItem().text(), "existing")
+        self.assertIn("permission denied", window.automation_status_label.text())
+        self.assertIn(str(path), window.automation_status_label.text())
+        self.assertEqual(window.statusBar().currentMessage(), window.automation_status_label.text())
+
     def test_new_scenario_dialog_accepts_a_named_scenario_without_steps(self) -> None:
         """A scenario can be created before the user configures its first step."""
         dialog = AutomationEditorDialog(parent=self.create_window())
