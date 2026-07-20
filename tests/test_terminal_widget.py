@@ -53,6 +53,14 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget.toPlainText(), "user@server:~$ pwd")
 
+    def test_bare_carriage_return_overwrites_the_current_line(self) -> None:
+        """A bare CR returns the terminal cursor instead of adding a line."""
+        widget = TerminalWidget(prompt="")
+
+        widget.write_stream("Downloading 10%\rDownloading 20%")
+
+        self.assertEqual(widget.toPlainText(), "Downloading 20%")
+
     def test_typing_and_output_do_not_replace_the_whole_document(self) -> None:
         """Incremental rendering avoids the old full-document redraw bottleneck."""
 
