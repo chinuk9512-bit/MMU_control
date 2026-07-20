@@ -65,6 +65,8 @@ class AutomationEditorDialog(QDialog):
         self.timeout_input = QSpinBox(self)
         self.timeout_input.setRange(1, 86_400)
         self.timeout_input.setSuffix(" seconds")
+        self.save_step_button = QPushButton("Save Step", self)
+        self.save_step_button.clicked.connect(self._save_current_step)
         self.error_label = QLabel("", self)
         self.error_label.setStyleSheet("color: #b00020;")
         self._build_layout()
@@ -98,6 +100,7 @@ class AutomationEditorDialog(QDialog):
         step_form.addRow("Text / regular expression", self.condition_value_input)
         step_form.addRow("Device file path", self.file_path_input)
         step_form.addRow("Timeout", self.timeout_input)
+        step_form.addRow(self.save_step_button)
         details = QWidget(self)
         details.setLayout(step_form)
 
@@ -189,6 +192,25 @@ class AutomationEditorDialog(QDialog):
             file_path=file_path,
             timeout_seconds=self.timeout_input.value(),
         )
+
+    def _save_current_step(self) -> None:
+        """Save the selected step without closing the scenario editor."""
+        if not 0 <= self._current_index < len(self._steps):
+            self.error_label.setStyleSheet("color: #b00020;")
+            self.error_label.setText("Select a step to save.")
+            return
+        if not self.command_input.toPlainText().strip():
+            self.error_label.setStyleSheet("color: #b00020;")
+            self.error_label.setText("Step command is required.")
+            return
+
+        self._store_current_step()
+        step = self._steps[self._current_index]
+        self.step_list.item(self._current_index).setText(
+            f"{self._current_index + 1}. {step.name or step.command or 'Unnamed step'}"
+        )
+        self.error_label.setStyleSheet("color: #006400;")
+        self.error_label.setText("Step saved.")
 
     def _update_condition_labels(self) -> None:
         completion_type = self.condition_type_input.currentData()
