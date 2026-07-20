@@ -174,12 +174,19 @@ class AutomationEditorDialog(QDialog):
     def _store_current_step(self) -> None:
         if not 0 <= self._current_index < len(self._steps):
             return
+        completion_type = self.condition_type_input.currentData()
+        completion_value = self.condition_value_input.text()
+        file_path = self.file_path_input.text().strip()
+        if completion_type in {CompletionType.NONE, CompletionType.DELAY}:
+            completion_value = ""
+        if completion_type not in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}:
+            file_path = ""
         self._steps[self._current_index] = AutomationStep(
             name=self.step_name_input.text().strip(),
             command=self.command_input.toPlainText().strip(),
-            completion_type=self.condition_type_input.currentData(),
-            completion_value=self.condition_value_input.text(),
-            file_path=self.file_path_input.text().strip(),
+            completion_type=completion_type,
+            completion_value=completion_value,
+            file_path=file_path,
             timeout_seconds=self.timeout_input.value(),
         )
 
