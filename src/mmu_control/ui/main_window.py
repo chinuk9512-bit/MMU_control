@@ -8,6 +8,7 @@ import posixpath
 import re
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 
 from PySide6.QtCore import QByteArray, QMimeData, QPoint, QProcess, QRegularExpression, QTimer, Qt, Signal
@@ -52,12 +53,14 @@ from PySide6.QtWidgets import (
 )
 
 from mmu_control.core.config_manager import ConfigError, ConfigManager
+from mmu_control.core.automation_runner import AutomationRunner
 from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.core.minicom_manager import MinicomError, MinicomManager
 from mmu_control.core.power_supply_manager import PowerSupplyCommandError, PowerSupplyManager
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
 from mmu_control.models.command_set import CommandSet
+from mmu_control.models.automation import AutomationScenario
 from mmu_control.models.settings import (
     AppSettings,
     BoardSettings,
@@ -66,8 +69,10 @@ from mmu_control.models.settings import (
     WindowSettings,
 )
 from mmu_control.storage.command_set_store import CommandSetStore
+from mmu_control.storage.automation_store import AutomationStore
 from mmu_control.ui.background_worker import TaskRunner, ThreadPoolTaskRunner
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
+from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
 from mmu_control.ui.terminal_widget import TerminalWidget
 
 
@@ -298,12 +303,14 @@ class MainWindow(QMainWindow):
         self,
         ssh_manager: SSHManager | None = None,
         command_set_store: CommandSetStore | None = None,
+        automation_store: AutomationStore | None = None,
         config_manager: ConfigManager | None = None,
         task_runner: TaskRunner | None = None,
     ) -> None:
         super().__init__()
         self._ssh_manager = ssh_manager or SSHManager()
         self._command_set_store = command_set_store or CommandSetStore.create_default()
+        self._automation_store = automation_store or AutomationStore.create_default()
         self._config_manager = config_manager or ConfigManager.create_default()
         self._task_runner = task_runner or ThreadPoolTaskRunner(self)
         self._sftp_manager = SFTPManager()
@@ -311,6 +318,9 @@ class MainWindow(QMainWindow):
         self._power_supply_manager = PowerSupplyManager()
         self._settings = AppSettings()
         self._command_sets: dict[str, CommandSet] = {}
+        self._automation_scenarios: dict[str, AutomationScenario] = {}
+        self._automation_runner: AutomationRunner | None = None
+        self._automation_file_check_due = 0.0
         self._shell: InteractiveShell | None = None
         self._sftp_shell: InteractiveShell | None = None
         self._pending_echo: str | None = None
@@ -352,8 +362,12 @@ class MainWindow(QMainWindow):
         self._sftp_startup_timeout_timer.setSingleShot(True)
         self._sftp_startup_timeout_timer.setInterval(3000)
         self._sftp_startup_timeout_timer.timeout.connect(self._handle_sftp_startup_timeout)
+        self._automation_timer = QTimer(self)
+        self._automation_timer.setInterval(100)
+        self._automation_timer.timeout.connect(self._poll_automation)
         self._wire_events()
         self._load_command_sets()
+        self._load_automation_scenarios()
         self._load_settings()
 
     def _wire_events(self) -> None:
@@ -367,6 +381,12 @@ class MainWindow(QMainWindow):
         self.edit_command_button.clicked.connect(self._edit_command_set)
         self.delete_command_button.clicked.connect(self._delete_command_set)
         self.run_command_set_button.clicked.connect(self._run_command_set)
+        self.new_automation_button.clicked.connect(self._create_automation_scenario)
+        self.edit_automation_button.clicked.connect(self._edit_automation_scenario)
+        self.delete_automation_button.clicked.connect(self._delete_automation_scenario)
+        self.run_automation_button.clicked.connect(self._run_automation_scenario)
+        self.stop_automation_button.clicked.connect(self._stop_automation)
+        self.automation_list.currentItemChanged.connect(self._show_selected_automation_scenario)
         self.open_sftp_button.clicked.connect(self._open_sftp)
         self.upload_sftp_button.clicked.connect(self._upload_sftp)
         self.download_sftp_button.clicked.connect(self._download_sftp)
@@ -1462,6 +1482,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Opening minicom...")
 
     def _close_minicom(self) -> None:
+        if self._automation_runner is not None and self._automation_runner.is_active:
+            self._stop_automation()
         if self._shell is not None and self._shell.is_open and self._minicom_session_active:
             self._minicom_manager.close_session(self._shell)
         self._minicom_session_active = False
@@ -1571,6 +1593,143 @@ class MainWindow(QMainWindow):
         self.delete_command_button.setEnabled(enabled)
         self.run_command_set_button.setEnabled(enabled)
 
+    def _load_automation_scenarios(self) -> None:
+        """Load persisted automation scenarios without preventing app startup."""
+        try:
+            self._automation_scenarios = dict(self._automation_store.load().scenarios)
+        except Exception as exc:
+            self._automation_scenarios = {}
+            self.terminal_widget.write_output(f"Could not load automation scenarios: {exc}")
+        self._refresh_automation_list()
+
+    def _refresh_automation_list(self, selected_name: str | None = None) -> None:
+        self.automation_list.clear()
+        for name in sorted(self._automation_scenarios):
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            self.automation_list.addItem(item)
+            if name == selected_name:
+                self.automation_list.setCurrentItem(item)
+        if self.automation_list.currentItem() is None and self.automation_list.count():
+            self.automation_list.setCurrentRow(0)
+        self._set_automation_actions_enabled(self.automation_list.currentItem() is not None)
+
+    def _selected_automation_scenario(self) -> AutomationScenario | None:
+        item = self.automation_list.currentItem()
+        name = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        return self._automation_scenarios.get(name) if isinstance(name, str) else None
+
+    def _show_selected_automation_scenario(self, *_items: QListWidgetItem | None) -> None:
+        scenario = self._selected_automation_scenario()
+        if scenario is None:
+            self.automation_output.clear()
+            self._set_automation_actions_enabled(False)
+            return
+        step_lines = [
+            f"{index}. {step.name or step.command} — {step.completion_type.value}: {step.completion_value}"
+            for index, step in enumerate(scenario.steps, start=1)
+        ]
+        self.automation_output.setPlainText(
+            f"Name: {scenario.name}\nTransport: {scenario.transport}\nDescription: {scenario.description}\n\n"
+            + "\n".join(step_lines)
+        )
+        self._set_automation_actions_enabled(True)
+
+    def _set_automation_actions_enabled(self, selected: bool) -> None:
+        active = self._automation_runner is not None and self._automation_runner.is_active
+        self.edit_automation_button.setEnabled(selected and not active)
+        self.delete_automation_button.setEnabled(selected and not active)
+        self.run_automation_button.setEnabled(selected and not active)
+        self.stop_automation_button.setEnabled(active)
+
+    def _create_automation_scenario(self) -> None:
+        dialog = AutomationEditorDialog(parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._save_automation_scenario(dialog.scenario())
+
+    def _edit_automation_scenario(self) -> None:
+        scenario = self._selected_automation_scenario()
+        if scenario is None:
+            return
+        dialog = AutomationEditorDialog(scenario, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            edited = dialog.scenario()
+            if edited.name != scenario.name:
+                self._automation_store.delete(scenario.name)
+            self._save_automation_scenario(edited)
+
+    def _delete_automation_scenario(self) -> None:
+        scenario = self._selected_automation_scenario()
+        if scenario is None:
+            return
+        if QMessageBox.question(self, "Delete Automation", f"Delete automation '{scenario.name}'?") != QMessageBox.StandardButton.Yes:
+            return
+        self._automation_scenarios = dict(self._automation_store.delete(scenario.name).scenarios)
+        self._refresh_automation_list()
+
+    def _save_automation_scenario(self, scenario: AutomationScenario) -> None:
+        self._automation_scenarios = dict(self._automation_store.upsert(scenario).scenarios)
+        self._refresh_automation_list(scenario.name)
+
+    def _run_automation_scenario(self) -> None:
+        scenario = self._selected_automation_scenario()
+        if scenario is None:
+            return
+        if self._shell is None or not self._shell.is_open:
+            self.automation_status_label.setText("Automation: SSH shell is not connected")
+            return
+        if scenario.transport == "minicom" and not self._minicom_session_active:
+            self.automation_status_label.setText("Automation: open Minicom before running this scenario")
+            return
+        if scenario.transport == "ssh" and self._minicom_session_active:
+            self.automation_status_label.setText("Automation: close Minicom before running an SSH scenario")
+            return
+        self._automation_runner = AutomationRunner(self._shell.send_line)
+        try:
+            self._automation_runner.start(scenario)
+        except Exception as exc:
+            self.automation_status_label.setText(f"Automation failed to start: {exc}")
+            return
+        self._automation_file_check_due = 0.0
+        self._automation_timer.start()
+        self._update_automation_status()
+
+    def _stop_automation(self) -> None:
+        if self._automation_runner is not None:
+            self._automation_runner.cancel()
+        self._automation_timer.stop()
+        self._update_automation_status()
+
+    def _poll_automation(self) -> None:
+        runner = self._automation_runner
+        if runner is None:
+            self._automation_timer.stop()
+            return
+        needs_file_check = runner.tick()
+        if needs_file_check and time.monotonic() >= self._automation_file_check_due:
+            command = runner.file_check_command()
+            if command is not None:
+                try:
+                    assert self._shell is not None
+                    self._shell.send_line(command)
+                except Exception as exc:
+                    runner.fail_current_step(f"Could not inspect device file: {exc}")
+            self._automation_file_check_due = time.monotonic() + 1.0
+        self._update_automation_status()
+        if not runner.is_active:
+            self._automation_timer.stop()
+
+    def _update_automation_status(self) -> None:
+        runner = self._automation_runner
+        if runner is None:
+            self.automation_status_label.setText("Automation: idle")
+            self._set_automation_actions_enabled(self._selected_automation_scenario() is not None)
+            return
+        status = runner.status
+        state = status.state.value.replace("_", " ")
+        self.automation_status_label.setText(f"Automation: {state} — {status.message}")
+        self._set_automation_actions_enabled(self._selected_automation_scenario() is not None)
+
     def _poll_shell(self) -> None:
         if self._shell is None:
             return
@@ -1583,6 +1742,9 @@ class MainWindow(QMainWindow):
             self._show_connection_error(exc)
             return
         output = self._filter_command_echo(output)
+        if self._automation_runner is not None and output:
+            self._automation_runner.receive_output(output)
+            self._update_automation_status()
         if self._mmu_ssh_session_active:
             self._handle_mmu_ssh_auth(output)
         if output:
@@ -1758,6 +1920,8 @@ class MainWindow(QMainWindow):
         self._set_disconnected_state("Disconnected")
 
     def _close_shell(self) -> None:
+        if self._automation_runner is not None and self._automation_runner.is_active:
+            self._stop_automation()
         self._close_sftp_shell()
         if self._shell is not None:
             self._shell.close()
@@ -2254,6 +2418,42 @@ class MainWindow(QMainWindow):
         command_splitter.setStretchFactor(0, 1)
         command_splitter.setStretchFactor(1, 2)
         layout.addWidget(command_splitter, stretch=1)
+
+        automation_group = QGroupBox("Automation Scenarios", tab)
+        automation_layout = QVBoxLayout(automation_group)
+        automation_actions = QHBoxLayout()
+        self.new_automation_button = QPushButton("New Automation", self)
+        self.edit_automation_button = QPushButton("Edit", self)
+        self.delete_automation_button = QPushButton("Delete", self)
+        self.run_automation_button = QPushButton("Run Automation", self)
+        self.stop_automation_button = QPushButton("Stop", self)
+        self.edit_automation_button.setEnabled(False)
+        self.delete_automation_button.setEnabled(False)
+        self.run_automation_button.setEnabled(False)
+        self.stop_automation_button.setEnabled(False)
+        for button in (
+            self.new_automation_button,
+            self.edit_automation_button,
+            self.delete_automation_button,
+            self.run_automation_button,
+            self.stop_automation_button,
+        ):
+            automation_actions.addWidget(button)
+        automation_actions.addStretch(1)
+        self.automation_list = QListWidget(self)
+        self.automation_output = QPlainTextEdit(self)
+        self.automation_output.setReadOnly(True)
+        self.automation_output.setPlaceholderText("Automation steps and completion conditions appear here.")
+        self.automation_status_label = QLabel("Automation: idle", self)
+        automation_splitter = QSplitter(Qt.Orientation.Vertical, automation_group)
+        automation_splitter.addWidget(self.automation_list)
+        automation_splitter.addWidget(self.automation_output)
+        automation_splitter.setStretchFactor(0, 1)
+        automation_splitter.setStretchFactor(1, 1)
+        automation_layout.addLayout(automation_actions)
+        automation_layout.addWidget(automation_splitter)
+        automation_layout.addWidget(self.automation_status_label)
+        layout.addWidget(automation_group, stretch=1)
         return tab
 
     def _build_transfer_tab(self) -> QWidget:
