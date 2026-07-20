@@ -2431,9 +2431,22 @@ class MainWindow(QMainWindow):
         terminal_layout.addWidget(self.terminal_widget, stretch=1)
 
         terminal_splitter.addWidget(terminal_panel)
-        terminal_splitter.addWidget(self._build_commands_tab())
+        commands_panel = self._build_commands_tab()
+        terminal_splitter.addWidget(commands_panel)
         terminal_splitter.setStretchFactor(0, 3)
         terminal_splitter.setStretchFactor(1, 2)
+
+        # Keep the Commands pane at its minimum useful width initially.  The
+        # splitter remains resizable after this initial layout is applied.
+        QTimer.singleShot(
+            0,
+            lambda: terminal_splitter.setSizes(
+                [
+                    max(terminal_splitter.width() - commands_panel.minimumSizeHint().width(), 1),
+                    commands_panel.minimumSizeHint().width(),
+                ]
+            ),
+        )
 
         layout.addWidget(terminal_splitter, stretch=1)
         return tab
@@ -2540,10 +2553,10 @@ class MainWindow(QMainWindow):
         automation_group = QGroupBox("Automation Scenarios", tab)
         automation_layout = QVBoxLayout(automation_group)
         automation_actions = QHBoxLayout()
-        self.new_automation_button = QPushButton("New Automation", automation_group)
+        self.new_automation_button = QPushButton("New Scenario", automation_group)
         self.edit_automation_button = QPushButton("Edit", automation_group)
         self.delete_automation_button = QPushButton("Delete", automation_group)
-        self.run_automation_button = QPushButton("Run Automation", automation_group)
+        self.run_automation_button = QPushButton("Run Scenario", automation_group)
         self.stop_automation_button = QPushButton("Stop", automation_group)
         self.edit_automation_button.setEnabled(False)
         self.delete_automation_button.setEnabled(False)

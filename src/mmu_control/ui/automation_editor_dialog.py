@@ -33,7 +33,9 @@ class AutomationEditorDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Automation Scenario")
-        self._steps = list(scenario.steps) if scenario is not None else [AutomationStep(name="Step 1")]
+        # A scenario can be saved before its steps are configured.  This lets
+        # users create a named scenario and fill in its commands later.
+        self._steps = list(scenario.steps) if scenario is not None else []
         self._current_index = -1
         self.name_input = QLineEdit(scenario.name if scenario else "", self)
         self.description_input = QLineEdit(scenario.description if scenario else "", self)
@@ -126,9 +128,6 @@ class AutomationEditorDialog(QDialog):
         scenario = self.scenario()
         if not scenario.name:
             self.error_label.setText("Scenario name is required.")
-            return
-        if not scenario.steps:
-            self.error_label.setText("Add at least one step.")
             return
         for index, step in enumerate(scenario.steps, start=1):
             if not step.command.strip():

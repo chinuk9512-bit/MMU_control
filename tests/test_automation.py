@@ -34,6 +34,16 @@ class AutomationStoreTest(unittest.TestCase):
             self.assertEqual(store.load().scenarios, {"boot": scenario})
             self.assertEqual(store.delete("boot").scenarios, {})
 
+    def test_upsert_loads_scenario_without_steps(self) -> None:
+        """Newly named scenarios can be persisted before steps are configured."""
+        with tempfile.TemporaryDirectory() as directory:
+            store = AutomationStore(Path(directory) / "automation.json")
+            scenario = AutomationScenario(name="new scenario")
+
+            store.upsert(scenario)
+
+            self.assertEqual(store.load().scenarios, {"new scenario": scenario})
+
 
 class AutomationRunnerTest(unittest.TestCase):
     """Only one current step is sent and retried when it fails."""
