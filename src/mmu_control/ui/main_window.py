@@ -31,12 +31,15 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QGridLayout,
+    QInputDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -59,7 +62,7 @@ from mmu_control.core.minicom_manager import MinicomError, MinicomManager
 from mmu_control.core.power_supply_manager import PowerSupplyCommandError, PowerSupplyManager
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
-from mmu_control.models.command_set import CommandSet
+from mmu_control.models.command_set import CommandFolder, CommandSet
 from mmu_control.models.automation import AutomationScenario
 from mmu_control.models.settings import (
     AppSettings,
@@ -318,6 +321,7 @@ class MainWindow(QMainWindow):
         self._power_supply_manager = PowerSupplyManager()
         self._settings = AppSettings()
         self._command_sets: dict[str, CommandSet] = {}
+        self._command_folders: dict[str, CommandFolder] = {}
         self._automation_scenarios: dict[str, AutomationScenario] = {}
         self._automation_runner: AutomationRunner | None = None
         self._automation_file_check_due = 0.0
@@ -378,6 +382,7 @@ class MainWindow(QMainWindow):
         self.sftp_terminal.commandSubmitted.connect(self._send_sftp_command)
         self.sftp_terminal.rawInput.connect(self._send_sftp_raw)
         self.new_command_button.clicked.connect(self._create_command_set)
+        self.new_folder_button.clicked.connect(self._create_command_folder)
         self.edit_command_button.clicked.connect(self._edit_command_set)
         self.delete_command_button.clicked.connect(self._delete_command_set)
         self.run_command_set_button.clicked.connect(self._run_command_set)
@@ -1500,35 +1505,53 @@ class MainWindow(QMainWindow):
     def _load_command_sets(self) -> None:
         collection = self._command_set_store.load()
         self._command_sets = dict(collection.command_sets or {})
+        self._command_folders = dict(collection.folders or {})
         self._refresh_command_set_list()
 
     def _refresh_command_set_list(self, selected_name: str | None = None) -> None:
         self.command_set_list.clear()
-        for name in sorted(self._command_sets):
-            item = QListWidgetItem(name)
-            item.setData(Qt.ItemDataRole.UserRole, name)
-            self.command_set_list.addItem(item)
+        items: dict[str, QTreeWidgetItem] = {"": self.command_set_list.invisibleRootItem()}
+        for path, folder in sorted(self._command_folders.items(), key=lambda item: item[0]):
+            parent = items.get(folder.parent_path, self.command_set_list.invisibleRootItem())
+            item = QTreeWidgetItem(parent, [folder.name])
+            item.setData(0, Qt.ItemDataRole.UserRole, ("folder", path))
+            items[path] = item
+        for name, command_set in sorted(self._command_sets.items()):
+            parent = items.get(command_set.parent_path, self.command_set_list.invisibleRootItem())
+            item = QTreeWidgetItem(parent, [name])
+            item.setData(0, Qt.ItemDataRole.UserRole, ("group", name))
             if selected_name == name:
                 self.command_set_list.setCurrentItem(item)
-        if self.command_set_list.currentItem() is None and self.command_set_list.count():
-            self.command_set_list.setCurrentRow(0)
+        self.command_set_list.expandAll()
+        if self.command_set_list.currentItem() is None and self.command_set_list.topLevelItemCount():
+            self.command_set_list.setCurrentItem(self.command_set_list.topLevelItem(0))
         if self.command_set_list.currentItem() is None:
-            self.command_set_output.clear()
-            self.command_list.clear()
-            self._set_command_actions_enabled(False)
+            self._show_selected_command_set()
+
+    def _folder_paths(self) -> list[str]:
+        return sorted(self._command_folders)
+
+    def _create_command_folder(self) -> None:
+        name, accepted = QInputDialog.getText(self, "New Folder", "Folder name")
+        if not accepted or not name.strip():
+            return
+        parent_path = self._selected_folder_path() or ""
+        collection = self._command_set_store.create_folder(name, parent_path)
+        self._command_folders = dict(collection.folders or {})
+        self._command_sets = dict(collection.command_sets or {})
+        self._refresh_command_set_list()
 
     def _create_command_set(self) -> None:
-        dialog = CommandEditorDialog(parent=self)
+        dialog = CommandEditorDialog(parent=self, folder_paths=self._folder_paths())
         if dialog.exec() != CommandEditorDialog.DialogCode.Accepted:
             return
-        command_set = dialog.command_set()
-        self._save_command_set(command_set)
+        self._save_command_set(dialog.command_set())
 
     def _edit_command_set(self) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
             return
-        dialog = CommandEditorDialog(command_set)
+        dialog = CommandEditorDialog(command_set, self, self._folder_paths())
         if dialog.exec() != CommandEditorDialog.DialogCode.Accepted:
             return
         edited = dialog.command_set()
@@ -1538,23 +1561,28 @@ class MainWindow(QMainWindow):
 
     def _delete_command_set(self) -> None:
         command_set = self._selected_command_set()
-        if command_set is None:
+        folder_path = self._selected_folder_path()
+        if command_set is not None:
+            if QMessageBox.question(self, "Delete Command Set", f"Delete command set '{command_set.name}'?") != QMessageBox.StandardButton.Yes:
+                return
+            collection = self._command_set_store.delete(command_set.name)
+        elif folder_path is not None:
+            answer = QMessageBox.question(
+                self, "Delete Folder",
+                f"Delete '{folder_path}' and all of its contents? Choose No to move its contents to the top level.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                return
+            collection = self._command_set_store.delete_folder(folder_path, delete_contents=answer == QMessageBox.StandardButton.Yes)
+        else:
             return
-        result = QMessageBox.question(
-            self,
-            "Delete Command Set",
-            f"Delete command set '{command_set.name}'?",
-        )
-        if result != QMessageBox.StandardButton.Yes:
-            return
-        collection = self._command_set_store.delete(command_set.name)
-        self._command_sets = dict(collection.command_sets or {})
+        self._command_sets, self._command_folders = dict(collection.command_sets or {}), dict(collection.folders or {})
         self._refresh_command_set_list()
 
     def _run_command_set(self) -> None:
-        """Run the command selected within the current command group."""
-        command_set = self._selected_command_set()
-        command = self._selected_command()
+        command_set, command = self._selected_command_set(), self._selected_command()
         if command_set is None or command is None:
             return
         if self._shell is None or not self._shell.is_open:
@@ -1565,29 +1593,29 @@ class MainWindow(QMainWindow):
 
     def _save_command_set(self, command_set: CommandSet) -> None:
         collection = self._command_set_store.upsert(command_set)
-        self._command_sets = dict(collection.command_sets or {})
+        self._command_sets, self._command_folders = dict(collection.command_sets or {}), dict(collection.folders or {})
         self._refresh_command_set_list(command_set.name.strip())
+
+    def _selected_folder_path(self) -> str | None:
+        item = self.command_set_list.currentItem()
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        return data[1] if isinstance(data, tuple) and data[0] == "folder" else None
 
     def _selected_command_set(self) -> CommandSet | None:
         item = self.command_set_list.currentItem()
-        if item is None:
-            return None
-        name = item.data(Qt.ItemDataRole.UserRole)
-        if not isinstance(name, str):
-            return None
-        return self._command_sets.get(name)
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        return self._command_sets.get(data[1]) if isinstance(data, tuple) and data[0] == "group" else None
 
-    def _show_selected_command_set(self, *_items: QListWidgetItem | None) -> None:
+    def _show_selected_command_set(self, *_items: QTreeWidgetItem | None) -> None:
         command_set = self._selected_command_set()
         if command_set is None:
-            self.command_set_output.clear()
+            folder_path = self._selected_folder_path()
+            self.command_set_output.setPlainText(f"Folder: {folder_path}" if folder_path else "")
             self.command_list.clear()
             self._set_command_actions_enabled(False)
+            self.delete_command_button.setEnabled(folder_path is not None)
             return
-        self.command_set_output.setPlainText(
-            f"Name: {command_set.name}\n"
-            f"Description: {command_set.description}"
-        )
+        self.command_set_output.setPlainText(f"Name: {command_set.name}\nDescription: {command_set.description}")
         self.command_list.clear()
         for command in self._commands_in(command_set):
             item = QListWidgetItem(command)
@@ -1604,22 +1632,15 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _commands_in(command_set: CommandSet) -> list[str]:
-        """Return the non-empty commands configured in a command group."""
         return [command.strip() for command in command_set.commands.splitlines() if command.strip()]
 
     def _selected_command(self) -> str | None:
-        """Return the command currently selected in the command group."""
         item = self.command_list.currentItem()
-        if item is None:
-            return None
-        command = item.data(Qt.ItemDataRole.UserRole)
+        command = item.data(Qt.ItemDataRole.UserRole) if item else None
         return command if isinstance(command, str) and command else None
 
     def _update_selected_command_action(self, *_items: QListWidgetItem | None) -> None:
-        """Enable running only when a command within the group is selected."""
-        self.run_command_set_button.setEnabled(
-            self._selected_command_set() is not None and self._selected_command() is not None
-        )
+        self.run_command_set_button.setEnabled(self._selected_command_set() is not None and self._selected_command() is not None)
 
     def _load_automation_scenarios(self) -> None:
         """Load persisted automation scenarios without preventing app startup."""
@@ -2414,6 +2435,7 @@ class MainWindow(QMainWindow):
         button_layout.setContentsMargins(0, 0, 0, 0)
 
         self.new_command_button = QPushButton("New Command Group", self)
+        self.new_folder_button = QPushButton("New Folder", self)
         self.edit_command_button = QPushButton("Edit", self)
         self.delete_command_button = QPushButton("Delete", self)
         self.run_command_set_button = QPushButton("Run Selected", self)
@@ -2422,6 +2444,7 @@ class MainWindow(QMainWindow):
         self.run_command_set_button.setEnabled(False)
 
         button_layout.addWidget(self.new_command_button)
+        button_layout.addWidget(self.new_folder_button)
         button_layout.addWidget(self.edit_command_button)
         button_layout.addWidget(self.delete_command_button)
         button_layout.addStretch(1)
@@ -2441,7 +2464,8 @@ class MainWindow(QMainWindow):
         )
 
         layout.addWidget(button_row)
-        self.command_set_list = QListWidget(self)
+        self.command_set_list = QTreeWidget(self)
+        self.command_set_list.setHeaderHidden(True)
         self.command_set_list.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QDialog,
+    QComboBox,
     QDialogButtonBox,
     QFormLayout,
     QLabel,
@@ -23,6 +24,7 @@ class CommandEditorDialog(QDialog):
         self,
         command_set: CommandSet | None = None,
         parent: QWidget | None = None,
+        folder_paths: list[str] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Command Group")
@@ -31,6 +33,10 @@ class CommandEditorDialog(QDialog):
 
         self.name_input = QLineEdit(self)
         self.description_input = QLineEdit(self)
+        self.parent_folder_input = QComboBox(self)
+        self.parent_folder_input.addItem("Top level", "")
+        for path in folder_paths or []:
+            self.parent_folder_input.addItem(path, path)
         self.commands_input = QPlainTextEdit(self)
         self.commands_input.setPlaceholderText("Enter one shell command per line. Each command can be selected and run separately.")
 
@@ -38,9 +44,13 @@ class CommandEditorDialog(QDialog):
             self.name_input.setText(command_set.name)
             self.description_input.setText(command_set.description)
             self.commands_input.setPlainText(command_set.commands)
+            index = self.parent_folder_input.findData(command_set.parent_path)
+            if index >= 0:
+                self.parent_folder_input.setCurrentIndex(index)
 
         form = QFormLayout()
         form.addRow("Group name", self.name_input)
+        form.addRow("Parent folder", self.parent_folder_input)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -65,6 +75,7 @@ class CommandEditorDialog(QDialog):
             name=self.name_input.text().strip(),
             description=self.description_input.text().strip(),
             commands=self.commands_input.toPlainText().strip(),
+            parent_path=str(self.parent_folder_input.currentData() or ""),
         )
 
     def accept(self) -> None:
