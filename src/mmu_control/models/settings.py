@@ -106,7 +106,7 @@ class BoardSettings:
 class WindowSettings:
     """Persisted main window state."""
 
-    width: int = 1180
+    width: int = 1840
     height: int = 760
     is_maximized: bool = False
     ssh_group_expanded: bool = True
@@ -116,7 +116,7 @@ class WindowSettings:
     def from_dict(cls, data: dict[str, Any]) -> WindowSettings:
         """Create window settings from JSON-compatible data."""
         return cls(
-            width=int(data.get("width", 1180)),
+            width=int(data.get("width", 1840)),
             height=int(data.get("height", 760)),
             is_maximized=bool(data.get("is_maximized", False)),
             ssh_group_expanded=bool(data.get("ssh_group_expanded", True)),

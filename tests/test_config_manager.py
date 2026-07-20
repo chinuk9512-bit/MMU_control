@@ -21,7 +21,7 @@ class ConfigManagerTest(unittest.TestCase):
             settings = manager.load()
 
             self.assertEqual(settings.ssh.port, 22)
-            self.assertEqual(settings.window.width, 1180)
+            self.assertEqual(settings.window.width, 1840)
 
     def test_save_and_load_round_trip(self) -> None:
         """Saved settings can be loaded again."""

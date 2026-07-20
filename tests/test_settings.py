@@ -55,7 +55,7 @@ class AppSettingsTest(unittest.TestCase):
                 },
                 "power_supply": {"ip_address": "", "voltage": "", "current": ""},
                 "window": {
-                    "width": 1180,
+                    "width": 1840,
                     "height": 760,
                     "is_maximized": False,
                     "ssh_group_expanded": True,
