@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+import pytest
 
 from mmu_control.core.automation_runner import AutomationRunner, AutomationState
 from mmu_control.models.automation import AutomationScenario, AutomationStep, CompletionType
@@ -56,6 +61,47 @@ class AutomationStoreTest(unittest.TestCase):
             store.upsert(scenario)
 
             self.assertEqual(store.load().scenarios, {"new scenario": scenario})
+
+    def test_upsert_serializes_legacy_string_completion_type(self) -> None:
+        """Supported string completion types remain safe at the JSON boundary."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "automation.json"
+            store = AutomationStore(path)
+            scenario = AutomationScenario(
+                name="legacy completion",
+                steps=[AutomationStep(name="run", command="run", completion_type="none")],
+            )
+
+            store.upsert(scenario)
+
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["scenarios"]["legacy completion"]["steps"][0]["completion_type"], "none")
+            self.assertEqual(store.load().scenarios["legacy completion"].steps[0].completion_type, CompletionType.NONE)
+
+
+class AutomationEditorDialogTest(unittest.TestCase):
+    """The editor stores completion conditions as CompletionType values."""
+
+    def test_saved_step_serializes_completion_type_as_enum_value(self) -> None:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+        qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
+        from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+
+        dialog = AutomationEditorDialog(
+            AutomationScenario(
+                name="editor",
+                steps=[AutomationStep(name="run", command="run")],
+            )
+        )
+        none_index = dialog.condition_type_input.findData(CompletionType.NONE)
+        dialog.condition_type_input.setItemData(none_index, "none")
+        dialog.condition_type_input.setCurrentIndex(none_index)
+
+        saved_step = dialog.scenario().steps[0]
+
+        self.assertIs(saved_step.completion_type, CompletionType.NONE)
+        self.assertEqual(saved_step.to_dict()["completion_type"], CompletionType.NONE.value)
 
 
 class AutomationRunnerTest(unittest.TestCase):
