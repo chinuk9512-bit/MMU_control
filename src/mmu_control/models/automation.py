@@ -48,10 +48,14 @@ class AutomationStep:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the step to JSON-compatible data."""
+        try:
+            completion_type = CompletionType(str(self.completion_type))
+        except ValueError:
+            completion_type = CompletionType.NONE
         return {
             "name": self.name,
             "command": self.command,
-            "completion_type": self.completion_type.value,
+            "completion_type": completion_type.value,
             "completion_value": self.completion_value,
             "file_path": self.file_path,
             "timeout_seconds": self.timeout_seconds,

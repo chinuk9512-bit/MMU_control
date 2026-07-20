@@ -177,10 +177,14 @@ class AutomationEditorDialog(QDialog):
     def _store_current_step(self) -> None:
         if not 0 <= self._current_index < len(self._steps):
             return
+        try:
+            completion_type = CompletionType(str(self.condition_type_input.currentData()))
+        except ValueError:
+            completion_type = CompletionType.NONE
         self._steps[self._current_index] = AutomationStep(
             name=self.step_name_input.text().strip(),
             command=self.command_input.toPlainText().strip(),
-            completion_type=self.condition_type_input.currentData(),
+            completion_type=completion_type,
             completion_value=self.condition_value_input.text(),
             file_path=self.file_path_input.text().strip(),
             timeout_seconds=self.timeout_input.value(),
