@@ -339,6 +339,35 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.connect_button.isEnabled())
         self.assertTrue(window.refresh_usb_button.isEnabled())
 
+    def test_connection_panel_uses_white_background(self) -> None:
+        """Connection controls should not inherit the platform grey scroll-area background."""
+        window = self.create_window()
+
+        self.assertIn("background-color: white", window.connection_panel.styleSheet())
+        self.assertIn(
+            "background-color: white", window.connection_panel_scroll_area.styleSheet()
+        )
+
+    def test_response_panel_can_be_hidden_and_shown(self) -> None:
+        """The terminal response pane keeps its output while its view is toggled."""
+        window = self.create_window()
+        window.response_panel_content.setPlainText("response output")
+
+        self.assertTrue(window.response_panel_toggle_button.isChecked())
+        self.assertEqual(window.response_panel_toggle_button.text(), "Hide")
+        self.assertFalse(window.response_panel_content.isHidden())
+
+        window.response_panel_toggle_button.setChecked(False)
+
+        self.assertTrue(window.response_panel_content.isHidden())
+        self.assertEqual(window.response_panel_toggle_button.text(), "Show")
+        self.assertEqual(window.response_panel_content.toPlainText(), "response output")
+
+        window.response_panel_toggle_button.setChecked(True)
+
+        self.assertFalse(window.response_panel_content.isHidden())
+        self.assertEqual(window.response_panel_toggle_button.text(), "Hide")
+
     def test_terminal_commands_run_locally_without_ssh_shell(self) -> None:
         """Terminal input runs against the local PC when SSH is disconnected."""
         window = self.create_window()
@@ -386,7 +415,9 @@ class MainWindowTest(unittest.TestCase):
         window._connect_ssh()
 
         window.terminal_widget.commandSubmitted.emit("")
-        manager.shell.output = "\r\nuser@server:~$ "
+        # Some PTYs emit two line endings for an empty command: the command
+        # echo and the remote prompt's line advance.
+        manager.shell.output = "\r\n\r\nuser@server:~$ "
         window._poll_shell()
 
         self.assertNotIn("\n\nuser@server", window.terminal_widget.toPlainText())
