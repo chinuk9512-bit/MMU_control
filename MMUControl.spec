@@ -5,7 +5,10 @@ a = Analysis(
     ['src\\mmu_control\\app.py'],
     pathex=['src'],
     binaries=[],
-    datas=[('src\\mmu_control\\resources\\power_supply_commands.json', 'mmu_control/resources')],
+    datas=[
+        ('src\\mmu_control\\resources\\power_supply_commands.json', 'mmu_control/resources'),
+        ('src\\mmu_control\\user_scenario\\automation_scenarios.json', 'mmu_control/user_scenario'),
+    ],
     hiddenimports=[
         'mmu_control.models.command_set',
         'mmu_control.core.error_recovery',

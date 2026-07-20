@@ -14,6 +14,19 @@ from mmu_control.storage.automation_store import AutomationStore
 class AutomationStoreTest(unittest.TestCase):
     """Automation JSON data is persisted with its completion conditions."""
 
+    def test_default_store_uses_package_user_scenario_directory(self) -> None:
+        """Default scenarios live beside the application package, not in APPDATA."""
+        store = AutomationStore.create_default()
+
+        self.assertEqual(
+            store._path,
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "mmu_control"
+            / "user_scenario"
+            / "automation_scenarios.json",
+        )
+
     def test_upsert_load_and_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = AutomationStore(Path(directory) / "automation.json")
