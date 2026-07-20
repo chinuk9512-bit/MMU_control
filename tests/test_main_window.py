@@ -35,6 +35,7 @@ from mmu_control.models.settings import (
 )
 from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.storage.automation_store import AutomationStore
+from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
 from mmu_control.ui.main_window import MainWindow
 
 
@@ -250,6 +251,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.commands_group.title(), "Commands")
         self.assertEqual(window.new_command_button.text(), "New Command")
         self.assertEqual(window.new_folder_button.text(), "New Folder")
+        self.assertEqual(window.new_automation_button.text(), "New Scenario")
+        self.assertEqual(window.run_automation_button.text(), "Run Scenario")
         command_actions = window.new_folder_button.parentWidget().layout()
         self.assertIs(command_actions.itemAt(0).widget(), window.new_folder_button)
         self.assertIs(command_actions.itemAt(1).widget(), window.new_command_button)
@@ -544,7 +547,7 @@ class MainWindowTest(unittest.TestCase):
             self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
 
     def test_new_automation_button_opens_editor_and_saves_scenario(self) -> None:
-        """The New Automation action creates an editor with the main window as parent."""
+        """The New Scenario action creates an editor with the main window as parent."""
         store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
         window = self.create_window(automation_store=store)
         scenario = AutomationScenario(
@@ -571,6 +574,16 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(store.load().scenarios, {"boot": scenario})
         self.assertEqual(window.automation_list.count(), 1)
         self.assertEqual(window.automation_list.currentItem().text(), "boot")
+
+    def test_new_scenario_dialog_accepts_a_named_scenario_without_steps(self) -> None:
+        """A scenario can be created before the user configures its first step."""
+        dialog = AutomationEditorDialog(parent=self.create_window())
+        dialog.name_input.setText("new scenario")
+
+        dialog.accept()
+
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        self.assertEqual(dialog.scenario(), AutomationScenario(name="new scenario"))
 
     def test_server_path_input_accepts_dropped_local_file(self) -> None:
         """Dropping a local file path fills the Linux server path input."""
