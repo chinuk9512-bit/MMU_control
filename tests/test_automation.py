@@ -103,6 +103,44 @@ class AutomationEditorDialogTest(unittest.TestCase):
         self.assertIs(saved_step.completion_type, CompletionType.NONE)
         self.assertEqual(saved_step.to_dict()["completion_type"], CompletionType.NONE.value)
 
+    def test_add_step_keeps_edited_step_and_selects_a_default_step(self) -> None:
+        """Adding a step saves only the current step and does not copy its values."""
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+        qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
+        from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+
+        dialog = AutomationEditorDialog(
+            AutomationScenario(name="editor", steps=[AutomationStep(name="original", command="old")])
+        )
+        dialog.step_name_input.setText("edited step")
+        dialog.command_input.setPlainText("edited command")
+        dialog.condition_type_input.setCurrentIndex(
+            dialog.condition_type_input.findData(CompletionType.REMOTE_FILE_CONTAINS)
+        )
+        dialog.condition_value_input.setText("complete")
+        dialog.file_path_input.setText("/tmp/complete")
+        dialog.timeout_input.setValue(15)
+
+        dialog._add_step()
+
+        self.assertEqual(dialog._steps[0], AutomationStep(
+            name="edited step",
+            command="edited command",
+            completion_type=CompletionType.REMOTE_FILE_CONTAINS,
+            completion_value="complete",
+            file_path="/tmp/complete",
+            timeout_seconds=15,
+        ))
+        self.assertEqual(dialog._steps[1], AutomationStep())
+        self.assertEqual(dialog.step_list.currentRow(), 1)
+        self.assertEqual(dialog.step_name_input.text(), "")
+        self.assertEqual(dialog.command_input.toPlainText(), "")
+        self.assertIs(dialog.condition_type_input.currentData(), CompletionType.NONE)
+        self.assertEqual(dialog.condition_value_input.text(), "")
+        self.assertEqual(dialog.file_path_input.text(), "")
+        self.assertEqual(dialog.timeout_input.value(), 60)
+
 
 class AutomationRunnerTest(unittest.TestCase):
     """Only one current step is sent and retried when it fails."""
