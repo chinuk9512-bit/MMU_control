@@ -575,6 +575,32 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.automation_list.count(), 1)
         self.assertEqual(window.automation_list.currentItem().text(), "boot")
 
+    def test_run_automation_uses_filtered_current_console_snapshot_for_start_condition(self) -> None:
+        """Run Scenario evaluates its first start condition against visible remote output."""
+        manager = FakeSSHManager()
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        start_marker = "service-ready"
+        scenario = AutomationScenario(
+            name="current-output",
+            steps=[
+                AutomationStep(
+                    "start",
+                    "command",
+                    start_type=CompletionType.OUTPUT_CONTAINS,
+                    start_value=start_marker,
+                )
+            ],
+        )
+        store.upsert(scenario)
+        window = self.create_window(ssh_manager=manager, automation_store=store)
+        window._activate_shell(manager.shell)
+        manager.shell.output = f"\x1b[32mdevice state: {start_marker}\x1b[0m "
+        window._poll_shell()
+
+        window._run_automation_scenario()
+
+        self.assertEqual(manager.shell.sent, ["command"])
+
     def test_create_automation_scenario_keeps_list_when_store_save_fails(self) -> None:
         """A failed new scenario save reports its path without changing the selected scenario."""
         path = Path(self.temp_dir.name) / "automation.json"

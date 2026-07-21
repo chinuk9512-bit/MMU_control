@@ -37,6 +37,7 @@ class AutomationRunner:
     """Run one scenario, retrying only its failing current step once."""
 
     RETRY_DELAY_SECONDS = 2.0
+    OUTPUT_LIMIT = 16_384
 
     def __init__(self, send_line: Callable[[str], None]) -> None:
         self._send_line = send_line
@@ -77,6 +78,17 @@ class AutomationRunner:
         self._retried = False
         self._start_current_step()
 
+    def receive_initial_output(self, output: str) -> None:
+        """Evaluate the first step's start condition against a terminal snapshot.
+
+        A snapshot belongs only to the scenario boundary: later steps must
+        evaluate their start conditions using output received after the prior
+        step completed.
+        """
+        if self._step_index != 0 or self._state != AutomationState.WAITING_START:
+            return
+        self.receive_output(output)
+
     def receive_output(self, output: str) -> None:
         """Evaluate new terminal output against the active start or completion condition."""
         if self._state not in {AutomationState.WAITING_START, AutomationState.WAITING} or not output:
@@ -84,7 +96,7 @@ class AutomationRunner:
         step = self.current_step
         if step is None:
             return
-        self._output = f"{self._output}{output}"[-16_384:]
+        self._output = f"{self._output}{output}"[-self.OUTPUT_LIMIT :]
         condition_type = self._condition_type(step)
         if condition_type in {
             CompletionType.OUTPUT_CONTAINS,
