@@ -37,6 +37,7 @@ class AutomationEditorDialog(QDialog):
         # users create a named scenario and fill in its commands later.
         self._steps = list(scenario.steps) if scenario is not None else []
         self._current_index = -1
+        self._updating_step_selection = False
         self.name_input = QLineEdit(scenario.name if scenario else "", self)
         self.description_input = QLineEdit(scenario.description if scenario else "", self)
         self.transport_input = QComboBox(self)
@@ -154,14 +155,19 @@ class AutomationEditorDialog(QDialog):
 
     def _refresh_step_list(self) -> None:
         selected = self._current_index
-        self.step_list.clear()
-        for index, step in enumerate(self._steps, start=1):
-            self.step_list.addItem(f"{index}. {step.name or step.command or 'Unnamed step'}")
-        if self._steps:
-            self.step_list.setCurrentRow(max(0, min(selected, len(self._steps) - 1)))
+        self._updating_step_selection = True
+        try:
+            self.step_list.clear()
+            for index, step in enumerate(self._steps, start=1):
+                self.step_list.addItem(f"{index}. {step.name or step.command or 'Unnamed step'}")
+            if self._steps:
+                self.step_list.setCurrentRow(max(0, min(selected, len(self._steps) - 1)))
+        finally:
+            self._updating_step_selection = False
 
     def _select_step(self, index: int) -> None:
-        self._store_current_step()
+        if not self._updating_step_selection:
+            self._store_current_step()
         self._current_index = index
         if not 0 <= index < len(self._steps):
             return
@@ -226,7 +232,7 @@ class AutomationEditorDialog(QDialog):
 
     def _add_step(self) -> None:
         self._store_current_step()
-        self._steps.append(AutomationStep(name=f"Step {len(self._steps) + 1}"))
+        self._steps.append(AutomationStep())
         self._current_index = len(self._steps) - 1
         self._refresh_step_list()
 
