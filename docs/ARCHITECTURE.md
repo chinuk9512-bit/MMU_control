@@ -99,9 +99,9 @@ src/mmu_control/
   - SSH/Board 연결 설정을 이름별 프로필로 저장하기 위한 모델과 저장소입니다.
   - 현재 UI는 기본 설정 저장을 중심으로 동작하며, 프로필 저장소는 확장 기반으로 준비되어 있습니다.
 - `CommandSetStore`
-  - `src/mmu_control/user_command/command_sets.json`에 명령 세트를 저장합니다.
+  - `%APPDATA%/MMUControl/command_sets.json`에 명령 세트를 저장합니다.
 - `AutomationStore`
-  - `src/mmu_control/user_scenario/automation_scenarios.json`에 자동화 시나리오를 저장합니다.
+  - `%APPDATA%/MMUControl/automation_scenarios.json`에 자동화 시나리오를 저장합니다.
 
 ## 런타임 데이터 흐름
 
@@ -174,10 +174,11 @@ Power Supply UI 버튼
 
 ## 저장 파일
 
-기본 사용자 데이터 위치는 `%APPDATA%/MMUControl`입니다. `APPDATA`가 없으면 홈 디렉터리 아래 `AppData/Roaming/MMUControl`을 사용합니다. 명령 세트는 예외적으로 패키지의 `src/mmu_control/user_command/command_sets.json`에 저장됩니다.
+기본 사용자 데이터 위치는 `%APPDATA%/MMUControl`입니다. `APPDATA`가 없으면 홈 디렉터리 아래 `AppData/Roaming/MMUControl`을 사용합니다. 이 위치는 PyInstaller one-file 실행 파일의 임시 추출 경로와 분리되어 있으므로 재실행 후에도 유지됩니다.
 
 - `settings.json`: SSH, Board/MMU, Power Supply, Window 상태
-- `src/mmu_control/user_command/command_sets.json`: 사용자 정의 명령 세트
+- `command_sets.json`: 사용자 정의 명령 세트
+- `automation_scenarios.json`: 자동화 시나리오
 - `mmu_control.log`: rotating log file
 - `profiles.json`: 연결 프로필 저장소 확장용 파일
 
@@ -185,4 +186,4 @@ Power Supply UI 버튼
 
 - `pyproject.toml`은 패키지 메타데이터, runtime dependency, dev extra, package data를 정의합니다.
 - `scripts/build_exe.ps1`은 PyInstaller를 실행하여 `dist/MMUControl.exe`를 생성합니다.
-- `MMUControl.spec`은 package resource인 `power_supply_commands.json`과 `user_command/command_sets.json`을 포함하도록 구성됩니다.
+- `MMUControl.spec`은 package resource인 `power_supply_commands.json`을 포함하도록 구성됩니다. 사용자 데이터는 package resource로 포함하지 않습니다.

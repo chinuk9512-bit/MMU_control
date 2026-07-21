@@ -29,7 +29,9 @@ mmu-control
 
 ## Automation scenarios
 
-- Automation scenarios are saved in `src/mmu_control/user_scenario/automation_scenarios.json`.
+- Command sets and automation scenarios are saved in `%APPDATA%/MMUControl` (or
+  `~/AppData/Roaming/MMUControl` when `APPDATA` is unavailable), so they remain
+  available after restarting the executable.
 - The Scenarios tab loads this file when the application starts and refreshes the scenario list after a scenario is saved.
 
 ## Test

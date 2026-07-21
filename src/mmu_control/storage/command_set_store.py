@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mmu_control.core.config_manager import default_user_data_directory
 from mmu_control.models.command_set import CommandFolder, CommandSet, CommandSetCollection
 
 
@@ -25,9 +26,8 @@ class CommandSetStore:
 
     @classmethod
     def create_default(cls) -> "CommandSetStore":
-        """Create a store in the package's dedicated command directory."""
-        package_directory = Path(__file__).resolve().parents[1]
-        return cls(package_directory / "user_command" / "command_sets.json")
+        """Create a store in the persistent per-user application directory."""
+        return cls(default_user_data_directory() / "command_sets.json")
 
     def load(self) -> CommandSetCollection:
         if not self._command_sets_path.exists():
