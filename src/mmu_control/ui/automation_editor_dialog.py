@@ -49,6 +49,7 @@ class AutomationEditorDialog(QDialog):
         self.step_name_input = QLineEdit(self)
         self.command_input = QPlainTextEdit(self)
         self.command_input.setPlaceholderText("Command to send to the selected SSH shell or minicom session")
+        self.start_type_input = QComboBox(self)
         self.condition_type_input = QComboBox(self)
         for completion_type, label in (
             (CompletionType.NONE, "No completion condition required"),
@@ -59,8 +60,15 @@ class AutomationEditorDialog(QDialog):
             (CompletionType.REMOTE_FILE_REGEX, "Device file matches regular expression"),
             (CompletionType.DELAY, "Wait for duration"),
         ):
+            self.start_type_input.addItem(label, completion_type)
             self.condition_type_input.addItem(label, completion_type)
+        self.start_type_input.currentIndexChanged.connect(self._update_condition_labels)
         self.condition_type_input.currentIndexChanged.connect(self._update_condition_labels)
+        self.start_value_input = QLineEdit(self)
+        self.start_file_path_input = QLineEdit(self)
+        self.start_timeout_input = QSpinBox(self)
+        self.start_timeout_input.setRange(1, 86_400)
+        self.start_timeout_input.setSuffix(" seconds")
         self.condition_value_input = QLineEdit(self)
         self.file_path_input = QLineEdit(self)
         self.timeout_input = QSpinBox(self)
@@ -97,10 +105,14 @@ class AutomationEditorDialog(QDialog):
         step_form = QFormLayout()
         step_form.addRow("Step name", self.step_name_input)
         step_form.addRow("Command", self.command_input)
-        step_form.addRow("Completion", self.condition_type_input)
-        step_form.addRow("Text / regular expression", self.condition_value_input)
-        step_form.addRow("Device file path", self.file_path_input)
-        step_form.addRow("Timeout", self.timeout_input)
+        step_form.addRow("Start condition", self.start_type_input)
+        step_form.addRow("Start text / regular expression", self.start_value_input)
+        step_form.addRow("Start device file path", self.start_file_path_input)
+        step_form.addRow("Start timeout", self.start_timeout_input)
+        step_form.addRow("Completion condition", self.condition_type_input)
+        step_form.addRow("Completion text / regular expression", self.condition_value_input)
+        step_form.addRow("Completion device file path", self.file_path_input)
+        step_form.addRow("Completion timeout", self.timeout_input)
         step_form.addRow(self.save_step_button)
         details = QWidget(self)
         details.setLayout(step_form)
@@ -137,20 +149,24 @@ class AutomationEditorDialog(QDialog):
             if not step.command.strip():
                 self.error_label.setText(f"Step {index}: command is required.")
                 return
-            if step.completion_type in {CompletionType.NONE, CompletionType.DELAY}:
-                continue
-            if not step.completion_value:
-                self.error_label.setText(f"Step {index}: completion value is required.")
-                return
-            if step.completion_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX} and not step.file_path:
-                self.error_label.setText(f"Step {index}: device file path is required.")
-                return
-            if step.completion_type in {CompletionType.OUTPUT_REGEX, CompletionType.PROMPT_REGEX, CompletionType.REMOTE_FILE_REGEX}:
-                try:
-                    re.compile(step.completion_value)
-                except re.error as exc:
-                    self.error_label.setText(f"Step {index}: invalid regular expression: {exc}")
+            for label, condition_type, value, file_path in (
+                ("start", step.start_type, step.start_value, step.start_file_path),
+                ("completion", step.completion_type, step.completion_value, step.file_path),
+            ):
+                if condition_type in {CompletionType.NONE, CompletionType.DELAY}:
+                    continue
+                if not value:
+                    self.error_label.setText(f"Step {index}: {label} value is required.")
                     return
+                if condition_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX} and not file_path:
+                    self.error_label.setText(f"Step {index}: {label} device file path is required.")
+                    return
+                if condition_type in {CompletionType.OUTPUT_REGEX, CompletionType.PROMPT_REGEX, CompletionType.REMOTE_FILE_REGEX}:
+                    try:
+                        re.compile(value)
+                    except re.error as exc:
+                        self.error_label.setText(f"Step {index}: invalid {label} regular expression: {exc}")
+                        return
         super().accept()
 
     def _refresh_step_list(self) -> None:
@@ -174,6 +190,10 @@ class AutomationEditorDialog(QDialog):
         step = self._steps[index]
         self.step_name_input.setText(step.name)
         self.command_input.setPlainText(step.command)
+        self.start_type_input.setCurrentIndex(self.start_type_input.findData(step.start_type))
+        self.start_value_input.setText(step.start_value)
+        self.start_file_path_input.setText(step.start_file_path)
+        self.start_timeout_input.setValue(step.start_timeout_seconds)
         self.condition_type_input.setCurrentIndex(self.condition_type_input.findData(step.completion_type))
         self.condition_value_input.setText(step.completion_value)
         self.file_path_input.setText(step.file_path)
@@ -183,13 +203,10 @@ class AutomationEditorDialog(QDialog):
     def _store_current_step(self) -> None:
         if not 0 <= self._current_index < len(self._steps):
             return
+        start_type = self.start_type_input.currentData()
+        start_value, start_file_path = self._condition_inputs(start_type, self.start_value_input, self.start_file_path_input)
         completion_type = self.condition_type_input.currentData()
-        completion_value = self.condition_value_input.text()
-        file_path = self.file_path_input.text().strip()
-        if completion_type in {CompletionType.NONE, CompletionType.DELAY}:
-            completion_value = ""
-        if completion_type not in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}:
-            file_path = ""
+        completion_value, file_path = self._condition_inputs(completion_type, self.condition_value_input, self.file_path_input)
         self._steps[self._current_index] = AutomationStep(
             name=self.step_name_input.text().strip(),
             command=self.command_input.toPlainText().strip(),
@@ -197,6 +214,10 @@ class AutomationEditorDialog(QDialog):
             completion_value=completion_value,
             file_path=file_path,
             timeout_seconds=self.timeout_input.value(),
+            start_type=start_type,
+            start_value=start_value,
+            start_file_path=start_file_path,
+            start_timeout_seconds=self.start_timeout_input.value(),
         )
 
     def _save_current_step(self) -> None:
@@ -219,16 +240,27 @@ class AutomationEditorDialog(QDialog):
         self.error_label.setText("Step saved.")
 
     def _update_condition_labels(self) -> None:
-        completion_type = self.condition_type_input.currentData()
-        file_condition = completion_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}
-        delay = completion_type == CompletionType.DELAY
-        no_completion_condition = completion_type == CompletionType.NONE
-        self.condition_value_input.setEnabled(not delay and not no_completion_condition)
-        self.file_path_input.setEnabled(file_condition)
-        self.file_path_input.setPlaceholderText("Absolute device path" if file_condition else "Not used for this condition")
-        self.condition_value_input.setPlaceholderText(
-            "Not used for this completion type" if no_completion_condition or delay else "Text or regular expression"
-        )
+        self._update_condition_widgets(self.start_type_input.currentData(), self.start_value_input, self.start_file_path_input, "start")
+        self._update_condition_widgets(self.condition_type_input.currentData(), self.condition_value_input, self.file_path_input, "completion")
+
+    @staticmethod
+    def _condition_inputs(condition_type: CompletionType, value_input: QLineEdit, file_path_input: QLineEdit) -> tuple[str, str]:
+        value = value_input.text()
+        file_path = file_path_input.text().strip()
+        if condition_type in {CompletionType.NONE, CompletionType.DELAY}:
+            value = ""
+        if condition_type not in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}:
+            file_path = ""
+        return value, file_path
+
+    @staticmethod
+    def _update_condition_widgets(condition_type: CompletionType, value_input: QLineEdit, file_path_input: QLineEdit, label: str) -> None:
+        file_condition = condition_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}
+        unused_value = condition_type in {CompletionType.NONE, CompletionType.DELAY}
+        value_input.setEnabled(not unused_value)
+        file_path_input.setEnabled(file_condition)
+        file_path_input.setPlaceholderText("Absolute device path" if file_condition else "Not used for this condition")
+        value_input.setPlaceholderText(f"Not used for this {label} type" if unused_value else "Text or regular expression")
 
     def _add_step(self) -> None:
         self._store_current_step()
@@ -244,6 +276,8 @@ class AutomationEditorDialog(QDialog):
         self._steps.insert(self._current_index + 1, AutomationStep(
             name=f"{step.name} copy", command=step.command, completion_type=step.completion_type,
             completion_value=step.completion_value, file_path=step.file_path, timeout_seconds=step.timeout_seconds,
+            start_type=step.start_type, start_value=step.start_value, start_file_path=step.start_file_path,
+            start_timeout_seconds=step.start_timeout_seconds,
         ))
         self._current_index += 1
         self._refresh_step_list()

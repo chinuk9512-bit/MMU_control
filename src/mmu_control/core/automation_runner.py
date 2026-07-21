@@ -16,6 +16,7 @@ class AutomationState(StrEnum):
     """Observable state of an automation run."""
 
     IDLE = "idle"
+    WAITING_START = "waiting_start"
     WAITING = "waiting"
     RETRY_WAITING = "retry_waiting"
     SUCCEEDED = "succeeded"
@@ -51,7 +52,7 @@ class AutomationRunner:
     @property
     def is_active(self) -> bool:
         """Return whether a scenario is still running."""
-        return self._state in {AutomationState.WAITING, AutomationState.RETRY_WAITING}
+        return self._state in {AutomationState.WAITING_START, AutomationState.WAITING, AutomationState.RETRY_WAITING}
 
     @property
     def status(self) -> AutomationStatus:
@@ -66,7 +67,7 @@ class AutomationRunner:
         return self._scenario.steps[self._step_index]
 
     def start(self, scenario: AutomationScenario) -> None:
-        """Start a scenario by sending its first command."""
+        """Start a scenario by evaluating its first start condition."""
         if self.is_active:
             raise RuntimeError("An automation scenario is already running.")
         if not scenario.steps:
@@ -77,28 +78,29 @@ class AutomationRunner:
         self._start_current_step()
 
     def receive_output(self, output: str) -> None:
-        """Evaluate new terminal output against the current completion condition."""
-        if self._state != AutomationState.WAITING or not output:
+        """Evaluate new terminal output against the active start or completion condition."""
+        if self._state not in {AutomationState.WAITING_START, AutomationState.WAITING} or not output:
             return
         step = self.current_step
         if step is None:
             return
         self._output = f"{self._output}{output}"[-16_384:]
-        if step.completion_type in {
+        condition_type = self._condition_type(step)
+        if condition_type in {
             CompletionType.OUTPUT_CONTAINS,
             CompletionType.OUTPUT_REGEX,
             CompletionType.PROMPT_REGEX,
             CompletionType.REMOTE_FILE_CONTAINS,
             CompletionType.REMOTE_FILE_REGEX,
-        } and self._output_matches(step):
-            self._advance()
+        } and self._output_matches():
+            self._condition_satisfied()
 
     def receive_file_result(self, matched: bool, error: Exception | None = None) -> None:
         """Accept an asynchronous remote-file condition result."""
-        if self._state != AutomationState.WAITING:
+        if self._state not in {AutomationState.WAITING_START, AutomationState.WAITING}:
             return
         step = self.current_step
-        if step is None or step.completion_type not in {
+        if step is None or self._condition_type(step) not in {
             CompletionType.REMOTE_FILE_CONTAINS,
             CompletionType.REMOTE_FILE_REGEX,
         }:
@@ -106,7 +108,7 @@ class AutomationRunner:
         if error is not None:
             self.fail_current_step(f"File condition failed: {error}")
         elif matched:
-            self._advance()
+            self._condition_satisfied()
 
     def file_check_command(self) -> str | None:
         """Return a safe command that checks the current device file condition.
@@ -115,14 +117,14 @@ class AutomationRunner:
         works for both a device SSH shell and a minicom device shell.
         """
         step = self.current_step
-        if step is None or step.completion_type not in {
+        if self._state not in {AutomationState.WAITING_START, AutomationState.WAITING} or step is None or self._condition_type(step) not in {
             CompletionType.REMOTE_FILE_CONTAINS,
             CompletionType.REMOTE_FILE_REGEX,
         }:
             return None
-        grep_option = "-Fq" if step.completion_type == CompletionType.REMOTE_FILE_CONTAINS else "-Eq"
+        grep_option = "-Fq" if self._condition_type(step) == CompletionType.REMOTE_FILE_CONTAINS else "-Eq"
         return (
-            f"grep {grep_option} -- {shlex.quote(step.completion_value)} {shlex.quote(step.file_path)} "
+            f"grep {grep_option} -- {shlex.quote(self._condition_value(step))} {shlex.quote(self._condition_file_path(step))} "
             "&& printf '__MMU_AUTOMATION_FILE_MATCH__\\n'"
         )
 
@@ -132,18 +134,18 @@ class AutomationRunner:
         if self._state == AutomationState.RETRY_WAITING and now >= self._retry_at:
             self._start_current_step()
             return False
-        if self._state != AutomationState.WAITING:
+        if self._state not in {AutomationState.WAITING_START, AutomationState.WAITING}:
             return False
         step = self.current_step
         if step is None:
             return False
-        if step.completion_type == CompletionType.DELAY and now >= self._deadline:
-            self._advance()
+        if self._condition_type(step) == CompletionType.DELAY and now >= self._deadline:
+            self._condition_satisfied()
             return False
         if now >= self._deadline:
-            self.fail_current_step(f"Timed out after {step.timeout_seconds} seconds.")
+            self.fail_current_step(f"Timed out waiting for {self._condition_name()} after {self._timeout_seconds(step)} seconds.")
             return False
-        return step.completion_type in {
+        return self._condition_type(step) in {
             CompletionType.REMOTE_FILE_CONTAINS,
             CompletionType.REMOTE_FILE_REGEX,
         }
@@ -168,10 +170,22 @@ class AutomationRunner:
             self._message = "Automation stopped by user."
 
     def _start_current_step(self) -> None:
+        """Begin a step from its start condition on every retry."""
         step = self.current_step
         if step is None:
             self._state = AutomationState.FAILED
             self._message = "Automation has no current step."
+            return
+        self._output = ""
+        self._state = AutomationState.WAITING_START
+        self._deadline = time.monotonic() + step.start_timeout_seconds
+        self._message = f"Waiting to start step {self._step_index + 1}: {step.name or step.command}"
+        if step.start_type == CompletionType.NONE:
+            self._send_current_command()
+
+    def _send_current_command(self) -> None:
+        step = self.current_step
+        if step is None:
             return
         self._output = ""
         self._state = AutomationState.WAITING
@@ -185,6 +199,27 @@ class AutomationRunner:
         if step.completion_type == CompletionType.NONE:
             self._advance()
 
+    def _condition_satisfied(self) -> None:
+        if self._state == AutomationState.WAITING_START:
+            self._send_current_command()
+        else:
+            self._advance()
+
+    def _condition_type(self, step: AutomationStep) -> CompletionType:
+        return step.start_type if self._state == AutomationState.WAITING_START else step.completion_type
+
+    def _condition_value(self, step: AutomationStep) -> str:
+        return step.start_value if self._state == AutomationState.WAITING_START else step.completion_value
+
+    def _condition_file_path(self, step: AutomationStep) -> str:
+        return step.start_file_path if self._state == AutomationState.WAITING_START else step.file_path
+
+    def _timeout_seconds(self, step: AutomationStep) -> int:
+        return step.start_timeout_seconds if self._state == AutomationState.WAITING_START else step.timeout_seconds
+
+    def _condition_name(self) -> str:
+        return "start condition" if self._state == AutomationState.WAITING_START else "completion condition"
+
     def _advance(self) -> None:
         assert self._scenario is not None
         if self._step_index + 1 >= len(self._scenario.steps):
@@ -195,18 +230,22 @@ class AutomationRunner:
         self._retried = False
         self._start_current_step()
 
-    def _output_matches(self, step: AutomationStep) -> bool:
-        if step.completion_type == CompletionType.OUTPUT_CONTAINS:
-            return step.completion_value in self._output
-        if step.completion_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}:
+    def _output_matches(self) -> bool:
+        step = self.current_step
+        assert step is not None
+        condition_type = self._condition_type(step)
+        condition_value = self._condition_value(step)
+        if condition_type == CompletionType.OUTPUT_CONTAINS:
+            return condition_value in self._output
+        if condition_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}:
             return "__MMU_AUTOMATION_FILE_MATCH__" in self._output
         flags = re.MULTILINE
         try:
-            pattern = re.compile(step.completion_value, flags)
+            pattern = re.compile(condition_value, flags)
         except re.error as exc:
-            self.fail_current_step(f"Invalid completion regular expression: {exc}")
+            self.fail_current_step(f"Invalid {self._condition_name()} regular expression: {exc}")
             return False
-        if step.completion_type == CompletionType.PROMPT_REGEX:
+        if condition_type == CompletionType.PROMPT_REGEX:
             latest_line = self._output.replace("\r", "\n").split("\n")[-1]
             return bool(pattern.fullmatch(latest_line.strip()))
         return bool(pattern.search(self._output))
