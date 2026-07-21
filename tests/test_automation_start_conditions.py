@@ -69,6 +69,52 @@ class AutomationStartConditionRunnerTest(unittest.TestCase):
         self.assertEqual(self.sent, ["command"])
         self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
 
+    def test_initial_output_snapshot_starts_command_when_it_contains_start_text(self) -> None:
+        start_marker = "service-ready"
+        scenario = AutomationScenario(
+            name="initial-output-match",
+            steps=[AutomationStep("start", "command", start_type=CompletionType.OUTPUT_CONTAINS, start_value=start_marker)],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_initial_output(f"device state: {start_marker}")
+
+        self.assertEqual(self.sent, ["command"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_initial_output_snapshot_without_match_keeps_waiting_for_new_output(self) -> None:
+        start_marker = "service-ready"
+        scenario = AutomationScenario(
+            name="initial-output-no-match",
+            steps=[AutomationStep("start", "command", start_type=CompletionType.OUTPUT_CONTAINS, start_value=start_marker)],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_initial_output("device state: booting")
+
+        self.assertEqual(self.sent, [])
+        self.assertEqual(self.runner.status.state, AutomationState.WAITING_START)
+        self.runner.receive_output(f"\r\ndevice state: {start_marker}")
+        self.assertEqual(self.sent, ["command"])
+
+    def test_initial_snapshot_is_not_reused_for_a_later_step_start_condition(self) -> None:
+        scenario = AutomationScenario(
+            name="separate-output-windows",
+            steps=[
+                AutomationStep("first", "one", start_type=CompletionType.OUTPUT_CONTAINS, start_value="ready"),
+                AutomationStep("second", "two", start_type=CompletionType.OUTPUT_CONTAINS, start_value="ready"),
+            ],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_initial_output("ready")
+
+        self.assertEqual(self.sent, ["one"])
+        self.assertEqual(self.runner.status.state, AutomationState.WAITING_START)
+        self.assertEqual(self.runner.status.step_index, 1)
+        self.runner.receive_output("ready")
+        self.assertEqual(self.sent, ["one", "two"])
+
     def test_sends_command_when_prompt_start_condition_matches_newline_terminated_last_line(self) -> None:
         scenario = AutomationScenario(
             name="start-prompt",

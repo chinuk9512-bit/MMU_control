@@ -62,6 +62,7 @@ from mmu_control.core.minicom_manager import MinicomError, MinicomManager
 from mmu_control.core.power_supply_manager import PowerSupplyCommandError, PowerSupplyManager
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
+from mmu_control.core.terminal_sequences import TerminalStreamFilter
 from mmu_control.models.command_set import CommandFolder, CommandSet
 from mmu_control.models.automation import AutomationScenario
 from mmu_control.models.settings import (
@@ -350,6 +351,8 @@ class CommandSetTreeWidget(QTreeWidget):
 class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
 
+    AUTOMATION_OUTPUT_LIMIT = AutomationRunner.OUTPUT_LIMIT
+
     def __init__(
         self,
         ssh_manager: SSHManager | None = None,
@@ -377,6 +380,8 @@ class MainWindow(QMainWindow):
         self._sftp_shell: InteractiveShell | None = None
         self._pending_echo: str | None = None
         self._echo_buffer = ""
+        self._automation_output_filter = TerminalStreamFilter()
+        self._recent_automation_output = ""
         self._sftp_pending_echo: str | None = None
         self._sftp_pending_listing = False
         self._sftp_pending_pwd: str | None = None
@@ -595,6 +600,8 @@ class MainWindow(QMainWindow):
         self._shell = shell
         self._pending_echo = None
         self._echo_buffer = ""
+        self._automation_output_filter.reset()
+        self._recent_automation_output = ""
         self._sftp_session_active = False
         self._minicom_session_active = False
         self._mmu_ssh_session_active = False
@@ -1821,6 +1828,7 @@ class MainWindow(QMainWindow):
         self._automation_runner = AutomationRunner(self._shell.send_line)
         try:
             self._automation_runner.start(scenario)
+            self._automation_runner.receive_initial_output(self._recent_automation_output)
         except Exception as exc:
             self.automation_status_label.setText(f"Automation failed to start: {exc}")
             return
@@ -1876,9 +1884,14 @@ class MainWindow(QMainWindow):
             self._show_connection_error(exc)
             return
         output = self._filter_command_echo(output)
+        output = self._automation_output_filter.feed(output)
         if self._automation_runner is not None and output:
             self._automation_runner.receive_output(output)
             self._update_automation_status()
+        if output:
+            self._recent_automation_output = (
+                f"{self._recent_automation_output}{output}"[-self.AUTOMATION_OUTPUT_LIMIT :]
+            )
         if self._mmu_ssh_session_active:
             self._handle_mmu_ssh_auth(output)
         if output:
