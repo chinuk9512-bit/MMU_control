@@ -30,6 +30,9 @@ dist/
 .env.*
 !.env.example
 
+# Mutable command-set data stored alongside the package
+src/mmu_control/user_command/command_sets.json
+
 # IDE/editor files
 .vscode/
 .idea/

@@ -13,6 +13,19 @@ from mmu_control.storage.command_set_store import CommandSetStore
 class CommandSetStoreTest(unittest.TestCase):
     """Tests for JSON command set storage."""
 
+    def test_create_default_uses_package_command_data_path(self) -> None:
+        """The default store persists command sets in the package data directory."""
+        store = CommandSetStore.create_default()
+
+        expected_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "mmu_control"
+            / "user_command"
+            / "command_sets.json"
+        )
+        self.assertEqual(store.command_sets_path, expected_path)
+
     def test_upsert_load_and_delete_command_set(self) -> None:
         """Command sets can be saved, loaded, replaced, and deleted."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -35,7 +48,6 @@ class CommandSetStoreTest(unittest.TestCase):
 
             deleted = store.delete("boot-check")
             self.assertEqual(deleted.command_sets, {})
-
 
     def test_legacy_flat_json_loads_at_top_level(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

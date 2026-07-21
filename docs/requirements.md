@@ -34,12 +34,12 @@ The following packages are needed for local development, testing, and packaging:
 
 ## Runtime User Data
 
-The application stores user data under `%APPDATA%\MMUControl` on Windows. If `APPDATA` is not defined, it falls back to `~/AppData/Roaming/MMUControl`.
+The application stores most user data under `%APPDATA%\MMUControl` on Windows. If `APPDATA` is not defined, it falls back to `~/AppData/Roaming/MMUControl`. Command sets are stored separately in `src/mmu_control/user_command/command_sets.json`.
 
 Expected files include:
 
 - `settings.json` - SSH, Board/MMU, Power Supply, active profile name, and window state
-- `command_sets.json` - saved command sets from the Commands tab
+- `src/mmu_control/user_command/command_sets.json` - saved command sets from the Commands tab
 - `mmu_control.log` - rotating application log file
 - `profiles.json` - connection profile storage for profile-management expansion
 
