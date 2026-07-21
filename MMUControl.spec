@@ -7,8 +7,6 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src\\mmu_control\\resources\\power_supply_commands.json', 'mmu_control/resources'),
-        ('src\\mmu_control\\user_scenario\\automation_scenarios.json', 'mmu_control/user_scenario'),
-        ('src\\mmu_control\\user_command\\command_sets.json', 'mmu_control/user_command'),
     ],
     hiddenimports=[
         'mmu_control.models.command_set',

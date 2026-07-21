@@ -66,6 +66,16 @@ class ConfigManager:
 
 def default_config_path() -> Path:
     """Return the default application configuration file path."""
+    return default_user_data_directory() / "settings.json"
+
+
+def default_user_data_directory() -> Path:
+    """Return the per-user directory for data that must survive app upgrades.
+
+    PyInstaller extracts bundled package files to a temporary directory for a
+    one-file executable.  User-created data must therefore never use a path
+    inside the package directory.
+    """
     appdata = os.environ.get("APPDATA")
     base_path = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    return base_path / "MMUControl" / "settings.json"
+    return base_path / "MMUControl"

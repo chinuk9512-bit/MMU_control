@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -19,16 +20,15 @@ from mmu_control.storage.automation_store import AutomationStore
 class AutomationStoreTest(unittest.TestCase):
     """Automation JSON data is persisted with its completion conditions."""
 
-    def test_default_store_uses_package_user_scenario_directory(self) -> None:
-        """Default scenarios live beside the application package, not in APPDATA."""
-        store = AutomationStore.create_default()
+    def test_default_store_uses_persistent_user_data_path(self) -> None:
+        """Default scenarios live outside PyInstaller's temporary bundle."""
+        with patch.dict("os.environ", {"APPDATA": "C:/Users/test/AppData/Roaming"}):
+            store = AutomationStore.create_default()
 
         self.assertEqual(
             store._path,
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "mmu_control"
-            / "user_scenario"
+            Path("C:/Users/test/AppData/Roaming")
+            / "MMUControl"
             / "automation_scenarios.json",
         )
 

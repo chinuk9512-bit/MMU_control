@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mmu_control.models.command_set import CommandSet
 from mmu_control.storage.command_set_store import CommandSetStore
@@ -13,15 +14,14 @@ from mmu_control.storage.command_set_store import CommandSetStore
 class CommandSetStoreTest(unittest.TestCase):
     """Tests for JSON command set storage."""
 
-    def test_create_default_uses_package_command_data_path(self) -> None:
-        """The default store persists command sets in the package data directory."""
-        store = CommandSetStore.create_default()
+    def test_create_default_uses_persistent_user_data_path(self) -> None:
+        """The default store keeps command sets outside PyInstaller's temp bundle."""
+        with patch.dict("os.environ", {"APPDATA": "C:/Users/test/AppData/Roaming"}):
+            store = CommandSetStore.create_default()
 
         expected_path = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "mmu_control"
-            / "user_command"
+            Path("C:/Users/test/AppData/Roaming")
+            / "MMUControl"
             / "command_sets.json"
         )
         self.assertEqual(store.command_sets_path, expected_path)

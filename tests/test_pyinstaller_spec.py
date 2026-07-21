@@ -13,9 +13,9 @@ def test_power_supply_commands_are_bundled_in_pyinstaller_spec() -> None:
     assert "mmu_control/resources" in spec_text
 
 
-def test_command_sets_are_bundled_in_pyinstaller_spec() -> None:
-    """The one-file executable must include the default command-set JSON."""
+def test_user_created_data_is_not_bundled_in_pyinstaller_spec() -> None:
+    """The one-file executable must not store mutable user data in its bundle."""
     spec_text = Path("MMUControl.spec").read_text(encoding="utf-8")
 
-    assert r"src\\mmu_control\\user_command\\command_sets.json" in spec_text
-    assert "mmu_control/user_command" in spec_text
+    assert "command_sets.json" not in spec_text
+    assert "automation_scenarios.json" not in spec_text
