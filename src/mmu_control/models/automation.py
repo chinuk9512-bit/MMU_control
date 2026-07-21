@@ -21,7 +21,7 @@ class CompletionType(StrEnum):
 
 @dataclass(slots=True)
 class AutomationStep:
-    """One command and its user-configured completion condition."""
+    """One command with optional start and completion conditions."""
 
     name: str = ""
     command: str = ""
@@ -29,6 +29,10 @@ class AutomationStep:
     completion_value: str = ""
     file_path: str = ""
     timeout_seconds: int = 60
+    start_type: CompletionType = CompletionType.NONE
+    start_value: str = ""
+    start_file_path: str = ""
+    start_timeout_seconds: int = 60
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AutomationStep":
@@ -37,6 +41,10 @@ class AutomationStep:
             completion_type = CompletionType(str(data.get("completion_type", CompletionType.NONE)))
         except ValueError:
             completion_type = CompletionType.NONE
+        try:
+            start_type = CompletionType(str(data.get("start_type", CompletionType.NONE)))
+        except ValueError:
+            start_type = CompletionType.NONE
         return cls(
             name=str(data.get("name", "")),
             command=str(data.get("command", "")),
@@ -44,6 +52,10 @@ class AutomationStep:
             completion_value=str(data.get("completion_value", "")),
             file_path=str(data.get("file_path", "")),
             timeout_seconds=max(1, int(data.get("timeout_seconds", 60))),
+            start_type=start_type,
+            start_value=str(data.get("start_value", "")),
+            start_file_path=str(data.get("start_file_path", "")),
+            start_timeout_seconds=max(1, int(data.get("start_timeout_seconds", 60))),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -52,6 +64,10 @@ class AutomationStep:
             completion_type = CompletionType(str(self.completion_type))
         except ValueError:
             completion_type = CompletionType.NONE
+        try:
+            start_type = CompletionType(str(self.start_type))
+        except ValueError:
+            start_type = CompletionType.NONE
         return {
             "name": self.name,
             "command": self.command,
@@ -59,6 +75,10 @@ class AutomationStep:
             "completion_value": self.completion_value,
             "file_path": self.file_path,
             "timeout_seconds": self.timeout_seconds,
+            "start_type": start_type.value,
+            "start_value": self.start_value,
+            "start_file_path": self.start_file_path,
+            "start_timeout_seconds": self.start_timeout_seconds,
         }
 
 

@@ -78,9 +78,17 @@ class AutomationStoreTest(unittest.TestCase):
             self.assertEqual(saved["scenarios"]["legacy completion"]["steps"][0]["completion_type"], "none")
             self.assertEqual(store.load().scenarios["legacy completion"].steps[0].completion_type, CompletionType.NONE)
 
+    def test_loads_legacy_step_without_start_condition(self) -> None:
+        step = AutomationStep.from_dict({"name": "legacy", "command": "run", "completion_type": "none"})
+
+        self.assertEqual(step.start_type, CompletionType.NONE)
+        self.assertEqual(step.start_value, "")
+        self.assertEqual(step.start_file_path, "")
+        self.assertEqual(step.start_timeout_seconds, 60)
+
 
 class AutomationEditorDialogTest(unittest.TestCase):
-    """The editor stores completion conditions as CompletionType values."""
+    """The editor stores start and completion conditions as CompletionType values."""
 
     def test_saved_step_serializes_completion_type_as_enum_value(self) -> None:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -102,6 +110,25 @@ class AutomationEditorDialogTest(unittest.TestCase):
 
         self.assertIs(saved_step.completion_type, CompletionType.NONE)
         self.assertEqual(saved_step.to_dict()["completion_type"], CompletionType.NONE.value)
+
+    def test_saved_step_includes_start_condition_fields(self) -> None:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+        qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
+        from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+
+        dialog = AutomationEditorDialog(AutomationScenario(name="editor", steps=[AutomationStep(name="run", command="run")]))
+        dialog.start_type_input.setCurrentIndex(dialog.start_type_input.findData(CompletionType.REMOTE_FILE_CONTAINS))
+        dialog.start_value_input.setText("ready")
+        dialog.start_file_path_input.setText("/tmp/state")
+        dialog.start_timeout_input.setValue(42)
+
+        saved_step = dialog.scenario().steps[0]
+
+        self.assertEqual(saved_step.start_type, CompletionType.REMOTE_FILE_CONTAINS)
+        self.assertEqual(saved_step.start_value, "ready")
+        self.assertEqual(saved_step.start_file_path, "/tmp/state")
+        self.assertEqual(saved_step.start_timeout_seconds, 42)
 
 
 class AutomationRunnerTest(unittest.TestCase):
@@ -142,6 +169,70 @@ class AutomationRunnerTest(unittest.TestCase):
         self.assertEqual(self.sent, ["prepare", "wait"])
         self.assertEqual(self.runner.status.state, AutomationState.WAITING)
         self.assertEqual(self.runner.status.step_index, 1)
+
+    def test_does_not_send_command_before_output_start_condition_matches(self) -> None:
+        scenario = AutomationScenario(
+            name="start-output",
+            steps=[AutomationStep("run", "command", start_type=CompletionType.OUTPUT_CONTAINS, start_value="ready")],
+        )
+
+        self.runner.start(scenario)
+        self.assertEqual(self.runner.status.state, AutomationState.WAITING_START)
+        self.assertEqual(self.sent, [])
+        self.runner.receive_output("not yet")
+        self.assertEqual(self.sent, [])
+        self.runner.receive_output(" ready")
+        self.assertEqual(self.sent, ["command"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_file_start_condition_sends_command_only_after_match(self) -> None:
+        scenario = AutomationScenario(
+            name="start-file",
+            steps=[AutomationStep("run", "command", start_type=CompletionType.REMOTE_FILE_REGEX,
+                                  start_value=r"ready-[0-9]+", start_file_path="/tmp/state")],
+        )
+
+        self.runner.start(scenario)
+        self.assertTrue(self.runner.tick())
+        command = self.runner.file_check_command()
+        self.assertIn("grep -Eq", command or "")
+        self.assertIn("/tmp/state", command or "")
+        self.assertEqual(self.sent, [])
+        self.runner.receive_file_result(True)
+        self.assertEqual(self.sent, ["command"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_delay_start_condition_sends_command_after_timeout(self) -> None:
+        scenario = AutomationScenario(
+            name="start-delay",
+            steps=[AutomationStep("run", "command", start_type=CompletionType.DELAY, start_timeout_seconds=3)],
+        )
+
+        self.runner.start(scenario)
+        self.assertEqual(self.sent, [])
+        self.runner._deadline = 3.0
+        self.runner.tick(now=2.0)
+        self.assertEqual(self.sent, [])
+        self.runner.tick(now=3.0)
+        self.assertEqual(self.sent, ["command"])
+
+    def test_start_condition_timeout_retries_from_start_condition(self) -> None:
+        scenario = AutomationScenario(
+            name="start-timeout",
+            steps=[AutomationStep("run", "command", start_type=CompletionType.OUTPUT_CONTAINS,
+                                  start_value="ready", start_timeout_seconds=1)],
+        )
+
+        self.runner.start(scenario)
+        self.runner._deadline = 0.0
+        self.runner.tick(now=0.0)
+        self.assertEqual(self.runner.status.state, AutomationState.RETRY_WAITING)
+        self.assertEqual(self.sent, [])
+        self.runner._retry_at = 0.0
+        self.runner.tick(now=0.0)
+        self.assertEqual(self.runner.status.state, AutomationState.WAITING_START)
+        self.runner.receive_output("ready")
+        self.assertEqual(self.sent, ["command"])
 
     def test_file_condition_uses_safe_terminal_command_and_marker(self) -> None:
         scenario = AutomationScenario(
