@@ -166,6 +166,28 @@ class AutomationRunnerTest(unittest.TestCase):
         self.runner.receive_output("\r\nushell>")
         self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
 
+    def test_prompt_completion_matches_newline_terminated_last_line(self) -> None:
+        scenario = AutomationScenario(
+            name="prompt-last-line",
+            steps=[AutomationStep("first", "one", CompletionType.PROMPT_REGEX, r"ushell>")],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("command output\r\nushell>\r\n")
+
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_output_completion_matches_newline_terminated_last_line(self) -> None:
+        scenario = AutomationScenario(
+            name="output-last-line",
+            steps=[AutomationStep("first", "one", CompletionType.OUTPUT_CONTAINS, "complete")],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("command output\r\ncomplete\r\n")
+
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
     def test_step_without_completion_condition_advances_immediately(self) -> None:
         scenario = AutomationScenario(
             name="no-condition",
