@@ -236,7 +236,7 @@ class AutomationRunner:
         condition_type = self._condition_type(step)
         condition_value = self._condition_value(step)
         if condition_type == CompletionType.OUTPUT_CONTAINS:
-            return condition_value in self._output
+            return self._output_contains(condition_value)
         if condition_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}:
             return "__MMU_AUTOMATION_FILE_MATCH__" in self._output
         flags = re.MULTILINE
@@ -246,6 +246,16 @@ class AutomationRunner:
             self.fail_current_step(f"Invalid {self._condition_name()} regular expression: {exc}")
             return False
         if condition_type == CompletionType.PROMPT_REGEX:
-            latest_line = self._output.replace("\r", "\n").split("\n")[-1]
+            latest_line = self._latest_output_line()
             return bool(pattern.fullmatch(latest_line.strip()))
         return bool(pattern.search(self._output))
+
+    def _latest_output_line(self) -> str:
+        """Return the final terminal line, including one ended by a newline."""
+        normalized_output = self._output.replace("\r\n", "\n").replace("\r", "\n")
+        lines = normalized_output.splitlines()
+        return lines[-1] if lines else ""
+
+    def _output_contains(self, condition_value: str) -> bool:
+        """Match displayed text in the latest terminal line or prior output."""
+        return condition_value in self._latest_output_line() or condition_value in self._output

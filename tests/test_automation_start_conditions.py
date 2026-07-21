@@ -69,6 +69,30 @@ class AutomationStartConditionRunnerTest(unittest.TestCase):
         self.assertEqual(self.sent, ["command"])
         self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
 
+    def test_sends_command_when_prompt_start_condition_matches_newline_terminated_last_line(self) -> None:
+        scenario = AutomationScenario(
+            name="start-prompt",
+            steps=[AutomationStep("run", "command", start_type=CompletionType.PROMPT_REGEX, start_value=r"ready>")],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("booting\r\nready>\r\n")
+
+        self.assertEqual(self.sent, ["command"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_sends_command_when_output_start_condition_matches_newline_terminated_last_line(self) -> None:
+        scenario = AutomationScenario(
+            name="start-output-last-line",
+            steps=[AutomationStep("run", "command", start_type=CompletionType.OUTPUT_CONTAINS, start_value="ready")],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("booting\r\nready\r\n")
+
+        self.assertEqual(self.sent, ["command"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
     def test_file_start_condition_sends_command_only_after_match(self) -> None:
         scenario = AutomationScenario(
             name="start-file",
