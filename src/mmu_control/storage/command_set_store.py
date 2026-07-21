@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mmu_control.core.config_manager import default_config_path
 from mmu_control.models.command_set import CommandFolder, CommandSet, CommandSetCollection
 
 
@@ -26,7 +25,9 @@ class CommandSetStore:
 
     @classmethod
     def create_default(cls) -> "CommandSetStore":
-        return cls(default_config_path().with_name("command_sets.json"))
+        """Create a store in the package's dedicated command directory."""
+        package_directory = Path(__file__).resolve().parents[1]
+        return cls(package_directory / "user_command" / "command_sets.json")
 
     def load(self) -> CommandSetCollection:
         if not self._command_sets_path.exists():
