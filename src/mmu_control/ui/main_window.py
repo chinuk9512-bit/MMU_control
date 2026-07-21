@@ -77,6 +77,7 @@ from mmu_control.storage.automation_store import AutomationStore
 from mmu_control.ui.background_worker import TaskRunner, ThreadPoolTaskRunner
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
 from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+from mmu_control.ui.automation_import_dialog import AutomationImportDialog
 from mmu_control.ui.terminal_widget import TerminalWidget
 
 
@@ -440,6 +441,7 @@ class MainWindow(QMainWindow):
         self.delete_command_button.clicked.connect(self._delete_command_set)
         self.run_command_set_button.clicked.connect(self._run_command_set)
         self.new_automation_button.clicked.connect(self._create_automation_scenario)
+        self.import_automation_button.clicked.connect(self._import_automation_scenario)
         self.edit_automation_button.clicked.connect(self._edit_automation_scenario)
         self.delete_automation_button.clicked.connect(self._delete_automation_scenario)
         self.run_automation_button.clicked.connect(self._run_automation_scenario)
@@ -1757,6 +1759,18 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._save_automation_scenario(dialog.scenario())
 
+    def _import_automation_scenario(self) -> None:
+        """Import commands into a draft, then let the user review it before saving."""
+        import_dialog = AutomationImportDialog(self)
+        if import_dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        scenario = import_dialog.scenario()
+        if scenario is None:
+            return
+        editor = AutomationEditorDialog(scenario, self)
+        if editor.exec() == QDialog.DialogCode.Accepted:
+            self._save_automation_scenario(editor.scenario())
+
     def _edit_automation_scenario(self) -> None:
         scenario = self._selected_automation_scenario()
         if scenario is None:
@@ -2598,6 +2612,7 @@ class MainWindow(QMainWindow):
         automation_layout = QVBoxLayout(automation_group)
         automation_actions = QHBoxLayout()
         self.new_automation_button = QPushButton("New Scenario", automation_group)
+        self.import_automation_button = QPushButton("텍스트에서 가져오기", automation_group)
         self.edit_automation_button = QPushButton("Edit", automation_group)
         self.delete_automation_button = QPushButton("Delete", automation_group)
         self.run_automation_button = QPushButton("Run Scenario", automation_group)
@@ -2608,6 +2623,7 @@ class MainWindow(QMainWindow):
         self.stop_automation_button.setEnabled(False)
         for button in (
             self.new_automation_button,
+            self.import_automation_button,
             self.edit_automation_button,
             self.delete_automation_button,
             self.run_automation_button,
