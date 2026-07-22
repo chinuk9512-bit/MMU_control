@@ -141,19 +141,30 @@ class AutomationEditorDialogTest(unittest.TestCase):
         self.assertEqual(dialog.file_path_input.text(), "")
         self.assertEqual(dialog.timeout_input.value(), 60)
 
-    def test_editor_height_reduces_with_the_shorter_step_list(self) -> None:
-        """The half-height step list reduces the scenario editor by the same amount."""
+    def test_editor_defaults_to_eight_visible_steps_with_resizable_panes(self) -> None:
+        """The list starts at eight rows and can be resized independently of details."""
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
         qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
         from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
 
-        dialog = AutomationEditorDialog()
+        scenario = AutomationScenario(
+            name="editor",
+            steps=[AutomationStep(name=str(index), command="run") for index in range(8)],
+        )
+        dialog = AutomationEditorDialog(scenario)
+        dialog.show()
+        qt_widgets.QApplication.processEvents()
 
-        self.assertEqual(dialog.minimumHeight(), 1185)
-        self.assertEqual(dialog.height(), 1449)
+        self.assertEqual(dialog.minimumHeight(), 600)
+        self.assertEqual(dialog.height(), 900)
         self.assertEqual(dialog.step_list.minimumHeight(), 45)
+        self.assertEqual(dialog.DEFAULT_VISIBLE_STEP_COUNT, 8)
+        self.assertEqual(dialog.step_editor_splitter.count(), 2)
+        eighth_step = dialog.step_list.visualItemRect(dialog.step_list.item(7))
+        self.assertTrue(dialog.step_list.viewport().rect().contains(eighth_step))
         self.assertEqual(dialog.command_input.minimumHeight(), 144)
+        dialog.close()
 
 
 class AutomationRunnerTest(unittest.TestCase):
