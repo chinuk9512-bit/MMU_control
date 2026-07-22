@@ -192,6 +192,32 @@ class AutomationRunnerTest(unittest.TestCase):
         self.runner.receive_output("\r\nushell>")
         self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
 
+    def test_starts_at_the_requested_intermediate_step(self) -> None:
+        """A run can begin without sending any preceding scenario commands."""
+        scenario = AutomationScenario(
+            name="resume",
+            steps=[
+                AutomationStep("first", "one"),
+                AutomationStep("middle", "two", CompletionType.OUTPUT_CONTAINS, "done"),
+                AutomationStep("last", "three"),
+            ],
+        )
+
+        self.runner.start(scenario, start_step_index=1)
+
+        self.assertEqual(self.sent, ["two"])
+        self.assertEqual(self.runner.start_step_index, 1)
+        self.assertEqual(self.runner.status.step_index, 1)
+        self.runner.receive_output("done")
+        self.assertEqual(self.sent, ["two", "three"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_rejects_an_out_of_range_start_step(self) -> None:
+        scenario = AutomationScenario(name="one", steps=[AutomationStep("only", "one")])
+
+        with self.assertRaises(ValueError):
+            self.runner.start(scenario, start_step_index=1)
+
     def test_prompt_completion_matches_newline_terminated_last_line(self) -> None:
         scenario = AutomationScenario(
             name="prompt-last-line",
