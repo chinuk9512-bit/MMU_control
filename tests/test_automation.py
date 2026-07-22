@@ -142,7 +142,7 @@ class AutomationEditorDialogTest(unittest.TestCase):
         self.assertEqual(dialog.timeout_input.value(), 60)
 
     def test_editor_height_reduces_with_the_shorter_step_list(self) -> None:
-        """The shorter step list reduces the scenario editor height by the same amount."""
+        """The half-height step list reduces the scenario editor by the same amount."""
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
         qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
@@ -150,9 +150,9 @@ class AutomationEditorDialogTest(unittest.TestCase):
 
         dialog = AutomationEditorDialog()
 
-        self.assertEqual(dialog.minimumHeight(), 1230)
-        self.assertEqual(dialog.height(), 1494)
-        self.assertEqual(dialog.step_list.minimumHeight(), 90)
+        self.assertEqual(dialog.minimumHeight(), 1185)
+        self.assertEqual(dialog.height(), 1449)
+        self.assertEqual(dialog.step_list.minimumHeight(), 45)
         self.assertEqual(dialog.command_input.minimumHeight(), 144)
 
 

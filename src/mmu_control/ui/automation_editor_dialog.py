@@ -44,9 +44,9 @@ class AutomationEditorDialog(QDialog):
     """Edit any number of commands and their individual completion conditions."""
 
     # Keep the editor comfortably usable while avoiding an oversized step list.
-    MINIMUM_HEIGHT = 1230
-    DEFAULT_HEIGHT = 1494
-    STEP_LIST_MINIMUM_HEIGHT = 90
+    MINIMUM_HEIGHT = 1185
+    DEFAULT_HEIGHT = 1449
+    STEP_LIST_MINIMUM_HEIGHT = 45
     COMMAND_MINIMUM_HEIGHT = 144
 
     def __init__(
