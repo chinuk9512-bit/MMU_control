@@ -278,6 +278,15 @@ class MainWindowTest(unittest.TestCase):
         command_actions = window.new_folder_button.parentWidget().layout()
         self.assertIs(command_actions.itemAt(0).widget(), window.new_folder_button)
         self.assertIs(command_actions.itemAt(1).widget(), window.new_command_button)
+        automation_layout = window.new_automation_button.parentWidget().layout()
+        automation_actions = automation_layout.itemAt(0).layout()
+        automation_run_controls = automation_layout.itemAt(1).layout()
+        assert automation_actions is not None
+        assert automation_run_controls is not None
+        self.assertIs(automation_actions.itemAt(0).widget(), window.new_automation_button)
+        self.assertIs(automation_run_controls.itemAt(0).widget(), window.automation_start_step_input)
+        self.assertIs(automation_run_controls.itemAt(1).widget(), window.run_automation_button)
+        self.assertIs(automation_run_controls.itemAt(2).widget(), window.stop_automation_button)
         self.assertEqual(window.board_console_tabs.tabText(1), "SSH Console")
         self.assertEqual(window.usb_port_combo.currentText(), "No USB ports detected")
         self.assertFalse(window.refresh_usb_button.isEnabled())

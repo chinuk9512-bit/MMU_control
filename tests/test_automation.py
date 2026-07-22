@@ -174,17 +174,17 @@ class AutomationRunnerTest(unittest.TestCase):
         self.sent: list[str] = []
         self.runner = AutomationRunner(self.sent.append)
 
-    def test_console_condition_output_buffer_is_limited_to_200_characters(self) -> None:
-        """Console contains and regex conditions only retain the newest 200 characters."""
+    def test_console_condition_output_buffer_is_limited_to_300_characters(self) -> None:
+        """Console contains and regex conditions only retain the newest 300 characters."""
         scenario = AutomationScenario(
             name="bounded output",
             steps=[AutomationStep("wait", "command", CompletionType.OUTPUT_CONTAINS, "ready")],
         )
 
         self.runner.start(scenario)
-        self.runner.receive_output("x" * 250)
+        self.runner.receive_output("x" * 350)
 
-        self.assertEqual(len(self.runner._output), 200)
+        self.assertEqual(len(self.runner._output), 300)
 
     def test_waits_for_each_condition_before_sending_next_step(self) -> None:
         scenario = AutomationScenario(
