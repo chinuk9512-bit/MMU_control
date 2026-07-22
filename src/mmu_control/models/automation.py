@@ -33,10 +33,12 @@ class AutomationStep:
     start_value: str = ""
     start_file_path: str = ""
     start_timeout_seconds: int = 60
+    skip_on_start_condition_failure: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AutomationStep":
         """Create a step from JSON-compatible data with safe defaults."""
+        raw_skip_on_start_condition_failure = data.get("skip_on_start_condition_failure", False)
         try:
             completion_type = CompletionType(str(data.get("completion_type", CompletionType.NONE)))
         except ValueError:
@@ -56,6 +58,11 @@ class AutomationStep:
             start_value=str(data.get("start_value", "")),
             start_file_path=str(data.get("start_file_path", "")),
             start_timeout_seconds=max(1, int(data.get("start_timeout_seconds", 60))),
+            skip_on_start_condition_failure=(
+                raw_skip_on_start_condition_failure
+                if isinstance(raw_skip_on_start_condition_failure, bool)
+                else str(raw_skip_on_start_condition_failure).lower() in {"1", "true", "yes", "on"}
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -79,6 +86,7 @@ class AutomationStep:
             "start_value": self.start_value,
             "start_file_path": self.start_file_path,
             "start_timeout_seconds": self.start_timeout_seconds,
+            "skip_on_start_condition_failure": self.skip_on_start_condition_failure,
         }
 
 

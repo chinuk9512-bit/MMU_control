@@ -348,6 +348,14 @@ class CommandSetTreeWidget(QTreeWidget):
         self.commandSetDropped.emit(name, parent_path)
         event.acceptProposedAction()
 
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        """Keep saved-command selection accessible with the Up and Down keys."""
+        if event.key() in {Qt.Key.Key_Up, Qt.Key.Key_Down}:
+            super().keyPressEvent(event)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
 
 class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
@@ -1737,15 +1745,39 @@ class MainWindow(QMainWindow):
             self.automation_output.clear()
             self._set_automation_actions_enabled(False)
             return
-        step_lines = [
-            f"{index}. {step.name or step.command} — {step.completion_type.value}: {step.completion_value}"
-            for index, step in enumerate(scenario.steps, start=1)
-        ]
+        self._render_automation_progress(scenario)
+        self._set_automation_actions_enabled(True)
+
+    def _render_automation_progress(self, scenario: AutomationScenario) -> None:
+        """Render scenario steps and the active run's per-step progress in the lower pane."""
+        runner = self._automation_runner
+        active_scenario = runner.scenario if runner is not None else None
+        is_running_scenario = active_scenario is not None and active_scenario.name == scenario.name
+        status = runner.status if is_running_scenario else None
+        current_index = status.step_index if status is not None else -1
+        skipped_indices = runner.skipped_step_indices if is_running_scenario else frozenset()
+        step_lines: list[str] = []
+        for index, step in enumerate(scenario.steps):
+            marker = "○"
+            if index in skipped_indices:
+                marker = "↷ skipped"
+            elif status is not None and status.state.value == "succeeded" and index <= current_index:
+                marker = "✓ completed"
+            elif status is not None and status.state.value in {"failed", "cancelled"} and index == current_index:
+                marker = f"✗ {status.state.value}"
+            elif is_running_scenario and runner is not None and runner.is_active and index == current_index:
+                marker = "▶ running"
+            elif is_running_scenario and index < current_index:
+                marker = "✓ completed"
+            step_lines.append(
+                f"{index + 1}. [{marker}] {step.name or step.command} — "
+                f"{step.completion_type.value}: {step.completion_value}"
+            )
+        progress = runner.status.message if is_running_scenario else "Not running."
         self.automation_output.setPlainText(
             f"Name: {scenario.name}\nTransport: {scenario.transport}\nDescription: {scenario.description}\n\n"
-            + "\n".join(step_lines)
+            f"Execution progress: {progress}\n\n" + "\n".join(step_lines)
         )
-        self._set_automation_actions_enabled(True)
 
     def _set_automation_actions_enabled(self, selected: bool) -> None:
         active = self._automation_runner is not None and self._automation_runner.is_active
@@ -1884,6 +1916,9 @@ class MainWindow(QMainWindow):
         status = runner.status
         state = status.state.value.replace("_", " ")
         self.automation_status_label.setText(f"Automation: {state} — {status.message}")
+        scenario = self._selected_automation_scenario()
+        if scenario is not None:
+            self._render_automation_progress(scenario)
         self._set_automation_actions_enabled(self._selected_automation_scenario() is not None)
 
     def _poll_shell(self) -> None:
@@ -2634,7 +2669,7 @@ class MainWindow(QMainWindow):
         self.automation_list = QListWidget(automation_group)
         self.automation_output = QPlainTextEdit(automation_group)
         self.automation_output.setReadOnly(True)
-        self.automation_output.setPlaceholderText("Automation steps and completion conditions appear here.")
+        self.automation_output.setPlaceholderText("Scenario execution progress appears here.")
         self.automation_status_label = QLabel("Automation: idle", automation_group)
         automation_splitter = QSplitter(Qt.Orientation.Vertical, automation_group)
         automation_splitter.addWidget(self.automation_list)

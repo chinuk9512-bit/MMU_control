@@ -49,6 +49,7 @@ class AutomationRunner:
         self._retried = False
         self._output = ""
         self._message = ""
+        self._skipped_step_indices: set[int] = set()
 
     @property
     def is_active(self) -> bool:
@@ -67,6 +68,16 @@ class AutomationRunner:
             return None
         return self._scenario.steps[self._step_index]
 
+    @property
+    def scenario(self) -> AutomationScenario | None:
+        """Return the scenario associated with this run."""
+        return self._scenario
+
+    @property
+    def skipped_step_indices(self) -> frozenset[int]:
+        """Return zero-based indices of steps skipped after a start-condition failure."""
+        return frozenset(self._skipped_step_indices)
+
     def start(self, scenario: AutomationScenario) -> None:
         """Start a scenario by evaluating its first start condition."""
         if self.is_active:
@@ -76,6 +87,7 @@ class AutomationRunner:
         self._scenario = scenario
         self._step_index = 0
         self._retried = False
+        self._skipped_step_indices.clear()
         self._start_current_step()
 
     def receive_initial_output(self, output: str) -> None:
@@ -165,6 +177,15 @@ class AutomationRunner:
     def fail_current_step(self, message: str) -> None:
         """Retry the current step once, then mark the scenario as failed."""
         if not self.is_active:
+            return
+        step = self.current_step
+        if (
+            self._state == AutomationState.WAITING_START
+            and step is not None
+            and step.skip_on_start_condition_failure
+        ):
+            self._skipped_step_indices.add(self._step_index)
+            self._advance()
             return
         if not self._retried:
             self._retried = True
