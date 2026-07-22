@@ -655,6 +655,27 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(manager.shell.sent, ["command"])
 
+    def test_scenario_selection_keeps_the_last_execution_progress(self) -> None:
+        """Returning to a running scenario retains its displayed progress."""
+        manager = FakeSSHManager()
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        first = AutomationScenario(
+            name="first",
+            steps=[AutomationStep("run first", "first-command", CompletionType.OUTPUT_CONTAINS, "done")],
+        )
+        second = AutomationScenario(name="second", steps=[AutomationStep("run second", "second-command")])
+        store.upsert(first)
+        store.upsert(second)
+        window = self.create_window(ssh_manager=manager, automation_store=store)
+        window._activate_shell(manager.shell)
+
+        window._run_automation_scenario()
+        window.automation_list.setCurrentRow(1)
+        window.automation_list.setCurrentRow(0)
+
+        self.assertIn("Execution progress: Running step 1: run first", window.automation_output.toPlainText())
+        self.assertIn("[▶ running] run first", window.automation_output.toPlainText())
+
     def test_create_automation_scenario_keeps_list_when_store_save_fails(self) -> None:
         """A failed new scenario save reports its path without changing the selected scenario."""
         path = Path(self.temp_dir.name) / "automation.json"

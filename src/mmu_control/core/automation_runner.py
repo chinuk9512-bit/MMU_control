@@ -37,7 +37,9 @@ class AutomationRunner:
     """Run one scenario, retrying only its failing current step once."""
 
     RETRY_DELAY_SECONDS = 2.0
-    OUTPUT_LIMIT = 16_384
+    # Output-based conditions intentionally inspect only the most recent
+    # console text, so stale output cannot satisfy a later condition.
+    OUTPUT_LIMIT = 200
 
     def __init__(self, send_line: Callable[[str], None]) -> None:
         self._send_line = send_line
