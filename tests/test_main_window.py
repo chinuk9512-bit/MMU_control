@@ -21,7 +21,14 @@ pytest.importorskip("PySide6.QtGui", exc_type=ImportError)
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
 from PySide6.QtGui import QDropEvent, QValidator
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QDialog, QLineEdit, QMessageBox
+from PySide6.QtWidgets import (
+    QApplication,
+    QAbstractItemView,
+    QDialog,
+    QLineEdit,
+    QMessageBox,
+    QTabWidget,
+)
 
 from mmu_control.core.config_manager import ConfigManager
 from mmu_control.models.command_set import CommandSet
@@ -243,16 +250,23 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_console_tabs.count(), 2)
         self.assertEqual(window.board_console_tabs.tabText(0), "Serial Console")
-        self.assertEqual(window.workspace_tabs.count(), 3)
+        self.assertEqual(window.workspace_tabs.count(), 2)
         self.assertEqual(window.workspace_tabs.tabText(0), "Terminal")
-        self.assertEqual(window.workspace_tabs.tabText(1), "Scenarios")
-        self.assertEqual(window.workspace_tabs.tabText(2), "SFTP")
+        self.assertEqual(window.workspace_tabs.tabText(1), "SFTP")
+        terminal_tab = window.workspace_tabs.widget(0)
+        terminal_side_tabs = terminal_tab.findChild(QTabWidget)
+        self.assertIsNotNone(terminal_side_tabs)
+        assert terminal_side_tabs is not None
+        self.assertEqual(terminal_side_tabs.count(), 2)
+        self.assertEqual(terminal_side_tabs.tabText(0), "Commands")
+        self.assertEqual(terminal_side_tabs.tabText(1), "Scenarios")
         self.assertIsNotNone(window.command_set_list)
         self.assertEqual(window.commands_group.title(), "Commands")
         self.assertEqual(window.new_command_button.text(), "New Command")
         self.assertEqual(window.new_folder_button.text(), "New Folder")
         self.assertEqual(window.new_automation_button.text(), "New Scenario")
         self.assertEqual(window.run_automation_button.text(), "Run Scenario")
+        self.assertIsNotNone(window.automation_list)
         command_actions = window.new_folder_button.parentWidget().layout()
         self.assertIs(command_actions.itemAt(0).widget(), window.new_folder_button)
         self.assertIs(command_actions.itemAt(1).widget(), window.new_command_button)

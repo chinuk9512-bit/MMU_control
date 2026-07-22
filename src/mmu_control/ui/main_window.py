@@ -2502,7 +2502,6 @@ class MainWindow(QMainWindow):
     def _build_workspace(self) -> QTabWidget:
         self.workspace_tabs = QTabWidget(self)
         self.workspace_tabs.addTab(self._build_terminal_tab(), "Terminal")
-        self.workspace_tabs.addTab(self._build_scenarios_tab(), "Scenarios")
         self.workspace_tabs.addTab(self._build_transfer_tab(), "SFTP")
         return self.workspace_tabs
 
@@ -2524,8 +2523,10 @@ class MainWindow(QMainWindow):
         terminal_layout.addWidget(self.terminal_widget, stretch=1)
 
         terminal_splitter.addWidget(terminal_panel)
-        commands_panel = self._build_commands_tab()
-        terminal_splitter.addWidget(commands_panel)
+        terminal_side_tabs = QTabWidget(tab)
+        terminal_side_tabs.addTab(self._build_commands_tab(), "Commands")
+        terminal_side_tabs.addTab(self._build_scenarios_tab(), "Scenarios")
+        terminal_splitter.addWidget(terminal_side_tabs)
         terminal_splitter.setStretchFactor(0, 3)
         terminal_splitter.setStretchFactor(1, 2)
 
@@ -2535,8 +2536,8 @@ class MainWindow(QMainWindow):
             0,
             lambda: terminal_splitter.setSizes(
                 [
-                    max(terminal_splitter.width() - commands_panel.minimumSizeHint().width(), 1),
-                    commands_panel.minimumSizeHint().width(),
+                    max(terminal_splitter.width() - terminal_side_tabs.minimumSizeHint().width(), 1),
+                    terminal_side_tabs.minimumSizeHint().width(),
                 ]
             ),
         )
