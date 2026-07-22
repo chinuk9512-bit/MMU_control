@@ -2601,14 +2601,18 @@ class MainWindow(QMainWindow):
 
         terminal_splitter.addWidget(terminal_panel)
         terminal_side_tabs = QTabWidget(tab)
+        terminal_side_tabs.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
+        )
         terminal_side_tabs.addTab(self._build_commands_tab(), "Commands")
         terminal_side_tabs.addTab(self._build_scenarios_tab(), "Scenarios")
         terminal_splitter.addWidget(terminal_side_tabs)
         terminal_splitter.setStretchFactor(0, 3)
         terminal_splitter.setStretchFactor(1, 2)
 
-        # Keep the Commands pane at its minimum useful width initially.  The
-        # splitter remains resizable after this initial layout is applied.
+        # Keep the Commands and Scenarios tabs at their minimum useful width
+        # initially. The splitter remains resizable after this initial layout
+        # is applied.
         QTimer.singleShot(
             0,
             lambda: terminal_splitter.setSizes(

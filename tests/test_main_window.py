@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QLineEdit,
     QMessageBox,
+    QSizePolicy,
     QTabWidget,
 )
 
@@ -260,6 +261,10 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(terminal_side_tabs.count(), 2)
         self.assertEqual(terminal_side_tabs.tabText(0), "Commands")
         self.assertEqual(terminal_side_tabs.tabText(1), "Scenarios")
+        self.assertEqual(
+            terminal_side_tabs.sizePolicy().horizontalPolicy(),
+            QSizePolicy.Policy.Minimum,
+        )
         self.assertIsNotNone(window.command_set_list)
         self.assertEqual(window.commands_group.title(), "Commands")
         self.assertEqual(window.new_command_button.text(), "New Command")
