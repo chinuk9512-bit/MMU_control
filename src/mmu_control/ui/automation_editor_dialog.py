@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -21,6 +24,20 @@ from PySide6.QtWidgets import (
 )
 
 from mmu_control.models.automation import AutomationScenario, AutomationStep, CompletionType
+
+
+class ScenarioStepListWidget(QListWidget):
+    """Step list with explicit keyboard navigation between scenario steps."""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        """Select the preceding or following step with the arrow keys."""
+        if event.key() in {Qt.Key.Key_Up, Qt.Key.Key_Down}:
+            offset = -1 if event.key() == Qt.Key.Key_Up else 1
+            target = max(0, min(self.count() - 1, self.currentRow() + offset))
+            self.setCurrentRow(target)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class AutomationEditorDialog(QDialog):
@@ -44,7 +61,7 @@ class AutomationEditorDialog(QDialog):
         self.transport_input.addItem("SSH shell", "ssh")
         self.transport_input.addItem("Minicom", "minicom")
         self.transport_input.setCurrentIndex(1 if scenario and scenario.transport == "minicom" else 0)
-        self.step_list = QListWidget(self)
+        self.step_list = ScenarioStepListWidget(self)
         self.step_list.currentRowChanged.connect(self._select_step)
         self.step_name_input = QLineEdit(self)
         self.command_input = QPlainTextEdit(self)
@@ -69,6 +86,9 @@ class AutomationEditorDialog(QDialog):
         self.start_timeout_input = QSpinBox(self)
         self.start_timeout_input.setRange(1, 86_400)
         self.start_timeout_input.setSuffix(" seconds")
+        self.skip_on_start_condition_failure_input = QCheckBox(
+            "Skip this step and continue when the start condition times out or fails", self
+        )
         self.condition_value_input = QLineEdit(self)
         self.file_path_input = QLineEdit(self)
         self.timeout_input = QSpinBox(self)
@@ -109,6 +129,7 @@ class AutomationEditorDialog(QDialog):
         step_form.addRow("Start text / regular expression", self.start_value_input)
         step_form.addRow("Start device file path", self.start_file_path_input)
         step_form.addRow("Start timeout", self.start_timeout_input)
+        step_form.addRow("Start condition failure", self.skip_on_start_condition_failure_input)
         step_form.addRow("Completion condition", self.condition_type_input)
         step_form.addRow("Completion text / regular expression", self.condition_value_input)
         step_form.addRow("Completion device file path", self.file_path_input)
@@ -127,7 +148,8 @@ class AutomationEditorDialog(QDialog):
         layout.addWidget(details)
         layout.addWidget(self.error_label)
         layout.addWidget(buttons)
-        self.resize(760, 720)
+        self.setMinimumHeight(1100)
+        self.resize(760, 1320)
 
     def scenario(self) -> AutomationScenario:
         """Return the current, validated dialog data as a scenario."""
@@ -194,6 +216,7 @@ class AutomationEditorDialog(QDialog):
         self.start_value_input.setText(step.start_value)
         self.start_file_path_input.setText(step.start_file_path)
         self.start_timeout_input.setValue(step.start_timeout_seconds)
+        self.skip_on_start_condition_failure_input.setChecked(step.skip_on_start_condition_failure)
         self.condition_type_input.setCurrentIndex(self.condition_type_input.findData(step.completion_type))
         self.condition_value_input.setText(step.completion_value)
         self.file_path_input.setText(step.file_path)
@@ -218,6 +241,7 @@ class AutomationEditorDialog(QDialog):
             start_value=start_value,
             start_file_path=start_file_path,
             start_timeout_seconds=self.start_timeout_input.value(),
+            skip_on_start_condition_failure=self.skip_on_start_condition_failure_input.isChecked(),
         )
 
     def _save_current_step(self) -> None:
@@ -278,6 +302,7 @@ class AutomationEditorDialog(QDialog):
             completion_value=step.completion_value, file_path=step.file_path, timeout_seconds=step.timeout_seconds,
             start_type=step.start_type, start_value=step.start_value, start_file_path=step.start_file_path,
             start_timeout_seconds=step.start_timeout_seconds,
+            skip_on_start_condition_failure=step.skip_on_start_condition_failure,
         ))
         self._current_index += 1
         self._refresh_step_list()

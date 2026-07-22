@@ -22,6 +22,22 @@ class AutomationStartConditionModelTest(unittest.TestCase):
         self.assertEqual(step.start_value, "")
         self.assertEqual(step.start_file_path, "")
         self.assertEqual(step.start_timeout_seconds, 60)
+        self.assertFalse(step.skip_on_start_condition_failure)
+
+    def test_round_trips_skip_on_start_condition_failure(self) -> None:
+        step = AutomationStep.from_dict({
+            "name": "optional",
+            "command": "run",
+            "skip_on_start_condition_failure": True,
+        })
+
+        self.assertTrue(step.skip_on_start_condition_failure)
+        self.assertTrue(step.to_dict()["skip_on_start_condition_failure"])
+
+    def test_false_string_does_not_enable_skipping(self) -> None:
+        step = AutomationStep.from_dict({"skip_on_start_condition_failure": "false"})
+
+        self.assertFalse(step.skip_on_start_condition_failure)
 
 
 class AutomationStartConditionEditorDialogTest(unittest.TestCase):
@@ -45,6 +61,17 @@ class AutomationStartConditionEditorDialogTest(unittest.TestCase):
         self.assertEqual(saved_step.start_value, "ready")
         self.assertEqual(saved_step.start_file_path, "/tmp/state")
         self.assertEqual(saved_step.start_timeout_seconds, 42)
+
+    def test_saved_step_includes_skip_on_start_condition_failure(self) -> None:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+        qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
+        from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+
+        dialog = AutomationEditorDialog(AutomationScenario(name="editor", steps=[AutomationStep(name="run", command="run")]))
+        dialog.skip_on_start_condition_failure_input.setChecked(True)
+
+        self.assertTrue(dialog.scenario().steps[0].skip_on_start_condition_failure)
 
 
 class AutomationStartConditionRunnerTest(unittest.TestCase):
@@ -201,3 +228,25 @@ class AutomationStartConditionRunnerTest(unittest.TestCase):
         self.assertEqual(self.runner.status.state, AutomationState.WAITING_START)
         self.runner.receive_output("ready")
         self.assertEqual(self.sent, ["command"])
+
+    def test_failed_optional_start_condition_skips_to_the_next_step(self) -> None:
+        scenario = AutomationScenario(
+            name="skip-unmet-start",
+            steps=[
+                AutomationStep(
+                    "optional",
+                    "must-not-send",
+                    start_type=CompletionType.OUTPUT_CONTAINS,
+                    start_value="ready",
+                    skip_on_start_condition_failure=True,
+                ),
+                AutomationStep("next", "next-command"),
+            ],
+        )
+
+        self.runner.start(scenario)
+        self.runner.fail_current_step("Timed out waiting for start condition")
+
+        self.assertEqual(self.sent, ["next-command"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+        self.assertEqual(self.runner.skipped_step_indices, frozenset({0}))
