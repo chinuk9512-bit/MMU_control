@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QKeyEvent, QShowEvent
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,9 +18,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPushButton,
     QPlainTextEdit,
-    QScrollArea,
     QSpinBox,
-    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -45,11 +43,10 @@ class ScenarioStepListWidget(QListWidget):
 class AutomationEditorDialog(QDialog):
     """Edit any number of commands and their individual completion conditions."""
 
-    # The details pane scrolls, so the editor remains usable on smaller displays.
-    MINIMUM_HEIGHT = 600
-    DEFAULT_HEIGHT = 900
+    # Keep the editor comfortably usable while avoiding an oversized step list.
+    MINIMUM_HEIGHT = 1185
+    DEFAULT_HEIGHT = 1449
     STEP_LIST_MINIMUM_HEIGHT = 45
-    DEFAULT_VISIBLE_STEP_COUNT = 8
     COMMAND_MINIMUM_HEIGHT = 144
 
     def __init__(
@@ -112,7 +109,6 @@ class AutomationEditorDialog(QDialog):
         self._build_layout()
         self._refresh_step_list()
         self.step_list.setCurrentRow(0)
-        self._step_splitter_initialized = False
 
     def _build_layout(self) -> None:
         form = QFormLayout()
@@ -149,18 +145,6 @@ class AutomationEditorDialog(QDialog):
         step_form.addRow(self.save_step_button)
         details = QWidget(self)
         details.setLayout(step_form)
-        details_scroll_area = QScrollArea(self)
-        details_scroll_area.setWidgetResizable(True)
-        details_scroll_area.setWidget(details)
-
-        # Both panes remain independently scrollable.  The splitter lets users
-        # give the list less or more space without hiding the step details.
-        self.step_editor_splitter = QSplitter(Qt.Orientation.Vertical, self)
-        self.step_editor_splitter.setChildrenCollapsible(False)
-        self.step_editor_splitter.addWidget(self.step_list)
-        self.step_editor_splitter.addWidget(details_scroll_area)
-        self.step_editor_splitter.setStretchFactor(0, 0)
-        self.step_editor_splitter.setStretchFactor(1, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         buttons.accepted.connect(self.accept)
@@ -168,29 +152,12 @@ class AutomationEditorDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addLayout(actions)
-        layout.addWidget(self.step_editor_splitter, 1)
+        layout.addWidget(self.step_list)
+        layout.addWidget(details)
         layout.addWidget(self.error_label)
         layout.addWidget(buttons)
         self.setMinimumHeight(self.MINIMUM_HEIGHT)
         self.resize(760, self.DEFAULT_HEIGHT)
-
-    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
-        """Give the step list room for eight rows when the dialog first opens."""
-        super().showEvent(event)
-        if not self._step_splitter_initialized:
-            QTimer.singleShot(0, self._set_initial_step_list_height)
-
-    def _set_initial_step_list_height(self) -> None:
-        """Set the initial splitter position after Qt has laid out the dialog."""
-        if self._step_splitter_initialized or self.step_editor_splitter.height() <= 0:
-            return
-        row_height = self.step_list.sizeHintForRow(0)
-        if row_height <= 0:
-            row_height = self.step_list.fontMetrics().height()
-        list_height = (row_height * self.DEFAULT_VISIBLE_STEP_COUNT) + (self.step_list.frameWidth() * 2)
-        remaining_height = max(1, self.step_editor_splitter.height() - list_height)
-        self.step_editor_splitter.setSizes([list_height, remaining_height])
-        self._step_splitter_initialized = True
 
     def scenario(self) -> AutomationScenario:
         """Return the current, validated dialog data as a scenario."""
