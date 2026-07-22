@@ -56,7 +56,7 @@ from PySide6.QtWidgets import (
 )
 
 from mmu_control.core.config_manager import ConfigError, ConfigManager
-from mmu_control.core.automation_runner import AutomationRunner
+from mmu_control.core.automation_runner import AutomationRunner, AutomationStatus
 from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.core.minicom_manager import MinicomError, MinicomManager
 from mmu_control.core.power_supply_manager import PowerSupplyCommandError, PowerSupplyManager
@@ -96,6 +96,14 @@ class SftpListEntry:
     def from_tuple(cls, entry: tuple[bool, str, str]) -> "SftpListEntry":
         is_dir, name, path = entry
         return cls(is_dir=is_dir, name=name, path=path)
+
+
+@dataclass(frozen=True)
+class AutomationProgressSnapshot:
+    """The most recently observed execution state for one scenario."""
+
+    status: AutomationStatus
+    skipped_step_indices: frozenset[int]
 
 
 class FileDropLineEdit(QLineEdit):
@@ -384,6 +392,7 @@ class MainWindow(QMainWindow):
         self._command_folders: dict[str, CommandFolder] = {}
         self._automation_scenarios: dict[str, AutomationScenario] = {}
         self._automation_runner: AutomationRunner | None = None
+        self._automation_progress: dict[str, AutomationProgressSnapshot] = {}
         self._automation_file_check_due = 0.0
         self._shell: InteractiveShell | None = None
         self._sftp_shell: InteractiveShell | None = None
@@ -1741,6 +1750,7 @@ class MainWindow(QMainWindow):
         return self._automation_scenarios.get(name) if isinstance(name, str) else None
 
     def _show_selected_automation_scenario(self, *_items: QListWidgetItem | None) -> None:
+        self._remember_automation_progress()
         scenario = self._selected_automation_scenario()
         if scenario is None:
             self.automation_output.clear()
@@ -1750,13 +1760,16 @@ class MainWindow(QMainWindow):
         self._set_automation_actions_enabled(True)
 
     def _render_automation_progress(self, scenario: AutomationScenario) -> None:
-        """Render scenario steps and the active run's per-step progress in the lower pane."""
+        """Render scenario steps and its most recently observed progress."""
         runner = self._automation_runner
         active_scenario = runner.scenario if runner is not None else None
         is_running_scenario = active_scenario is not None and active_scenario.name == scenario.name
-        status = runner.status if is_running_scenario else None
+        snapshot = self._automation_progress.get(scenario.name)
+        if is_running_scenario and runner is not None:
+            snapshot = AutomationProgressSnapshot(runner.status, runner.skipped_step_indices)
+        status = snapshot.status if snapshot is not None else None
         current_index = status.step_index if status is not None else -1
-        skipped_indices = runner.skipped_step_indices if is_running_scenario else frozenset()
+        skipped_indices = snapshot.skipped_step_indices if snapshot is not None else frozenset()
         step_lines: list[str] = []
         for index, step in enumerate(scenario.steps):
             marker = "○"
@@ -1774,10 +1787,19 @@ class MainWindow(QMainWindow):
                 f"{index + 1}. [{marker}] {step.name or step.command} — "
                 f"{step.completion_type.value}: {step.completion_value}"
             )
-        progress = runner.status.message if is_running_scenario else "Not running."
+        progress = status.message if status is not None else "Not running."
         self.automation_output.setPlainText(
             f"Name: {scenario.name}\nTransport: {scenario.transport}\nDescription: {scenario.description}\n\n"
             f"Execution progress: {progress}\n\n" + "\n".join(step_lines)
+        )
+
+    def _remember_automation_progress(self) -> None:
+        """Keep progress visible after the user selects another scenario."""
+        runner = self._automation_runner
+        if runner is None or runner.scenario is None:
+            return
+        self._automation_progress[runner.scenario.name] = AutomationProgressSnapshot(
+            runner.status, runner.skipped_step_indices
         )
 
     def _set_automation_actions_enabled(self, selected: bool) -> None:
@@ -1848,6 +1870,7 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "Delete Automation", f"Delete automation '{scenario.name}'?") != QMessageBox.StandardButton.Yes:
             return
         self._automation_scenarios = dict(self._automation_store.delete(scenario.name).scenarios)
+        self._automation_progress.pop(scenario.name, None)
         self._refresh_automation_list()
 
     def _save_automation_scenario(self, scenario: AutomationScenario) -> bool:
@@ -1901,6 +1924,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.automation_status_label.setText(f"Automation failed to start: {exc}")
             return
+        self._remember_automation_progress()
         self._automation_file_check_due = 0.0
         self._automation_timer.start()
         self._update_automation_status()
@@ -1936,6 +1960,7 @@ class MainWindow(QMainWindow):
             self.automation_status_label.setText("Automation: idle")
             self._set_automation_actions_enabled(self._selected_automation_scenario() is not None)
             return
+        self._remember_automation_progress()
         status = runner.status
         state = status.state.value.replace("_", " ")
         self.automation_status_label.setText(f"Automation: {state} — {status.message}")

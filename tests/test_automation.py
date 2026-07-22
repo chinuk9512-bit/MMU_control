@@ -141,8 +141,8 @@ class AutomationEditorDialogTest(unittest.TestCase):
         self.assertEqual(dialog.file_path_input.text(), "")
         self.assertEqual(dialog.timeout_input.value(), 60)
 
-    def test_editor_height_and_expanding_fields_are_twenty_percent_larger(self) -> None:
-        """The taller scenario editor reserves added space for steps and commands."""
+    def test_editor_height_reduces_with_the_shorter_step_list(self) -> None:
+        """The shorter step list reduces the scenario editor height by the same amount."""
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
         qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
@@ -150,9 +150,9 @@ class AutomationEditorDialogTest(unittest.TestCase):
 
         dialog = AutomationEditorDialog()
 
-        self.assertEqual(dialog.minimumHeight(), 1320)
-        self.assertEqual(dialog.height(), 1584)
-        self.assertEqual(dialog.step_list.minimumHeight(), 180)
+        self.assertEqual(dialog.minimumHeight(), 1230)
+        self.assertEqual(dialog.height(), 1494)
+        self.assertEqual(dialog.step_list.minimumHeight(), 90)
         self.assertEqual(dialog.command_input.minimumHeight(), 144)
 
 
@@ -162,6 +162,18 @@ class AutomationRunnerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.sent: list[str] = []
         self.runner = AutomationRunner(self.sent.append)
+
+    def test_console_condition_output_buffer_is_limited_to_200_characters(self) -> None:
+        """Console contains and regex conditions only retain the newest 200 characters."""
+        scenario = AutomationScenario(
+            name="bounded output",
+            steps=[AutomationStep("wait", "command", CompletionType.OUTPUT_CONTAINS, "ready")],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("x" * 250)
+
+        self.assertEqual(len(self.runner._output), 200)
 
     def test_waits_for_each_condition_before_sending_next_step(self) -> None:
         scenario = AutomationScenario(

@@ -43,11 +43,10 @@ class ScenarioStepListWidget(QListWidget):
 class AutomationEditorDialog(QDialog):
     """Edit any number of commands and their individual completion conditions."""
 
-    # Keep the editor comfortably usable for scenarios with several steps.
-    # These values are 20% larger than the previous 1100/1320-pixel dialog.
-    MINIMUM_HEIGHT = 1320
-    DEFAULT_HEIGHT = 1584
-    STEP_LIST_MINIMUM_HEIGHT = 180
+    # Keep the editor comfortably usable while avoiding an oversized step list.
+    MINIMUM_HEIGHT = 1230
+    DEFAULT_HEIGHT = 1494
+    STEP_LIST_MINIMUM_HEIGHT = 90
     COMMAND_MINIMUM_HEIGHT = 144
 
     def __init__(
