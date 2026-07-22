@@ -128,7 +128,7 @@ class AutomationRunner:
             CompletionType.REMOTE_FILE_CONTAINS,
             CompletionType.REMOTE_FILE_REGEX,
         } and self._output_matches():
-            self._condition_satisfied()
+            self._condition_satisfied(output)
 
     def receive_file_result(self, matched: bool, error: Exception | None = None) -> None:
         """Accept an asynchronous remote-file condition result."""
@@ -243,11 +243,11 @@ class AutomationRunner:
         if step.completion_type == CompletionType.NONE:
             self._advance()
 
-    def _condition_satisfied(self) -> None:
+    def _condition_satisfied(self, output: str = "") -> None:
         if self._state == AutomationState.WAITING_START:
             self._send_current_command()
         else:
-            self._advance()
+            self._advance(output)
 
     def _condition_type(self, step: AutomationStep) -> CompletionType:
         return step.start_type if self._state == AutomationState.WAITING_START else step.completion_type
@@ -264,7 +264,15 @@ class AutomationRunner:
     def _condition_name(self) -> str:
         return "start condition" if self._state == AutomationState.WAITING_START else "completion condition"
 
-    def _advance(self) -> None:
+    def _advance(self, completion_output: str = "") -> None:
+        """Move to the next step, retaining only its completing output chunk.
+
+        The bounded output buffer is deliberately reset at every step boundary
+        to prevent stale console text from satisfying later conditions.  A
+        completion and the next start condition can, however, legitimately be
+        reported in one terminal chunk.  Evaluate that chunk for the immediate
+        next output-contains start condition after the reset.
+        """
         assert self._scenario is not None
         if self._step_index + 1 >= len(self._scenario.steps):
             self._state = AutomationState.SUCCEEDED
@@ -273,6 +281,13 @@ class AutomationRunner:
         self._step_index += 1
         self._retried = False
         self._start_current_step()
+        if (
+            completion_output
+            and self._state == AutomationState.WAITING_START
+            and self.current_step is not None
+            and self.current_step.start_type == CompletionType.OUTPUT_CONTAINS
+        ):
+            self.receive_output(completion_output)
 
     def _output_matches(self) -> bool:
         step = self.current_step

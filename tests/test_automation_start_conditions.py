@@ -142,6 +142,32 @@ class AutomationStartConditionRunnerTest(unittest.TestCase):
         self.runner.receive_output("ready")
         self.assertEqual(self.sent, ["one", "two"])
 
+    def test_completion_output_starts_next_step_when_it_contains_start_text(self) -> None:
+        """The completion chunk may also satisfy the immediate next start condition."""
+        scenario = AutomationScenario(
+            name="completion-start-output",
+            steps=[
+                AutomationStep(
+                    "first",
+                    "one",
+                    completion_type=CompletionType.OUTPUT_CONTAINS,
+                    completion_value="complete",
+                ),
+                AutomationStep(
+                    "second",
+                    "two",
+                    start_type=CompletionType.OUTPUT_CONTAINS,
+                    start_value="61",
+                ),
+            ],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("complete: result 61")
+
+        self.assertEqual(self.sent, ["one", "two"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
     def test_sends_command_when_prompt_start_condition_matches_newline_terminated_last_line(self) -> None:
         scenario = AutomationScenario(
             name="start-prompt",
