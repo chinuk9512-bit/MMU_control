@@ -104,6 +104,7 @@ class AutomationProgressSnapshot:
 
     status: AutomationStatus
     skipped_step_indices: frozenset[int]
+    start_step_index: int
 
 
 class FileDropLineEdit(QLineEdit):
@@ -1754,10 +1755,24 @@ class MainWindow(QMainWindow):
         scenario = self._selected_automation_scenario()
         if scenario is None:
             self.automation_output.clear()
+            self.automation_start_step_input.clear()
             self._set_automation_actions_enabled(False)
             return
+        self._populate_automation_start_step_input(scenario)
         self._render_automation_progress(scenario)
         self._set_automation_actions_enabled(True)
+
+    def _populate_automation_start_step_input(self, scenario: AutomationScenario) -> None:
+        """Offer every step as a possible entry point for the selected scenario."""
+        self.automation_start_step_input.blockSignals(True)
+        try:
+            self.automation_start_step_input.clear()
+            for index, step in enumerate(scenario.steps):
+                self.automation_start_step_input.addItem(
+                    f"Step {index + 1}: {step.name or step.command or 'Unnamed step'}", index
+                )
+        finally:
+            self.automation_start_step_input.blockSignals(False)
 
     def _render_automation_progress(self, scenario: AutomationScenario) -> None:
         """Render scenario steps and its most recently observed progress."""
@@ -1766,14 +1781,23 @@ class MainWindow(QMainWindow):
         is_running_scenario = active_scenario is not None and active_scenario.name == scenario.name
         snapshot = self._automation_progress.get(scenario.name)
         if is_running_scenario and runner is not None:
-            snapshot = AutomationProgressSnapshot(runner.status, runner.skipped_step_indices)
+            snapshot = AutomationProgressSnapshot(
+                runner.status, runner.skipped_step_indices, runner.start_step_index
+            )
         status = snapshot.status if snapshot is not None else None
         current_index = status.step_index if status is not None else -1
         skipped_indices = snapshot.skipped_step_indices if snapshot is not None else frozenset()
+        start_step_index = (
+            runner.start_step_index
+            if is_running_scenario and runner is not None
+            else snapshot.start_step_index if snapshot is not None else 0
+        )
         step_lines: list[str] = []
         for index, step in enumerate(scenario.steps):
             marker = "○"
-            if index in skipped_indices:
+            if index < start_step_index:
+                marker = "↷ not run"
+            elif index in skipped_indices:
                 marker = "↷ skipped"
             elif status is not None and status.state.value == "succeeded" and index <= current_index:
                 marker = "✓ completed"
@@ -1799,7 +1823,7 @@ class MainWindow(QMainWindow):
         if runner is None or runner.scenario is None:
             return
         self._automation_progress[runner.scenario.name] = AutomationProgressSnapshot(
-            runner.status, runner.skipped_step_indices
+            runner.status, runner.skipped_step_indices, runner.start_step_index
         )
 
     def _set_automation_actions_enabled(self, selected: bool) -> None:
@@ -1808,6 +1832,7 @@ class MainWindow(QMainWindow):
         self.edit_automation_button.setEnabled(selected and not active)
         self.delete_automation_button.setEnabled(selected and not active)
         self.run_automation_button.setEnabled(selected and not active)
+        self.automation_start_step_input.setEnabled(selected and bool(self.automation_start_step_input.count()) and not active)
         self.stop_automation_button.setEnabled(active)
 
     def _create_automation_scenario(self) -> None:
@@ -1919,7 +1944,11 @@ class MainWindow(QMainWindow):
             return
         self._automation_runner = AutomationRunner(self._shell.send_line)
         try:
-            self._automation_runner.start(scenario)
+            start_step_index = self.automation_start_step_input.currentData()
+            if not isinstance(start_step_index, int):
+                self.automation_status_label.setText("Automation: selected scenario has no steps")
+                return
+            self._automation_runner.start(scenario, start_step_index)
             self._automation_runner.receive_initial_output(self._recent_automation_output)
         except Exception as exc:
             self.automation_status_label.setText(f"Automation failed to start: {exc}")
@@ -2701,6 +2730,8 @@ class MainWindow(QMainWindow):
         self.edit_automation_button = QPushButton("Edit", automation_group)
         self.delete_automation_button = QPushButton("Delete", automation_group)
         self.run_automation_button = QPushButton("Run Scenario", automation_group)
+        self.automation_start_step_input = QComboBox(automation_group)
+        self.automation_start_step_input.setToolTip("Choose the step at which to start the scenario.")
         self.stop_automation_button = QPushButton("Stop", automation_group)
         self.edit_automation_button.setEnabled(False)
         self.copy_automation_button.setEnabled(False)
@@ -2714,6 +2745,7 @@ class MainWindow(QMainWindow):
             self.edit_automation_button,
             self.delete_automation_button,
             self.run_automation_button,
+            self.automation_start_step_input,
             self.stop_automation_button,
         ):
             automation_actions.addWidget(button)

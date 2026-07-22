@@ -45,6 +45,7 @@ class AutomationRunner:
         self._send_line = send_line
         self._scenario: AutomationScenario | None = None
         self._step_index = -1
+        self._start_step_index = 0
         self._state = AutomationState.IDLE
         self._deadline = 0.0
         self._retry_at = 0.0
@@ -76,18 +77,26 @@ class AutomationRunner:
         return self._scenario
 
     @property
+    def start_step_index(self) -> int:
+        """Return the zero-based step at which the current run began."""
+        return self._start_step_index
+
+    @property
     def skipped_step_indices(self) -> frozenset[int]:
         """Return zero-based indices of steps skipped after a start-condition failure."""
         return frozenset(self._skipped_step_indices)
 
-    def start(self, scenario: AutomationScenario) -> None:
-        """Start a scenario by evaluating its first start condition."""
+    def start(self, scenario: AutomationScenario, start_step_index: int = 0) -> None:
+        """Start a scenario at a chosen step by evaluating its start condition."""
         if self.is_active:
             raise RuntimeError("An automation scenario is already running.")
         if not scenario.steps:
             raise ValueError("Automation scenario must have at least one step.")
+        if not 0 <= start_step_index < len(scenario.steps):
+            raise ValueError("Automation start step must be within the scenario.")
         self._scenario = scenario
-        self._step_index = 0
+        self._start_step_index = start_step_index
+        self._step_index = start_step_index
         self._retried = False
         self._skipped_step_indices.clear()
         self._start_current_step()
@@ -99,7 +108,7 @@ class AutomationRunner:
         evaluate their start conditions using output received after the prior
         step completed.
         """
-        if self._step_index != 0 or self._state != AutomationState.WAITING_START:
+        if self._step_index != self._start_step_index or self._state != AutomationState.WAITING_START:
             return
         self.receive_output(output)
 

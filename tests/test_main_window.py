@@ -268,6 +268,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.copy_automation_button.text(), "Copy")
         self.assertFalse(window.copy_automation_button.isEnabled())
         self.assertEqual(window.run_automation_button.text(), "Run Scenario")
+        self.assertEqual(window.automation_start_step_input.count(), 0)
         self.assertIsNotNone(window.automation_list)
         command_actions = window.new_folder_button.parentWidget().layout()
         self.assertIs(command_actions.itemAt(0).widget(), window.new_folder_button)
@@ -675,6 +676,27 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertIn("Execution progress: Running step 1: run first", window.automation_output.toPlainText())
         self.assertIn("[▶ running] run first", window.automation_output.toPlainText())
+
+    def test_run_automation_can_start_at_the_selected_step(self) -> None:
+        manager = FakeSSHManager()
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        scenario = AutomationScenario(
+            name="resume",
+            steps=[
+                AutomationStep("first", "first-command"),
+                AutomationStep("middle", "middle-command", CompletionType.OUTPUT_CONTAINS, "done"),
+            ],
+        )
+        store.upsert(scenario)
+        window = self.create_window(ssh_manager=manager, automation_store=store)
+        window._activate_shell(manager.shell)
+
+        self.assertEqual(window.automation_start_step_input.count(), 2)
+        window.automation_start_step_input.setCurrentIndex(1)
+        window._run_automation_scenario()
+
+        self.assertEqual(manager.shell.sent, ["middle-command"])
+        self.assertIn("[↷ not run] first", window.automation_output.toPlainText())
 
     def test_create_automation_scenario_keeps_list_when_store_save_fails(self) -> None:
         """A failed new scenario save reports its path without changing the selected scenario."""
