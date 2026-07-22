@@ -265,6 +265,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.new_command_button.text(), "New Command")
         self.assertEqual(window.new_folder_button.text(), "New Folder")
         self.assertEqual(window.new_automation_button.text(), "New Scenario")
+        self.assertEqual(window.copy_automation_button.text(), "Copy")
+        self.assertFalse(window.copy_automation_button.isEnabled())
         self.assertEqual(window.run_automation_button.text(), "Run Scenario")
         self.assertIsNotNone(window.automation_list)
         command_actions = window.new_folder_button.parentWidget().layout()
@@ -588,6 +590,44 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(store.load().scenarios, {"boot": scenario})
         self.assertEqual(window.automation_list.count(), 1)
         self.assertEqual(window.automation_list.currentItem().text(), "boot")
+
+    def test_copy_automation_scenario_opens_a_separate_named_copy(self) -> None:
+        """Copy preserves the selected scenario data while saving a distinct scenario."""
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        original = AutomationScenario(
+            name="boot",
+            description="Boot the board",
+            transport="minicom",
+            steps=[AutomationStep("wait", "start", CompletionType.DELAY, timeout_seconds=1)],
+        )
+        store.upsert(original)
+        window = self.create_window(automation_store=store)
+        dialog_scenarios: list[AutomationScenario] = []
+
+        class AcceptedAutomationDialog:
+            def __init__(self, scenario: AutomationScenario, parent: MainWindow) -> None:
+                self.parent = parent
+                dialog_scenarios.append(scenario)
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def scenario(self) -> AutomationScenario:
+                return dialog_scenarios[-1]
+
+        with patch("mmu_control.ui.main_window.AutomationEditorDialog", AcceptedAutomationDialog):
+            window.copy_automation_button.click()
+
+        copied = AutomationScenario(
+            name="boot (Copy)",
+            description=original.description,
+            transport=original.transport,
+            steps=[AutomationStep.from_dict(step.to_dict()) for step in original.steps],
+        )
+        self.assertEqual(dialog_scenarios, [copied])
+        self.assertIsNot(dialog_scenarios[0].steps[0], original.steps[0])
+        self.assertEqual(store.load().scenarios, {"boot": original, "boot (Copy)": copied})
+        self.assertEqual(window.automation_list.currentItem().text(), "boot (Copy)")
 
     def test_run_automation_uses_filtered_current_console_snapshot_for_start_condition(self) -> None:
         """Run Scenario evaluates its first start condition against visible remote output."""

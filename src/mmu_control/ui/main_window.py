@@ -450,6 +450,7 @@ class MainWindow(QMainWindow):
         self.run_command_set_button.clicked.connect(self._run_command_set)
         self.new_automation_button.clicked.connect(self._create_automation_scenario)
         self.import_automation_button.clicked.connect(self._import_automation_scenario)
+        self.copy_automation_button.clicked.connect(self._copy_automation_scenario)
         self.edit_automation_button.clicked.connect(self._edit_automation_scenario)
         self.delete_automation_button.clicked.connect(self._delete_automation_scenario)
         self.run_automation_button.clicked.connect(self._run_automation_scenario)
@@ -1781,6 +1782,7 @@ class MainWindow(QMainWindow):
 
     def _set_automation_actions_enabled(self, selected: bool) -> None:
         active = self._automation_runner is not None and self._automation_runner.is_active
+        self.copy_automation_button.setEnabled(selected and not active)
         self.edit_automation_button.setEnabled(selected and not active)
         self.delete_automation_button.setEnabled(selected and not active)
         self.run_automation_button.setEnabled(selected and not active)
@@ -1802,6 +1804,27 @@ class MainWindow(QMainWindow):
         editor = AutomationEditorDialog(scenario, self)
         if editor.exec() == QDialog.DialogCode.Accepted:
             self._save_automation_scenario(editor.scenario())
+
+    def _copy_automation_scenario(self) -> None:
+        """Open a copy of the selected scenario with a unique default name."""
+        scenario = self._selected_automation_scenario()
+        if scenario is None:
+            return
+        copied = AutomationScenario.from_dict(scenario.to_dict())
+        copied.name = self._next_automation_copy_name(scenario.name)
+        dialog = AutomationEditorDialog(copied, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._save_automation_scenario(dialog.scenario())
+
+    def _next_automation_copy_name(self, name: str) -> str:
+        """Return a scenario name that will not replace an existing scenario."""
+        base_name = f"{name} (Copy)"
+        candidate = base_name
+        copy_number = 2
+        while candidate in self._automation_scenarios:
+            candidate = f"{base_name} {copy_number}"
+            copy_number += 1
+        return candidate
 
     def _edit_automation_scenario(self) -> None:
         scenario = self._selected_automation_scenario()
@@ -2649,17 +2672,20 @@ class MainWindow(QMainWindow):
         automation_actions = QHBoxLayout()
         self.new_automation_button = QPushButton("New Scenario", automation_group)
         self.import_automation_button = QPushButton("텍스트에서 가져오기", automation_group)
+        self.copy_automation_button = QPushButton("Copy", automation_group)
         self.edit_automation_button = QPushButton("Edit", automation_group)
         self.delete_automation_button = QPushButton("Delete", automation_group)
         self.run_automation_button = QPushButton("Run Scenario", automation_group)
         self.stop_automation_button = QPushButton("Stop", automation_group)
         self.edit_automation_button.setEnabled(False)
+        self.copy_automation_button.setEnabled(False)
         self.delete_automation_button.setEnabled(False)
         self.run_automation_button.setEnabled(False)
         self.stop_automation_button.setEnabled(False)
         for button in (
             self.new_automation_button,
             self.import_automation_button,
+            self.copy_automation_button,
             self.edit_automation_button,
             self.delete_automation_button,
             self.run_automation_button,

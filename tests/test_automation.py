@@ -141,6 +141,20 @@ class AutomationEditorDialogTest(unittest.TestCase):
         self.assertEqual(dialog.file_path_input.text(), "")
         self.assertEqual(dialog.timeout_input.value(), 60)
 
+    def test_editor_height_and_expanding_fields_are_twenty_percent_larger(self) -> None:
+        """The taller scenario editor reserves added space for steps and commands."""
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+        qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
+        from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+
+        dialog = AutomationEditorDialog()
+
+        self.assertEqual(dialog.minimumHeight(), 1320)
+        self.assertEqual(dialog.height(), 1584)
+        self.assertEqual(dialog.step_list.minimumHeight(), 180)
+        self.assertEqual(dialog.command_input.minimumHeight(), 144)
+
 
 class AutomationRunnerTest(unittest.TestCase):
     """Only one current step is sent and retried when it fails."""
