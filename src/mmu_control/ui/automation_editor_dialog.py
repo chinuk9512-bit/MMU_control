@@ -43,6 +43,13 @@ class ScenarioStepListWidget(QListWidget):
 class AutomationEditorDialog(QDialog):
     """Edit any number of commands and their individual completion conditions."""
 
+    # Keep the editor comfortably usable for scenarios with several steps.
+    # These values are 20% larger than the previous 1100/1320-pixel dialog.
+    MINIMUM_HEIGHT = 1320
+    DEFAULT_HEIGHT = 1584
+    STEP_LIST_MINIMUM_HEIGHT = 180
+    COMMAND_MINIMUM_HEIGHT = 144
+
     def __init__(
         self,
         scenario: AutomationScenario | None = None,
@@ -62,9 +69,11 @@ class AutomationEditorDialog(QDialog):
         self.transport_input.addItem("Minicom", "minicom")
         self.transport_input.setCurrentIndex(1 if scenario and scenario.transport == "minicom" else 0)
         self.step_list = ScenarioStepListWidget(self)
+        self.step_list.setMinimumHeight(self.STEP_LIST_MINIMUM_HEIGHT)
         self.step_list.currentRowChanged.connect(self._select_step)
         self.step_name_input = QLineEdit(self)
         self.command_input = QPlainTextEdit(self)
+        self.command_input.setMinimumHeight(self.COMMAND_MINIMUM_HEIGHT)
         self.command_input.setPlaceholderText("Command to send to the selected SSH shell or minicom session")
         self.start_type_input = QComboBox(self)
         self.condition_type_input = QComboBox(self)
@@ -148,8 +157,8 @@ class AutomationEditorDialog(QDialog):
         layout.addWidget(details)
         layout.addWidget(self.error_label)
         layout.addWidget(buttons)
-        self.setMinimumHeight(1100)
-        self.resize(760, 1320)
+        self.setMinimumHeight(self.MINIMUM_HEIGHT)
+        self.resize(760, self.DEFAULT_HEIGHT)
 
     def scenario(self) -> AutomationScenario:
         """Return the current, validated dialog data as a scenario."""
