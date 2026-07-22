@@ -2748,12 +2748,14 @@ class MainWindow(QMainWindow):
             self.copy_automation_button,
             self.edit_automation_button,
             self.delete_automation_button,
-            self.run_automation_button,
-            self.automation_start_step_input,
-            self.stop_automation_button,
         ):
             automation_actions.addWidget(button)
         automation_actions.addStretch(1)
+        automation_run_controls = QHBoxLayout()
+        automation_run_controls.addWidget(self.automation_start_step_input)
+        automation_run_controls.addWidget(self.run_automation_button)
+        automation_run_controls.addWidget(self.stop_automation_button)
+        automation_run_controls.addStretch(1)
         self.automation_list = QListWidget(automation_group)
         self.automation_output = QPlainTextEdit(automation_group)
         self.automation_output.setReadOnly(True)
@@ -2765,6 +2767,7 @@ class MainWindow(QMainWindow):
         automation_splitter.setStretchFactor(0, 1)
         automation_splitter.setStretchFactor(1, 1)
         automation_layout.addLayout(automation_actions)
+        automation_layout.addLayout(automation_run_controls)
         automation_layout.addWidget(automation_splitter)
         automation_layout.addWidget(self.automation_status_label)
         layout.addWidget(automation_group, stretch=1)
