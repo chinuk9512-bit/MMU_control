@@ -9,6 +9,7 @@ import re
 import shlex
 import subprocess
 import time
+import ipaddress
 from dataclasses import dataclass
 
 from PySide6.QtCore import QByteArray, QMimeData, QPoint, QProcess, QRegularExpression, QTimer, Qt, Signal
@@ -1432,10 +1433,32 @@ class MainWindow(QMainWindow):
         if not 1 <= settings.ssh_port <= 65535:
             raise ValueError("MMU SSH port must be between 1 and 65535.")
         destination = settings.ip_address.strip()
+        try:
+            address = ipaddress.ip_address(destination)
+        except ValueError as exc:
+            raise ValueError("MMU IP address is invalid.") from exc
+
         interface = settings.interface.strip()
-        if interface and "%" not in destination:
+        if (
+            address.version == 6
+            and address.is_link_local
+            and interface
+            and "%" not in destination
+        ):
             destination = f"{destination}%{interface}"
-        command = ["ssh", f"{settings.username.strip()}@{destination}", "-p", str(settings.ssh_port)]
+        if settings.ip_version == "IPv4":
+            ip_flag = "-4"
+        elif settings.ip_version == "IPv6":
+            ip_flag = "-6"
+        else:
+            raise ValueError("MMU IP version must be IPv4 or IPv6.")
+        command = [
+            "ssh",
+            ip_flag,
+            f"{settings.username.strip()}@{destination}",
+            "-p",
+            str(settings.ssh_port),
+        ]
         return " ".join(shlex.quote(part) for part in command)
 
     def _handle_mmu_ssh_auth(self, output: str) -> None:
