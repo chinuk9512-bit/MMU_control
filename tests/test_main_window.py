@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QSizePolicy,
     QTabWidget,
 )
@@ -247,13 +248,16 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.ssh_port_input.value(), 22)
         self.assertFalse(window.disconnect_button.isEnabled())
         self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
-        self.assertEqual(window.sftp_terminal.toPlainText(), f"{window._local_cwd}> ")
         self.assertEqual(window.ssh_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_console_tabs.count(), 2)
         self.assertEqual(window.board_console_tabs.tabText(0), "Serial Console")
         self.assertEqual(window.workspace_tabs.count(), 2)
         self.assertEqual(window.workspace_tabs.tabText(0), "Terminal")
         self.assertEqual(window.workspace_tabs.tabText(1), "SFTP")
+        sftp_tab = window.workspace_tabs.widget(1)
+        sftp_button_labels = {button.text() for button in sftp_tab.findChildren(QPushButton)}
+        self.assertNotIn("Upload to MMU", sftp_button_labels)
+        self.assertNotIn("Download to Server", sftp_button_labels)
         terminal_tab = window.workspace_tabs.widget(0)
         terminal_side_tabs = terminal_tab.findChild(QTabWidget)
         self.assertIsNotNone(terminal_side_tabs)
@@ -921,8 +925,8 @@ class MainWindowTest(unittest.TestCase):
             QAbstractItemView.SelectionMode.ExtendedSelection,
         )
 
-    def test_upload_button_transfers_multiple_selected_server_files(self) -> None:
-        """Upload handles every selected Linux server file."""
+    def test_drag_and_drop_uploads_multiple_server_files(self) -> None:
+        """The drag-and-drop upload action handles every selected server file."""
         manager = FakeSSHManager()
         window = self.create_window(ssh_manager=manager)
         window.ssh_host_input.setText("server")
@@ -940,10 +944,9 @@ class MainWindowTest(unittest.TestCase):
                 (False, "two.bin", "/home/user/two.bin"),
             ],
         )
-        window.server_file_list.item(1).setSelected(True)
-        window.server_file_list.item(2).setSelected(True)
-
-        window.upload_sftp_button.click()
+        window._handle_sftp_list_drop(
+            "server", ["/home/user/one.bin", "/home/user/two.bin"], "/tmp"
+        )
 
         self.assertIn("put /home/user/one.bin /tmp/one.bin", manager.sftp_shell.sent)
         self.assertIn("put /home/user/two.bin /tmp/two.bin", manager.sftp_shell.sent)
@@ -1146,13 +1149,12 @@ class MainWindowTest(unittest.TestCase):
         )
         self.assertIn(
             "Opening SFTP session: sftp root@[fe80::1%eth0]",
-            window.sftp_output.toPlainText(),
+            window.terminal_widget.toPlainText(),
         )
         self.assertIn(
-            "SFTP session opened. You can type SFTP commands below.",
-            window.sftp_output.toPlainText(),
+            "SFTP session opened.",
+            window.terminal_widget.toPlainText(),
         )
-        self.assertTrue(window.sftp_output.toPlainText().endswith("sftp> "))
         self.assertEqual(window.board_status_label.text(), "MMU: SFTP connected")
         self.assertEqual(
             manager.executed_commands,
@@ -1186,9 +1188,9 @@ class MainWindowTest(unittest.TestCase):
 
         window.server_path_input.setText("/tmp/update file.bin")
         window.board_path_input.setText("/opt/update.bin")
-        window.sftp_terminal.commandSubmitted.emit("ls")
-        window.upload_sftp_button.click()
-        window.download_sftp_button.click()
+        window._refresh_mmu_file_list()
+        window._handle_sftp_list_drop("server", "/tmp/update file.bin", "/opt")
+        window._handle_sftp_list_drop("mmu", "/opt/update.bin", "/tmp")
 
         self.assertEqual(
             manager.sftp_shell.sent,
@@ -1197,8 +1199,8 @@ class MainWindowTest(unittest.TestCase):
                 "sftp root@[fe80::1%eth0]",
                 "cd /tmp",
                 "ls -la /tmp",
-                "ls",
-                "put '/tmp/update file.bin' /opt/update.bin",
+                "ls -la /tmp",
+                "put '/tmp/update file.bin' '/opt/update file.bin'",
                 "get /opt/update.bin '/tmp/update file.bin'",
             ],
         )
@@ -1209,45 +1211,6 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertTrue(manager.shell.is_open)
         self.assertFalse(manager.sftp_shell.is_open)
-
-
-    def test_sftp_terminal_shows_user_commands_and_remote_responses(self) -> None:
-        """SFTP user commands remain visible with the remote shell response."""
-        manager = FakeSSHManager()
-        window = self.create_window(ssh_manager=manager)
-        window.ssh_host_input.setText("server")
-        window.ssh_username_input.setText("user")
-        window.board_ip_input.setText("fe80::1")
-        window.board_username_input.setText("root")
-        window.board_password_input.setText("secret")
-        window.board_interface_input.setText("eth0")
-
-        window._connect_ssh()
-        window.open_sftp_button.click()
-        window.sftp_terminal.clear_terminal()
-        window.sftp_terminal.set_prompt("sftp> ")
-
-        window.sftp_terminal.commandSubmitted.emit("ls")
-        window._poll_sftp_shell()
-
-        terminal_text = window.sftp_terminal.toPlainText()
-        self.assertIn("sftp> ls", terminal_text)
-        self.assertIn("mmu-file.txt", terminal_text)
-
-        window.sftp_terminal.commandSubmitted.emit("pwd")
-        window._poll_sftp_shell()
-
-        terminal_text = window.sftp_terminal.toPlainText()
-        self.assertIn("sftp> pwd", terminal_text)
-        self.assertIn('Remote working directory: "/tmp"', terminal_text)
-
-        window.sftp_terminal.commandSubmitted.emit("cd /tmp")
-        window._poll_sftp_shell()
-
-        terminal_text = window.sftp_terminal.toPlainText()
-        self.assertIn("sftp> cd /tmp", terminal_text)
-        self.assertIn("mmu-dir", terminal_text)
-        self.assertEqual(window.mmu_current_path_input.text(), "/tmp")
 
 
     def test_sftp_progress_carriage_return_is_not_hidden_by_echo_filter(self) -> None:
@@ -1262,17 +1225,6 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn("Uploading /tmp/file.bin", output)
         self.assertIn("50%", output)
         self.assertIsNone(window._sftp_pending_echo)
-
-    def test_sftp_tab_runs_local_commands_before_session(self) -> None:
-        """The SFTP command pane mirrors the local prompt before SFTP is connected."""
-        window = self.create_window()
-
-        window.sftp_terminal.commandSubmitted.emit("pwd")
-
-        self.assertIn(window._local_cwd, window.sftp_terminal.toPlainText())
-        self.assertEqual(window.sftp_terminal.toPlainText().splitlines()[-1], f"{window._local_cwd}> ")
-        self.assertEqual(window.terminal_widget.toPlainText(), f"{window._local_cwd}> ")
-
 
     def test_sftp_pwd_parser_accepts_common_remote_path_formats(self) -> None:
         """SFTP pwd parsing handles OpenSSH quotes and bare remote paths."""
@@ -1315,11 +1267,10 @@ class MainWindowTest(unittest.TestCase):
         window.open_sftp_button.click()
         window._handle_sftp_startup_timeout()
 
-        self.assertIn("SFTP connection failed", window.sftp_terminal.toPlainText())
-        self.assertIn("3 seconds", window.sftp_terminal.toPlainText())
+        self.assertIn("SFTP connection failed", window.terminal_widget.toPlainText())
+        self.assertIn("3 seconds", window.terminal_widget.toPlainText())
         self.assertEqual(window.board_status_label.text(), "MMU: SFTP failed")
         self.assertFalse(window.close_sftp_button.isEnabled())
-        self.assertEqual(window.sftp_terminal._prompt, window._local_prompt())
 
     def test_open_sftp_reports_connection_failure_in_terminal(self) -> None:
         """Failed SFTP startup reports failure instead of leaving a misleading prompt."""
@@ -1334,11 +1285,10 @@ class MainWindowTest(unittest.TestCase):
         window._connect_ssh()
         window.open_sftp_button.click()
 
-        self.assertIn("SFTP connection failed.", window.sftp_output.toPlainText())
-        self.assertIn("Connection refused", window.sftp_output.toPlainText())
+        self.assertIn("SFTP connection failed.", window.terminal_widget.toPlainText())
+        self.assertIn("Connection refused", window.terminal_widget.toPlainText())
         self.assertEqual(window.board_status_label.text(), "MMU: SFTP failed")
         self.assertFalse(window.close_sftp_button.isEnabled())
-        self.assertEqual(window.sftp_terminal._prompt, window._local_prompt())
 
     def test_open_sftp_reports_missing_board_ip(self) -> None:
         """Open SFTP surfaces validation errors instead of doing nothing."""
@@ -1354,7 +1304,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent, [])
         self.assertIn(
             "SFTP error: MMU IP address is required.",
-            window.sftp_output.toPlainText(),
+            window.terminal_widget.toPlainText(),
         )
         self.assertEqual(window.board_status_label.text(), "MMU: SFTP failed")
 
