@@ -1373,8 +1373,8 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
         self.assertEqual(window._board_settings().ip_version, "IPv6")
 
-    def test_board_ip_version_does_not_change_ipv6_interface_commands(self) -> None:
-        """The saved IP version does not interfere with IPv6 link-local command suffixes."""
+    def test_mmu_ssh_command_uses_ipv6_flag_and_link_local_interface(self) -> None:
+        """IPv6 link-local connections use -6 and the configured interface scope."""
         window = self.create_window()
         settings = BoardSettings(
             ip_address="fe80::1",
@@ -1386,12 +1386,46 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(
             window._build_mmu_ssh_command(settings),
-            "ssh root@fe80::1%eth0 -p 2222",
+            "ssh -6 root@fe80::1%eth0 -p 2222",
         )
         self.assertEqual(
             window._sftp_manager.build_command(settings),
             "sftp root@[fe80::1%eth0]",
         )
+
+    def test_mmu_ssh_command_uses_ipv4_flag_without_interface(self) -> None:
+        """IPv4 connections use -4 and never append an interface suffix."""
+        window = self.create_window()
+        settings = BoardSettings(
+            ip_address="192.168.0.10",
+            ip_version="IPv4",
+            username="user",
+            interface="eth0",
+            ssh_port=22,
+        )
+
+        self.assertEqual(
+            window._build_mmu_ssh_command(settings),
+            "ssh -4 user@192.168.0.10 -p 22",
+        )
+
+    def test_mmu_ssh_command_does_not_scope_global_or_ula_ipv6_address(self) -> None:
+        """Global and ULA IPv6 connections use -6 without an interface suffix."""
+        window = self.create_window()
+        for address in ("2001:db8::1", "fd00::1"):
+            with self.subTest(address=address):
+                settings = BoardSettings(
+                    ip_address=address,
+                    ip_version="IPv6",
+                    username="user",
+                    interface="eth0",
+                    ssh_port=22,
+                )
+
+                self.assertEqual(
+                    window._build_mmu_ssh_command(settings),
+                    f"ssh -6 user@{address} -p 22",
+                )
 
     def test_mmu_ssh_command_uses_board_inputs(self) -> None:
         """MMU SSH uses the board fields and toggles disconnect through the server shell."""
@@ -1399,6 +1433,7 @@ class MainWindowTest(unittest.TestCase):
         window = self.create_window(ssh_manager=manager)
         window.ssh_host_input.setText("server")
         window.ssh_username_input.setText("user")
+        window.board_ip_version_combo.setCurrentText("IPv6")
         window.board_ip_input.setText("fe80::1")
         window.board_username_input.setText("root")
         window.board_password_input.setText("secret")
@@ -1409,7 +1444,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(
             manager.shell.sent,
-            ["rm -f ~/.ssh/known_hosts", "ssh root@fe80::1%eth0 -p 2222"],
+            ["rm -f ~/.ssh/known_hosts", "ssh -6 root@fe80::1%eth0 -p 2222"],
         )
         self.assertFalse(window.mmu_ssh_connect_button.isEnabled())
         self.assertTrue(window.mmu_ssh_disconnect_button.isEnabled())
