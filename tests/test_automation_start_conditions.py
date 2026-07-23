@@ -124,9 +124,9 @@ class AutomationStartConditionRunnerTest(unittest.TestCase):
         self.runner.receive_output(f"\r\ndevice state: {start_marker}")
         self.assertEqual(self.sent, ["command"])
 
-    def test_initial_snapshot_is_not_reused_for_a_later_step_start_condition(self) -> None:
+    def test_previous_step_output_is_reused_for_a_later_step_start_condition(self) -> None:
         scenario = AutomationScenario(
-            name="separate-output-windows",
+            name="shared-output-history",
             steps=[
                 AutomationStep("first", "one", start_type=CompletionType.OUTPUT_CONTAINS, start_value="ready"),
                 AutomationStep("second", "two", start_type=CompletionType.OUTPUT_CONTAINS, start_value="ready"),
@@ -136,11 +136,33 @@ class AutomationStartConditionRunnerTest(unittest.TestCase):
         self.runner.start(scenario)
         self.runner.receive_initial_output("ready")
 
-        self.assertEqual(self.sent, ["one"])
-        self.assertEqual(self.runner.status.state, AutomationState.WAITING_START)
-        self.assertEqual(self.runner.status.step_index, 1)
-        self.runner.receive_output("ready")
         self.assertEqual(self.sent, ["one", "two"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_completion_output_starts_next_step_with_regex_start_condition(self) -> None:
+        scenario = AutomationScenario(
+            name="completion-start-regex",
+            steps=[
+                AutomationStep(
+                    "first",
+                    "one",
+                    completion_type=CompletionType.OUTPUT_CONTAINS,
+                    completion_value="complete",
+                ),
+                AutomationStep(
+                    "second",
+                    "two",
+                    start_type=CompletionType.OUTPUT_REGEX,
+                    start_value=r"result [0-9]+",
+                ),
+            ],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("complete: result 61")
+
+        self.assertEqual(self.sent, ["one", "two"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
 
     def test_completion_output_starts_next_step_when_it_contains_start_text(self) -> None:
         """The completion chunk may also satisfy the immediate next start condition."""

@@ -37,8 +37,9 @@ class AutomationRunner:
     """Run one scenario, retrying only its failing current step once."""
 
     RETRY_DELAY_SECONDS = 2.0
-    # Output-based conditions intentionally inspect only the most recent
-    # console text, so stale output cannot satisfy a later condition.
+    # Output-based conditions inspect a bounded, run-wide console history.
+    # This lets a later step use output produced by an earlier step as its
+    # start condition without retaining an unbounded terminal transcript.
     OUTPUT_LIMIT = 300
 
     def __init__(self, send_line: Callable[[str], None]) -> None:
@@ -104,9 +105,8 @@ class AutomationRunner:
     def receive_initial_output(self, output: str) -> None:
         """Evaluate the first step's start condition against a terminal snapshot.
 
-        A snapshot belongs only to the scenario boundary: later steps must
-        evaluate their start conditions using output received after the prior
-        step completed.
+        The snapshot seeds the run-wide output history.  Later steps retain
+        that history as well as output received while preceding steps run.
         """
         if self._step_index != self._start_step_index or self._state != AutomationState.WAITING_START:
             return
@@ -128,7 +128,7 @@ class AutomationRunner:
             CompletionType.REMOTE_FILE_CONTAINS,
             CompletionType.REMOTE_FILE_REGEX,
         } and self._output_matches():
-            self._condition_satisfied(output)
+            self._condition_satisfied()
 
     def receive_file_result(self, matched: bool, error: Exception | None = None) -> None:
         """Accept an asynchronous remote-file condition result."""
@@ -220,18 +220,18 @@ class AutomationRunner:
             self._state = AutomationState.FAILED
             self._message = "Automation has no current step."
             return
-        self._output = ""
         self._state = AutomationState.WAITING_START
         self._deadline = time.monotonic() + step.start_timeout_seconds
         self._message = f"Waiting to start step {self._step_index + 1}: {step.name or step.command}"
         if step.start_type == CompletionType.NONE:
             self._send_current_command()
+        else:
+            self._evaluate_retained_start_condition()
 
     def _send_current_command(self) -> None:
         step = self.current_step
         if step is None:
             return
-        self._output = ""
         self._state = AutomationState.WAITING
         self._deadline = time.monotonic() + step.timeout_seconds
         self._message = f"Running step {self._step_index + 1}: {step.name or step.command}"
@@ -243,11 +243,11 @@ class AutomationRunner:
         if step.completion_type == CompletionType.NONE:
             self._advance()
 
-    def _condition_satisfied(self, output: str = "") -> None:
+    def _condition_satisfied(self) -> None:
         if self._state == AutomationState.WAITING_START:
             self._send_current_command()
         else:
-            self._advance(output)
+            self._advance()
 
     def _condition_type(self, step: AutomationStep) -> CompletionType:
         return step.start_type if self._state == AutomationState.WAITING_START else step.completion_type
@@ -264,14 +264,11 @@ class AutomationRunner:
     def _condition_name(self) -> str:
         return "start condition" if self._state == AutomationState.WAITING_START else "completion condition"
 
-    def _advance(self, completion_output: str = "") -> None:
-        """Move to the next step, retaining only its completing output chunk.
+    def _advance(self) -> None:
+        """Move to the next step while retaining the bounded output history.
 
-        The bounded output buffer is deliberately reset at every step boundary
-        to prevent stale console text from satisfying later conditions.  A
-        completion and the next start condition can, however, legitimately be
-        reported in one terminal chunk.  Evaluate that chunk for the immediate
-        next output-contains start condition after the reset.
+        A following step can therefore evaluate its start condition against
+        output produced by any preceding step in the same run.
         """
         assert self._scenario is not None
         if self._step_index + 1 >= len(self._scenario.steps):
@@ -281,13 +278,22 @@ class AutomationRunner:
         self._step_index += 1
         self._retried = False
         self._start_current_step()
-        if (
-            completion_output
-            and self._state == AutomationState.WAITING_START
-            and self.current_step is not None
-            and self.current_step.start_type == CompletionType.OUTPUT_CONTAINS
-        ):
-            self.receive_output(completion_output)
+
+    def _evaluate_retained_start_condition(self) -> None:
+        """Start the current step when retained output already satisfies it."""
+        if self._state != AutomationState.WAITING_START or not self._output:
+            return
+        step = self.current_step
+        if step is None or step.start_type not in {
+            CompletionType.OUTPUT_CONTAINS,
+            CompletionType.OUTPUT_REGEX,
+            CompletionType.PROMPT_REGEX,
+            CompletionType.REMOTE_FILE_CONTAINS,
+            CompletionType.REMOTE_FILE_REGEX,
+        }:
+            return
+        if self._output_matches():
+            self._condition_satisfied()
 
     def _output_matches(self) -> bool:
         step = self.current_step
