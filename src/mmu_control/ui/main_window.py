@@ -451,8 +451,6 @@ class MainWindow(QMainWindow):
         self.disconnect_button.clicked.connect(self._disconnect_ssh)
         self.terminal_widget.commandSubmitted.connect(self._send_terminal_command)
         self.terminal_widget.rawInput.connect(self._send_terminal_raw)
-        self.sftp_terminal.commandSubmitted.connect(self._send_sftp_command)
-        self.sftp_terminal.rawInput.connect(self._send_sftp_raw)
         self.new_command_button.clicked.connect(self._create_command_set)
         self.new_folder_button.clicked.connect(self._create_command_folder)
         self.edit_command_button.clicked.connect(self._edit_command_set)
@@ -467,8 +465,6 @@ class MainWindow(QMainWindow):
         self.stop_automation_button.clicked.connect(self._stop_automation)
         self.automation_list.currentItemChanged.connect(self._show_selected_automation_scenario)
         self.open_sftp_button.clicked.connect(self._open_sftp)
-        self.upload_sftp_button.clicked.connect(self._upload_sftp)
-        self.download_sftp_button.clicked.connect(self._download_sftp)
         self.close_sftp_button.clicked.connect(self._close_sftp_session)
         self.server_path_input.localFileDropped.connect(self._handle_sftp_file_drop)
         self.server_file_list.fileDropped.connect(self._handle_sftp_list_drop)
@@ -630,7 +626,6 @@ class MainWindow(QMainWindow):
         self._leave_interactive_mode()
         self.terminal_widget.clear_terminal()
         self.terminal_widget.set_prompt("")
-        self.sftp_terminal.set_prompt("")
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
         self.open_sftp_button.setEnabled(True)
@@ -807,7 +802,6 @@ class MainWindow(QMainWindow):
         self._sftp_echo_buffer = ""
         self._sftp_pending_listing = False
         self._sftp_prompt_buffer = ""
-        self.sftp_terminal.set_prompt("")
         self._append_sftp_output("SFTP session opening. Waiting for the remote sftp prompt...")
         self._sftp_timer.start()
         self._sftp_startup_timeout_timer.start()
@@ -816,68 +810,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Opening SFTP session...")
         self._poll_sftp_shell()
         self._poll_sftp_shell()
-
-    def _upload_sftp(self) -> None:
-        self._run_sftp_transfer(upload=True)
-
-    def _download_sftp(self) -> None:
-        self._run_sftp_transfer(upload=False)
-
-    def _run_sftp_transfer(self, upload: bool) -> None:
-        if self._sftp_shell is None or not self._sftp_shell.is_open or not self._sftp_session_active:
-            self._append_sftp_output("Open an SFTP session first.")
-            return
-        commands: list[str] = []
-        try:
-            if upload:
-                for server_path in self._selected_file_paths(self.server_file_list):
-                    board_path = posixpath.join(
-                        self._mmu_sftp_directory, posixpath.basename(server_path)
-                    )
-                    commands.append(
-                        self._sftp_manager.upload(
-                            self._sftp_shell,
-                            server_path,
-                            board_path,
-                        )
-                    )
-            else:
-                for board_path in self._selected_file_paths(self.mmu_file_list):
-                    server_path = posixpath.join(
-                        self._server_sftp_directory,
-                        posixpath.basename(board_path),
-                    )
-                    commands.append(
-                        self._sftp_manager.download(
-                            self._sftp_shell,
-                            board_path,
-                            server_path,
-                        )
-                    )
-        except SFTPError as exc:
-            self._append_sftp_output(f"SFTP error: {exc}")
-            return
-        self._sftp_pending_echo = commands[-1] if commands else None
-        self._sftp_echo_buffer = ""
-        for command in commands:
-            self._append_sftp_output(f"Running: {command}")
-
-    def _selected_file_path(self, file_list: SftpFileListWidget) -> str:
-        return self._selected_file_paths(file_list)[0]
-
-    def _selected_file_paths(self, file_list: SftpFileListWidget) -> list[str]:
-        items = file_list.selectedItems() or ([file_list.currentItem()] if file_list.currentItem() else [])
-        paths: list[str] = []
-        for item in items:
-            if item is None:
-                continue
-            path = item.data(Qt.ItemDataRole.UserRole)
-            is_dir = bool(item.data(Qt.ItemDataRole.UserRole + 1))
-            if isinstance(path, str) and path and not is_dir:
-                paths.append(path)
-        if not paths:
-            raise SFTPError("Select one or more files from the file list first.")
-        return paths
 
     def _handle_sftp_list_drop(
         self, source_side: str, source_paths: list[str] | str, target_directory: str
@@ -1252,11 +1184,11 @@ class MainWindow(QMainWindow):
 
     def _echo_sftp_command(self, command: str) -> None:
         """Ensure programmatically submitted SFTP commands are visible once."""
-        prompt = self.sftp_terminal._prompt
-        text = self.sftp_terminal.toPlainText()
+        prompt = self.terminal_widget._prompt
+        text = self.terminal_widget.toPlainText()
         if text.endswith(f"{prompt}{command}\n{prompt}"):
             return
-        self.sftp_terminal.write_stream(f"{prompt}{command}\r\n")
+        self.terminal_widget.write_stream(f"{prompt}{command}\r\n")
 
     def _run_sftp_local_command(self, command: str) -> None:
         """Run fallback commands in the SFTP pane without touching the Terminal tab."""
@@ -1264,7 +1196,7 @@ class MainWindow(QMainWindow):
         if not command:
             return
         if command.lower() in {"clear", "cls"}:
-            self.sftp_terminal.clear_terminal()
+            self.terminal_widget.clear_terminal()
             return
         if command.lower() in {"pwd", "cd"}:
             self._append_sftp_output(self._local_cwd)
@@ -1287,7 +1219,7 @@ class MainWindow(QMainWindow):
         output = f"{result.stdout}{result.stderr}"
         if output:
             self._append_sftp_output(output)
-        self.sftp_terminal.set_prompt(self._local_prompt())
+        self.terminal_widget.set_prompt(self._local_prompt())
 
     def _change_sftp_fallback_local_directory(self, path_text: str) -> None:
         if not path_text:
@@ -1416,8 +1348,6 @@ class MainWindow(QMainWindow):
             self._show_sftp_error(exc)
 
     def _set_sftp_actions_enabled(self, enabled: bool) -> None:
-        self.upload_sftp_button.setEnabled(enabled)
-        self.download_sftp_button.setEnabled(enabled)
         self.close_sftp_button.setEnabled(enabled)
         self.refresh_server_file_list_button.setEnabled(enabled)
         self.refresh_mmu_file_list_button.setEnabled(enabled)
@@ -1576,7 +1506,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Closing minicom...")
 
     def _append_sftp_output(self, text: str) -> None:
-        self.sftp_terminal.write_output(text.rstrip())
+        self.terminal_widget.write_output(f"[SFTP] {text.rstrip()}")
 
     def _load_command_sets(self) -> None:
         collection = self._command_set_store.load()
@@ -2041,7 +1971,7 @@ class MainWindow(QMainWindow):
             filtered_output = self._filter_sftp_echo(output)
             filtered_output = self._without_trailing_sftp_prompt(filtered_output)
             if filtered_output:
-                self.sftp_terminal.write_stream(filtered_output)
+                self.terminal_widget.write_stream(filtered_output)
             self._show_sftp_error(Exception("connection failed"))
             return
         startup_reached = self._sftp_startup_pending and "sftp>" in output
@@ -2080,15 +2010,14 @@ class MainWindow(QMainWindow):
             if handled_pwd or pwd_response_complete:
                 self._sftp_pending_pwd = None
         if output:
-            self.sftp_terminal.write_stream(output)
+            self.terminal_widget.write_stream(output)
 
     def _mark_sftp_connected(self) -> None:
         """Enable SFTP controls only after the remote prompt confirms startup."""
         self._sftp_startup_timeout_timer.stop()
         self._sftp_startup_pending = False
         self._sftp_session_active = True
-        self.sftp_terminal.set_prompt("sftp> ")
-        self._append_sftp_output("SFTP session opened. You can type SFTP commands below.")
+        self._append_sftp_output("SFTP session opened.")
         if self._sftp_shell is not None and self._sftp_shell.is_open:
             command = self._sftp_manager.change_directory(
                 self._sftp_shell,
@@ -2238,7 +2167,6 @@ class MainWindow(QMainWindow):
         self._sftp_startup_pending = False
         self._close_sftp_transfer_progress()
         self._set_sftp_actions_enabled(False)
-        self.sftp_terminal.set_prompt(self._local_prompt())
         self.open_sftp_button.setEnabled(self._shell is not None and self._shell.is_open)
 
     def _show_sftp_error(self, error: Exception) -> None:
@@ -2859,17 +2787,6 @@ class MainWindow(QMainWindow):
         file_list_splitter.setStretchFactor(1, 1)
         file_list_layout.addWidget(file_list_splitter)
 
-        transfer_buttons = QWidget(self)
-        transfer_button_layout = QHBoxLayout(transfer_buttons)
-        transfer_button_layout.setContentsMargins(0, 0, 0, 0)
-        self.upload_sftp_button = QPushButton("Upload to MMU", self)
-        self.download_sftp_button = QPushButton("Download to Server", self)
-        self.upload_sftp_button.setEnabled(False)
-        self.download_sftp_button.setEnabled(False)
-        transfer_button_layout.addWidget(self.upload_sftp_button)
-        transfer_button_layout.addWidget(self.download_sftp_button)
-        transfer_button_layout.addStretch(1)
-
         path_help = QLabel(
             "Drag a file from Linux server files to MMU files to upload, or drag a file "
             "from MMU files to Linux server files to download. Double-click a directory "
@@ -2878,22 +2795,7 @@ class MainWindow(QMainWindow):
         )
         path_help.setWordWrap(True)
 
-        self.sftp_terminal = TerminalWidget(prompt=self._local_prompt())
-        self.sftp_terminal.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        self.sftp_terminal.setPlaceholderText("The independent SFTP terminal appears here.")
-        self.sftp_output = self.sftp_terminal
-
         layout.addWidget(transfer_actions)
-        transfer_splitter = QSplitter(Qt.Orientation.Vertical, tab)
-        transfer_splitter.setChildrenCollapsible(False)
-        transfer_splitter.addWidget(file_lists)
-        transfer_splitter.addWidget(self.sftp_terminal)
-        transfer_splitter.setStretchFactor(0, 3)
-        transfer_splitter.setStretchFactor(1, 1)
-
         layout.addWidget(path_help)
-        layout.addWidget(transfer_splitter, stretch=1)
-        layout.addWidget(transfer_buttons)
+        layout.addWidget(file_lists, stretch=1)
         return tab
