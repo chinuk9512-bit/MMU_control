@@ -370,6 +370,7 @@ class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
 
     AUTOMATION_OUTPUT_LIMIT = AutomationRunner.OUTPUT_LIMIT
+    MMU_SSH_AUTH_TIMEOUT_MS = 3000
 
     def __init__(
         self,
@@ -438,6 +439,10 @@ class MainWindow(QMainWindow):
         self._sftp_startup_timeout_timer.setSingleShot(True)
         self._sftp_startup_timeout_timer.setInterval(3000)
         self._sftp_startup_timeout_timer.timeout.connect(self._handle_sftp_startup_timeout)
+        self._mmu_ssh_auth_timeout_timer = QTimer(self)
+        self._mmu_ssh_auth_timeout_timer.setSingleShot(True)
+        self._mmu_ssh_auth_timeout_timer.setInterval(self.MMU_SSH_AUTH_TIMEOUT_MS)
+        self._mmu_ssh_auth_timeout_timer.timeout.connect(self._handle_mmu_ssh_auth_timeout)
         self._automation_timer = QTimer(self)
         self._automation_timer.setInterval(100)
         self._automation_timer.timeout.connect(self._poll_automation)
@@ -1413,6 +1418,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_prompt_buffer = ""
         self._mmu_ssh_auth_pending = True
         self._mmu_ssh_session_active = True
+        self._mmu_ssh_auth_timeout_timer.start()
         self.mmu_ssh_connect_button.setEnabled(False)
         self.mmu_ssh_disconnect_button.setEnabled(True)
         self.board_status_label.setText("MMU: SSH connecting")
@@ -1435,24 +1441,37 @@ class MainWindow(QMainWindow):
     def _handle_mmu_ssh_auth(self, output: str) -> None:
         self._mmu_ssh_prompt_buffer = f"{self._mmu_ssh_prompt_buffer}{output}"[-512:]
         lower = self._mmu_ssh_prompt_buffer.lower()
-        if "password:" in lower and self._mmu_ssh_auth_pending:
+        if self._sftp_manager.connection_failed(lower):
+            self._mark_mmu_ssh_failed()
+        elif "password:" in lower and self._mmu_ssh_auth_pending:
             password = self.board_password_input.text()
             self._shell.send_line(password)
             self._mmu_ssh_auth_pending = False
             self._mmu_ssh_prompt_buffer = ""
+            self._mmu_ssh_auth_timeout_timer.stop()
             self.terminal_widget.write_output("MMU SSH password sent.")
             self.board_status_label.setText("MMU: SSH connected")
             self.statusBar().showMessage("MMU SSH session opened")
         elif "are you sure you want to continue connecting" in lower:
             self._shell.send_line("yes")
             self._mmu_ssh_prompt_buffer = ""
-        elif "permission denied" in lower or "could not resolve" in lower or "connection refused" in lower:
-            self._mark_mmu_ssh_failed()
         elif output:
+            self._mmu_ssh_auth_timeout_timer.stop()
             self.board_status_label.setText("MMU: SSH connected")
+
+    def _handle_mmu_ssh_auth_timeout(self) -> None:
+        """Restore MMU SSH controls when its authentication prompt never appears."""
+        if not self._mmu_ssh_session_active or not self._mmu_ssh_auth_pending:
+            return
+        timeout_seconds = self.MMU_SSH_AUTH_TIMEOUT_MS // 1000
+        self.terminal_widget.write_output(
+            f"MMU SSH connection failed: authentication prompt did not arrive within {timeout_seconds} seconds."
+        )
+        self._mark_mmu_ssh_failed()
 
     def _mark_mmu_ssh_failed(self) -> None:
         """Reset MMU SSH controls after the nested SSH command fails."""
+        self._mmu_ssh_auth_timeout_timer.stop()
         self._mmu_ssh_session_active = False
         self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
@@ -1467,6 +1486,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_session_active = False
         self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
+        self._mmu_ssh_auth_timeout_timer.stop()
         self.mmu_ssh_connect_button.setEnabled(self._shell is not None and self._shell.is_open)
         self.mmu_ssh_disconnect_button.setEnabled(False)
         self.board_status_label.setText("MMU: SSH disconnected")
@@ -2139,6 +2159,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_session_active = False
         self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
+        self._mmu_ssh_auth_timeout_timer.stop()
         self.mmu_ssh_connect_button.setEnabled(False)
         self.mmu_ssh_disconnect_button.setEnabled(False)
 
@@ -2192,6 +2213,7 @@ class MainWindow(QMainWindow):
 
     def _handle_connection_closed(self, message: str) -> None:
         self._shell_timer.stop()
+        self._mmu_ssh_auth_timeout_timer.stop()
         self._close_sftp_shell()
         self._shell = None
         self._ssh_manager.disconnect()
