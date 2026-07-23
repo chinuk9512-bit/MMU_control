@@ -1420,6 +1420,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(manager.shell.sent[-1], "exit")
         self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
         self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
+        self.assertFalse(window._mmu_ssh_auth_timeout_timer.isActive())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH disconnected")
 
     def test_mmu_ssh_failure_restores_server_shell_controls(self) -> None:
@@ -1443,6 +1444,44 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH failed")
 
+    def test_mmu_ssh_auth_timeout_restores_server_shell_controls(self) -> None:
+        """A missing MMU SSH authentication prompt leaves the controls retryable."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window._connect_ssh()
+        window.mmu_ssh_connect_button.click()
+
+        self.assertTrue(window._mmu_ssh_auth_timeout_timer.isActive())
+        window._handle_mmu_ssh_auth_timeout()
+
+        self.assertIn("authentication prompt did not arrive", window.terminal_widget.toPlainText())
+        self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
+        self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
+        self.assertFalse(window._mmu_ssh_auth_timeout_timer.isActive())
+
+    def test_mmu_ssh_network_failure_restores_server_shell_controls(self) -> None:
+        """Network failures from the client SSH command leave the controls retryable."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("fe80::1")
+        window.board_username_input.setText("root")
+        window._connect_ssh()
+        window.mmu_ssh_connect_button.click()
+
+        window._handle_mmu_ssh_auth(
+            "ssh: connect to host fe80::1 port 22: Network is unreachable"
+        )
+
+        self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
+        self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
+        self.assertFalse(window._mmu_ssh_auth_timeout_timer.isActive())
+
     def test_mmu_ssh_password_is_sent_only_for_initial_auth_prompt(self) -> None:
         """MMU SSH password automation does not answer later shell password prompts."""
         manager = FakeSSHManager()
@@ -1458,6 +1497,7 @@ class MainWindowTest(unittest.TestCase):
 
         window._handle_mmu_ssh_auth("root@fe80::1's password:")
         self.assertEqual(manager.shell.sent[-1], "secret")
+        self.assertFalse(window._mmu_ssh_auth_timeout_timer.isActive())
         sent_after_initial_auth = list(manager.shell.sent)
 
         window._handle_mmu_ssh_auth("Password:")
