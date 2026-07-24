@@ -43,11 +43,14 @@ class AutomationImportDialog(QDialog):
         self.text_source_radio = QRadioButton("직접 붙여넣기", self)
         self.text_source_radio.setChecked(True)
         self.file_path_input = QLineEdit(self)
-        self.file_path_input.setPlaceholderText("명령이 한 줄씩 들어 있는 텍스트 파일")
+        self.file_path_input.setPlaceholderText("명령 텍스트 파일 (/// 구분선 3줄로 여러 줄 명령 구분)")
         self.file_browse_button = QPushButton("찾아보기…", self)
         self.file_browse_button.clicked.connect(self._choose_file)
         self.text_input = QPlainTextEdit(self)
-        self.text_input.setPlaceholderText("명령을 한 줄에 하나씩 붙여넣으세요. #으로 시작하는 줄은 주석입니다.")
+        self.text_input.setPlaceholderText(
+            "명령을 붙여넣으세요. /가 2개 이상인 줄 3줄 연속은 구분선이며, "
+            "구분선 사이의 여러 줄은 하나의 명령입니다. #으로 시작하는 줄은 주석입니다."
+        )
         self.error_label = QLabel("", self)
         self.error_label.setStyleSheet("color: #b00020;")
 
