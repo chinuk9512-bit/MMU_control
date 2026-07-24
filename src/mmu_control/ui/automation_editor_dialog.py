@@ -66,17 +66,13 @@ class AutomationEditorDialog(QDialog):
         self._updating_step_selection = False
         self.name_input = QLineEdit(scenario.name if scenario else "", self)
         self.description_input = QLineEdit(scenario.description if scenario else "", self)
-        self.transport_input = QComboBox(self)
-        self.transport_input.addItem("SSH shell", "ssh")
-        self.transport_input.addItem("Minicom", "minicom")
-        self.transport_input.setCurrentIndex(1 if scenario and scenario.transport == "minicom" else 0)
         self.step_list = ScenarioStepListWidget(self)
         self.step_list.setMinimumHeight(self.STEP_LIST_MINIMUM_HEIGHT)
         self.step_list.currentRowChanged.connect(self._select_step)
         self.step_name_input = QLineEdit(self)
         self.command_input = QPlainTextEdit(self)
         self.command_input.setMinimumHeight(self.COMMAND_MINIMUM_HEIGHT)
-        self.command_input.setPlaceholderText("Command to send to the selected SSH shell or minicom session")
+        self.command_input.setPlaceholderText("Command to send to the currently active console")
         self.start_type_input = QComboBox(self)
         self.condition_type_input = QComboBox(self)
         for completion_type, label in (
@@ -118,7 +114,6 @@ class AutomationEditorDialog(QDialog):
         form = QFormLayout()
         form.addRow("Name", self.name_input)
         form.addRow("Description", self.description_input)
-        form.addRow("Run on", self.transport_input)
 
         add_button = QPushButton("Add Step", self)
         duplicate_button = QPushButton("Duplicate", self)
@@ -198,7 +193,6 @@ class AutomationEditorDialog(QDialog):
         return AutomationScenario(
             name=self.name_input.text().strip(),
             description=self.description_input.text().strip(),
-            transport=str(self.transport_input.currentData()),
             steps=self._steps,
         )
 

@@ -53,7 +53,6 @@ class AutomationStore:
         collection.scenarios[name] = AutomationScenario(
             name=name,
             description=scenario.description,
-            transport=scenario.transport,
             steps=scenario.steps,
         )
         self._save(collection)

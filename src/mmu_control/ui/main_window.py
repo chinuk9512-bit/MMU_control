@@ -57,6 +57,7 @@ from PySide6.QtWidgets import (
 
 from mmu_control.core.config_manager import ConfigError, ConfigManager
 from mmu_control.core.automation_runner import AutomationRunner, AutomationStatus
+from mmu_control.core.automation_terminal import AutomationTerminal, AutomationTerminalCapability
 from mmu_control.core.interactive_shell import InteractiveShell
 from mmu_control.core.minicom_manager import MinicomError, MinicomManager
 from mmu_control.core.power_supply_manager import PowerSupplyCommandError, PowerSupplyManager
@@ -105,6 +106,34 @@ class AutomationProgressSnapshot:
     status: AutomationStatus
     skipped_step_indices: frozenset[int]
     start_step_index: int
+    terminal_display_name: str = ""
+
+
+@dataclass(frozen=True)
+class _ShellAutomationTerminal:
+    """Adapt the application's interactive shell to the automation contract."""
+
+    shell: InteractiveShell
+    name: str
+    recent_output: str
+
+    @property
+    def is_open(self) -> bool:
+        return self.shell.is_open
+
+    @property
+    def display_name(self) -> str:
+        return self.name
+
+    @property
+    def capabilities(self) -> frozenset[AutomationTerminalCapability]:
+        return frozenset({AutomationTerminalCapability.REMOTE_FILE_CHECKS})
+
+    def send_line(self, command: str) -> None:
+        self.shell.send_line(command)
+
+    def read_recent_output(self) -> str:
+        return self.recent_output
 
 
 class FileDropLineEdit(QLineEdit):
@@ -394,6 +423,7 @@ class MainWindow(QMainWindow):
         self._command_folders: dict[str, CommandFolder] = {}
         self._automation_scenarios: dict[str, AutomationScenario] = {}
         self._automation_runner: AutomationRunner | None = None
+        self._automation_terminal: AutomationTerminal | None = None
         self._automation_progress: dict[str, AutomationProgressSnapshot] = {}
         self._automation_file_check_due = 0.0
         self._shell: InteractiveShell | None = None
@@ -1737,7 +1767,8 @@ class MainWindow(QMainWindow):
         snapshot = self._automation_progress.get(scenario.name)
         if is_running_scenario and runner is not None:
             snapshot = AutomationProgressSnapshot(
-                runner.status, runner.skipped_step_indices, runner.start_step_index
+                runner.status, runner.skipped_step_indices, runner.start_step_index,
+                self._active_automation_terminal_display_name(),
             )
         status = snapshot.status if snapshot is not None else None
         current_index = status.step_index if status is not None else -1
@@ -1767,8 +1798,13 @@ class MainWindow(QMainWindow):
                 f"{step.completion_type.value}: {step.completion_value}"
             )
         progress = status.message if status is not None else "Not running."
+        terminal_name = (
+            snapshot.terminal_display_name
+            if snapshot is not None and snapshot.terminal_display_name
+            else self._active_automation_terminal_display_name()
+        )
         self.automation_output.setPlainText(
-            f"Name: {scenario.name}\nTransport: {scenario.transport}\nDescription: {scenario.description}\n\n"
+            f"Name: {scenario.name}\nConsole: {terminal_name}\nDescription: {scenario.description}\n\n"
             f"Execution progress: {progress}\n\n" + "\n".join(step_lines)
         )
 
@@ -1778,7 +1814,8 @@ class MainWindow(QMainWindow):
         if runner is None or runner.scenario is None:
             return
         self._automation_progress[runner.scenario.name] = AutomationProgressSnapshot(
-            runner.status, runner.skipped_step_indices, runner.start_step_index
+            runner.status, runner.skipped_step_indices, runner.start_step_index,
+            self._active_automation_terminal_display_name(),
         )
 
     def _set_automation_actions_enabled(self, selected: bool) -> None:
@@ -1874,6 +1911,18 @@ class MainWindow(QMainWindow):
         self.automation_status_label.setText(message)
         self.statusBar().showMessage(message)
 
+    def _active_automation_terminal(self) -> AutomationTerminal | None:
+        """Return the console that automation can use at this instant."""
+        if self._shell is None or not self._shell.is_open:
+            return None
+        name = "Minicom" if self._minicom_session_active else "SSH shell"
+        return _ShellAutomationTerminal(self._shell, name, self._recent_automation_output)
+
+    def _active_automation_terminal_display_name(self) -> str:
+        """Return a user-facing name for the current console, if any."""
+        terminal = self._active_automation_terminal()
+        return terminal.display_name if terminal is not None else "No active console"
+
     def _run_automation_scenario(self) -> None:
         scenario = self._selected_automation_scenario()
         if scenario is None:
@@ -1888,23 +1937,19 @@ class MainWindow(QMainWindow):
             self.automation_status_label.setText("Automation: selected scenario no longer exists")
             self._refresh_automation_list()
             return
-        if self._shell is None or not self._shell.is_open:
-            self.automation_status_label.setText("Automation: SSH shell is not connected")
+        terminal = self._active_automation_terminal()
+        if terminal is None:
+            self.automation_status_label.setText("Automation: no active console is available")
             return
-        if scenario.transport == "minicom" and not self._minicom_session_active:
-            self.automation_status_label.setText("Automation: open Minicom before running this scenario")
-            return
-        if scenario.transport == "ssh" and self._minicom_session_active:
-            self.automation_status_label.setText("Automation: close Minicom before running an SSH scenario")
-            return
-        self._automation_runner = AutomationRunner(self._shell.send_line)
+        self._automation_runner = AutomationRunner(terminal.send_line)
+        self._automation_terminal = terminal
         try:
             start_step_index = self.automation_start_step_input.currentData()
             if not isinstance(start_step_index, int):
                 self.automation_status_label.setText("Automation: selected scenario has no steps")
                 return
             self._automation_runner.start(scenario, start_step_index)
-            self._automation_runner.receive_initial_output(self._recent_automation_output)
+            self._automation_runner.receive_initial_output(terminal.read_recent_output())
         except Exception as exc:
             self.automation_status_label.setText(f"Automation failed to start: {exc}")
             return
@@ -1929,8 +1974,10 @@ class MainWindow(QMainWindow):
             command = runner.file_check_command()
             if command is not None:
                 try:
-                    assert self._shell is not None
-                    self._shell.send_line(command)
+                    terminal = self._automation_terminal
+                    if terminal is None:
+                        raise RuntimeError("No active automation console")
+                    terminal.send_line(command)
                 except Exception as exc:
                     runner.fail_current_step(f"Could not inspect device file: {exc}")
             self._automation_file_check_due = time.monotonic() + 1.0

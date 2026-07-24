@@ -37,7 +37,6 @@ class AutomationStoreTest(unittest.TestCase):
             store = AutomationStore(Path(directory) / "automation.json")
             scenario = AutomationScenario(
                 name="boot",
-                transport="minicom",
                 steps=[
                     AutomationStep(
                         name="wait lock",
@@ -77,6 +76,18 @@ class AutomationStoreTest(unittest.TestCase):
             saved = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(saved["scenarios"]["legacy completion"]["steps"][0]["completion_type"], "none")
             self.assertEqual(store.load().scenarios["legacy completion"].steps[0].completion_type, CompletionType.NONE)
+
+    def test_loads_legacy_transport_but_does_not_write_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "automation.json"
+            path.write_text(json.dumps({"scenarios": {"legacy": {"transport": "minicom", "steps": []}}}), encoding="utf-8")
+            store = AutomationStore(path)
+
+            scenario = store.load().scenarios["legacy"]
+            self.assertEqual(scenario.name, "legacy")
+            self.assertNotIn("transport", scenario.to_dict())
+            store.upsert(scenario)
+            self.assertNotIn("transport", json.loads(path.read_text(encoding="utf-8"))["scenarios"]["legacy"])
 
 
 class AutomationEditorDialogTest(unittest.TestCase):

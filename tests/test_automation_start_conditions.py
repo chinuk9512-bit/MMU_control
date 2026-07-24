@@ -43,6 +43,17 @@ class AutomationStartConditionModelTest(unittest.TestCase):
 class AutomationStartConditionEditorDialogTest(unittest.TestCase):
     """The editor saves start-condition fields independently of completion fields."""
 
+    def test_editor_does_not_store_or_select_an_execution_transport(self) -> None:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+        qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
+        from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+
+        dialog = AutomationEditorDialog(AutomationScenario(name="editor", steps=[AutomationStep(name="run", command="run")]))
+
+        self.assertFalse(hasattr(dialog, "transport_input"))
+        self.assertEqual(dialog.command_input.placeholderText(), "Command to send to the currently active console")
+
     def test_saved_step_includes_start_condition_fields(self) -> None:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)

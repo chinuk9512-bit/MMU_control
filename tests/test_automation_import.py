@@ -28,7 +28,6 @@ class AutomationImportDialogTest(unittest.TestCase):
         dialog = AutomationImportDialog()
         dialog.name_input.setText("Imported boot")
         dialog.description_input.setText("From terminal notes")
-        dialog.transport_input.setCurrentIndex(1)
         dialog.timeout_input.setValue(12)
         dialog.text_input.setPlainText("# start board\necho boot\nstatus")
 
@@ -38,7 +37,6 @@ class AutomationImportDialogTest(unittest.TestCase):
         self.assertIsNotNone(dialog.scenario())
         assert dialog.scenario() is not None
         self.assertEqual(dialog.scenario().name, "Imported boot")
-        self.assertEqual(dialog.scenario().transport, "minicom")
         self.assertEqual([step.command for step in dialog.scenario().steps], ["echo boot", "status"])
         self.assertEqual([step.timeout_seconds for step in dialog.scenario().steps], [12, 12])
 
