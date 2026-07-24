@@ -50,3 +50,17 @@ class AutomationImportDialogTest(unittest.TestCase):
         self.assertNotEqual(dialog.result(), QDialog.DialogCode.Accepted)
         self.assertIsNone(dialog.scenario())
         self.assertIn("가져올 명령이 없습니다", dialog.error_label.text())
+
+    def test_multiline_commands_are_preserved_in_the_imported_draft(self) -> None:
+        dialog = AutomationImportDialog()
+        dialog.name_input.setText("Multiline import")
+        dialog.text_input.setPlainText("echo prepare\nexport MODE=test\n//\n//\n//\necho run\necho done")
+
+        dialog.accept()
+
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        assert dialog.scenario() is not None
+        self.assertEqual(
+            [step.command for step in dialog.scenario().steps],
+            ["echo prepare\nexport MODE=test", "echo run\necho done"],
+        )
