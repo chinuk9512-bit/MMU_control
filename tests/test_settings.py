@@ -22,7 +22,6 @@ class AppSettingsTest(unittest.TestCase):
                 },
                 "board": {
                     "ip_address": "fe80::1",
-                    "ip_version": "IPv4",
                     "username": "root",
                     "password": "board",
                     "interface": "eth0",
@@ -45,7 +44,6 @@ class AppSettingsTest(unittest.TestCase):
                 },
                 "board": {
                     "ip_address": "fe80::1",
-                    "ip_version": "IPv4",
                     "username": "root",
                     "password": "board",
                     "interface": "eth0",

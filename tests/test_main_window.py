@@ -1316,7 +1316,6 @@ class MainWindowTest(unittest.TestCase):
                 ssh=SSHSettings(host="server", port=2200, username="user", password="pw"),
                 board=BoardSettings(
                     ip_address="fe80::1",
-                    ip_version="IPv6",
                     username="root",
                     usb_port="/dev/ttyUSB0",
                 ),
@@ -1330,8 +1329,10 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(window.ssh_host_input.text(), "server")
         self.assertEqual(window.ssh_port_input.value(), 2200)
-        self.assertEqual(window.board_ip_version_combo.currentText(), "IPv6")
-        self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
+        self.assertEqual(
+            window.board_ip_input.placeholderText(),
+            "IP address, e.g. 192.168.0.10 or fe80::1",
+        )
         self.assertEqual(window.usb_port_combo.currentText(), "/dev/ttyUSB0")
         self.assertEqual(window.power_supply_ip_input.text(), "192.168.0.100")
         self.assertEqual(window.power_supply_voltage_input.text(), "12.5")
@@ -1342,7 +1343,6 @@ class MainWindowTest(unittest.TestCase):
 
         window.ssh_group.setChecked(True)
         window.mmu_group.setChecked(False)
-        window.board_ip_version_combo.setCurrentText("IPv4")
         window.board_ip_input.setText("192.168.0.10")
         window.board_interface_input.setText("eth0")
         window.power_supply_ip_input.setText("192.168.0.101")
@@ -1353,7 +1353,6 @@ class MainWindowTest(unittest.TestCase):
         saved_settings = config.load()
         saved_board = saved_settings.board
         self.assertEqual(saved_board.interface, "eth0")
-        self.assertEqual(saved_board.ip_version, "IPv4")
         self.assertEqual(saved_board.ip_address, "192.168.0.10")
         self.assertEqual(saved_settings.power_supply.ip_address, "192.168.0.101")
         self.assertEqual(saved_settings.power_supply.voltage, "24")
@@ -1361,24 +1360,21 @@ class MainWindowTest(unittest.TestCase):
         self.assertTrue(saved_settings.window.ssh_group_expanded)
         self.assertFalse(saved_settings.window.mmu_group_expanded)
 
-    def test_board_ip_version_combo_updates_placeholder_and_settings(self) -> None:
-        """IP version choice updates placeholders and is included in board settings."""
+    def test_board_ip_input_has_no_ip_version_selector(self) -> None:
+        """The SSH console accepts a single IP field for both IP address families."""
         window = self.create_window()
 
-        self.assertEqual(window.board_ip_version_combo.currentText(), "IPv4")
-        self.assertEqual(window.board_ip_input.placeholderText(), "192.168.0.10")
+        self.assertFalse(hasattr(window, "board_ip_version_combo"))
+        self.assertEqual(
+            window.board_ip_input.placeholderText(),
+            "IP address, e.g. 192.168.0.10 or fe80::1",
+        )
 
-        window.board_ip_version_combo.setCurrentText("IPv6")
-
-        self.assertEqual(window.board_ip_input.placeholderText(), "fe80::1")
-        self.assertEqual(window._board_settings().ip_version, "IPv6")
-
-    def test_mmu_ssh_command_uses_ipv6_flag_and_link_local_interface(self) -> None:
-        """IPv6 link-local connections use -6 and the configured interface scope."""
+    def test_mmu_ssh_command_scopes_ipv6_with_interface(self) -> None:
+        """IPv6 connections use the configured interface scope without an IP flag."""
         window = self.create_window()
         settings = BoardSettings(
             ip_address="fe80::1",
-            ip_version="IPv6",
             username="root",
             interface="eth0",
             ssh_port=2222,
@@ -1386,19 +1382,18 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(
             window._build_mmu_ssh_command(settings),
-            "ssh -6 root@fe80::1%eth0 -p 2222",
+            "ssh root@fe80::1%eth0 -p 2222",
         )
         self.assertEqual(
             window._sftp_manager.build_command(settings),
             "sftp root@[fe80::1%eth0]",
         )
 
-    def test_mmu_ssh_command_uses_ipv4_flag_without_interface(self) -> None:
-        """IPv4 connections use -4 and never append an interface suffix."""
+    def test_mmu_ssh_command_uses_ipv4_without_interface_suffix(self) -> None:
+        """IPv4 connections do not append an interface suffix or IP flag."""
         window = self.create_window()
         settings = BoardSettings(
             ip_address="192.168.0.10",
-            ip_version="IPv4",
             username="user",
             interface="eth0",
             ssh_port=22,
@@ -1406,17 +1401,16 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(
             window._build_mmu_ssh_command(settings),
-            "ssh -4 user@192.168.0.10 -p 22",
+            "ssh user@192.168.0.10 -p 22",
         )
 
-    def test_mmu_ssh_command_does_not_scope_global_or_ula_ipv6_address(self) -> None:
-        """Global and ULA IPv6 connections use -6 without an interface suffix."""
+    def test_mmu_ssh_command_scopes_all_ipv6_addresses_with_interface(self) -> None:
+        """Any IPv6 address uses the supplied interface scope when provided."""
         window = self.create_window()
         for address in ("2001:db8::1", "fd00::1"):
             with self.subTest(address=address):
                 settings = BoardSettings(
                     ip_address=address,
-                    ip_version="IPv6",
                     username="user",
                     interface="eth0",
                     ssh_port=22,
@@ -1424,7 +1418,7 @@ class MainWindowTest(unittest.TestCase):
 
                 self.assertEqual(
                     window._build_mmu_ssh_command(settings),
-                    f"ssh -6 user@{address} -p 22",
+                    f"ssh user@{address}%eth0 -p 22",
                 )
 
     def test_mmu_ssh_command_uses_board_inputs(self) -> None:
@@ -1433,7 +1427,6 @@ class MainWindowTest(unittest.TestCase):
         window = self.create_window(ssh_manager=manager)
         window.ssh_host_input.setText("server")
         window.ssh_username_input.setText("user")
-        window.board_ip_version_combo.setCurrentText("IPv6")
         window.board_ip_input.setText("fe80::1")
         window.board_username_input.setText("root")
         window.board_password_input.setText("secret")
@@ -1444,7 +1437,7 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(
             manager.shell.sent,
-            ["rm -f ~/.ssh/known_hosts", "ssh -6 root@fe80::1%eth0 -p 2222"],
+            ["rm -f ~/.ssh/known_hosts", "ssh root@fe80::1%eth0 -p 2222"],
         )
         self.assertFalse(window.mmu_ssh_connect_button.isEnabled())
         self.assertTrue(window.mmu_ssh_disconnect_button.isEnabled())

@@ -9,7 +9,6 @@ import re
 import shlex
 import subprocess
 import time
-import ipaddress
 from dataclasses import dataclass
 
 from PySide6.QtCore import QByteArray, QMimeData, QPoint, QProcess, QRegularExpression, QTimer, Qt, Signal
@@ -489,7 +488,6 @@ class MainWindow(QMainWindow):
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
         self.command_set_list.commandSetDropped.connect(self._move_command_set)
-        self.board_ip_version_combo.currentTextChanged.connect(self._update_board_ip_placeholder)
         self.power_on_button.clicked.connect(lambda: self._run_power_supply_command("on"))
         self.power_off_button.clicked.connect(lambda: self._run_power_supply_command("off"))
         self.power_status_button.clicked.connect(lambda: self._run_power_supply_command("status"))
@@ -514,7 +512,6 @@ class MainWindow(QMainWindow):
     def _board_settings(self) -> BoardSettings:
         return BoardSettings(
             ip_address=self.board_ip_input.text().strip(),
-            ip_version=self.board_ip_version_combo.currentText(),
             username=self.board_username_input.text().strip(),
             password=self.board_password_input.text(),
             interface=self.board_interface_input.text().strip(),
@@ -535,10 +532,6 @@ class MainWindow(QMainWindow):
             self.terminal_widget.write_output(f"Power Supply error: {exc}")
             return
         self.statusBar().showMessage(f"Power Supply command sent: {command}")
-
-    def _update_board_ip_placeholder(self, ip_version: str) -> None:
-        placeholder = "fe80::1" if ip_version == "IPv6" else "192.168.0.10"
-        self.board_ip_input.setPlaceholderText(placeholder)
 
     def _selected_usb_port(self) -> str:
         port = self.usb_port_combo.currentText().strip()
@@ -562,7 +555,6 @@ class MainWindow(QMainWindow):
         self.power_supply_voltage_input.setText(settings.power_supply.voltage)
         self.power_supply_current_input.setText(settings.power_supply.current)
         self._power_supply_manager.update_settings(settings.power_supply)
-        self.board_ip_version_combo.setCurrentText(settings.board.ip_version)
         self.board_ip_input.setText(settings.board.ip_address)
         self.board_username_input.setText(settings.board.username)
         self.board_password_input.setText(settings.board.password)
@@ -1433,28 +1425,11 @@ class MainWindow(QMainWindow):
         if not 1 <= settings.ssh_port <= 65535:
             raise ValueError("MMU SSH port must be between 1 and 65535.")
         destination = settings.ip_address.strip()
-        try:
-            address = ipaddress.ip_address(destination)
-        except ValueError as exc:
-            raise ValueError("MMU IP address is invalid.") from exc
-
         interface = settings.interface.strip()
-        if (
-            address.version == 6
-            and address.is_link_local
-            and interface
-            and "%" not in destination
-        ):
+        if ":" in destination and interface and "%" not in destination:
             destination = f"{destination}%{interface}"
-        if settings.ip_version == "IPv4":
-            ip_flag = "-4"
-        elif settings.ip_version == "IPv6":
-            ip_flag = "-6"
-        else:
-            raise ValueError("MMU IP version must be IPv4 or IPv6.")
         command = [
             "ssh",
-            ip_flag,
             f"{settings.username.strip()}@{destination}",
             "-p",
             str(settings.ssh_port),
@@ -2465,10 +2440,8 @@ class MainWindow(QMainWindow):
         layout = QFormLayout(self.mmu_group_content)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
-        self.board_ip_version_combo = QComboBox(self)
-        self.board_ip_version_combo.addItems(["IPv4", "IPv6"])
         self.board_ip_input = QLineEdit(self)
-        self.board_ip_input.setPlaceholderText("192.168.0.10")
+        self.board_ip_input.setPlaceholderText("IP address, e.g. 192.168.0.10 or fe80::1")
         self.board_username_input = QLineEdit(self)
         self.board_username_input.setPlaceholderText("Username")
         self.board_password_input = QLineEdit(self)
@@ -2491,14 +2464,6 @@ class MainWindow(QMainWindow):
         self.mmu_ssh_connect_button.setEnabled(False)
         self.mmu_ssh_disconnect_button = QPushButton("SSH Disconnect", self)
         self.mmu_ssh_disconnect_button.setEnabled(False)
-
-        ip_row = QWidget(self)
-        ip_layout = QHBoxLayout(ip_row)
-        ip_layout.setContentsMargins(0, 0, 0, 0)
-        ip_layout.addWidget(self.board_ip_version_combo)
-        ip_layout.addWidget(self.board_ip_input, stretch=1)
-
-        self.board_ip_row = ip_row
 
         self.board_console_tabs = QTabWidget(self)
         self.board_console_tabs.addTab(self._build_serial_console_tab(), "Serial Console")
@@ -2541,7 +2506,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.mmu_ssh_disconnect_button)
         button_layout.addStretch(1)
 
-        layout.addRow(self.board_ip_row)
+        layout.addRow("IP", self.board_ip_input)
         layout.addRow("User", self.board_username_input)
         layout.addRow("Password", self.board_password_input)
         layout.addRow("Interface", self.board_interface_input)

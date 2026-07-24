@@ -56,8 +56,8 @@ Windows PC
 
 ### 4. Board/MMU SSH Console
 
-- Board/MMU IP, IP version, username, password, SSH port, SSH key path, IPv6 interface 정보를 입력할 수 있어야 한다.
-- Linux Server shell에서 Board/MMU로 SSH 접속하는 command를 구성할 수 있어야 한다.
+- Board/MMU IP, username, password, SSH port, IPv6 interface 정보를 입력할 수 있어야 한다. IP 입력은 IPv4/IPv6 선택 없이 하나의 필드로 제공한다.
+- Linux Server shell에서 Board/MMU로 SSH 접속하는 command를 구성할 수 있어야 하며, IPv6 interface가 입력되면 `ssh {user}@{IP}%{interface} -p {port}` 형식을 사용한다.
 - Board/MMU SSH Console을 Serial Console과 별도 탭으로 제공해야 한다.
 
 ### 5. SFTP
