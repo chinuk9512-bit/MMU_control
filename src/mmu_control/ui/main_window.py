@@ -2571,7 +2571,7 @@ class MainWindow(QMainWindow):
         self.close_minicom_button = QPushButton("Close Minicom", self)
         self.close_minicom_button.setEnabled(False)
         self.mmu_ssh_connect_button = QPushButton("SSH Connect", self)
-        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_connect_button.setEnabled(True)
         self.mmu_ssh_disconnect_button = QPushButton("SSH Disconnect", self)
         self.mmu_ssh_disconnect_button.setEnabled(False)
 
