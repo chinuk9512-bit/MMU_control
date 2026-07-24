@@ -1409,7 +1409,11 @@ class MainWindow(QMainWindow):
             self.terminal_widget.write_output(f"MMU SSH error: {exc}")
             self.board_status_label.setText("MMU: SSH failed")
             return
-        self._pending_echo = command
+        # Both commands have already been rendered above.  Do not wait for an
+        # assumed PTY echo before rendering output: some server shells do not
+        # echo commands, which otherwise hides SSH connection prompts and
+        # errors from the terminal completely.
+        self._pending_echo = None
         self._echo_buffer = ""
         self._mmu_ssh_prompt_buffer = ""
         self._mmu_ssh_auth_pending = True

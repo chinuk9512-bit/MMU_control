@@ -1447,6 +1447,23 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window._mmu_ssh_auth_timeout_timer.isActive())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH disconnected")
 
+    def test_mmu_ssh_connect_displays_output_when_server_does_not_echo_command(self) -> None:
+        """SSH Connect must show connection output even when PTY echo is disabled."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window.board_ip_input.setText("192.168.0.10")
+        window.board_username_input.setText("root")
+        window._connect_ssh()
+        window.mmu_ssh_connect_button.click()
+
+        manager.shell.output = "ssh: connect to host 192.168.0.10 port 22: Connection refused\r\n"
+        window._poll_shell()
+
+        self.assertIn("Connection refused", window.terminal_widget.toPlainText())
+        self.assertEqual(window.board_status_label.text(), "MMU: SSH failed")
+
     def test_mmu_ssh_failure_restores_server_shell_controls(self) -> None:
         """Failed MMU SSH startup re-enables connect without sending exit to the server shell."""
         manager = FakeSSHManager()
