@@ -1400,7 +1400,10 @@ class MainWindow(QMainWindow):
             return
         try:
             command = self._build_mmu_ssh_command(self._board_settings())
-            self._shell.send_line(SFTPManager.KNOWN_HOSTS_CLEANUP_COMMAND)
+            known_hosts_cleanup_command = SFTPManager.KNOWN_HOSTS_CLEANUP_COMMAND
+            self.terminal_widget.write_output(f"$ {known_hosts_cleanup_command}")
+            self._shell.send_line(known_hosts_cleanup_command)
+            self.terminal_widget.write_output(f"$ {command}")
             self._shell.send_line(command)
         except ValueError as exc:
             self.terminal_widget.write_output(f"MMU SSH error: {exc}")
