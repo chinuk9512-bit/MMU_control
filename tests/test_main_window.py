@@ -609,7 +609,6 @@ class MainWindowTest(unittest.TestCase):
         original = AutomationScenario(
             name="boot",
             description="Boot the board",
-            transport="minicom",
             steps=[AutomationStep("wait", "start", CompletionType.DELAY, timeout_seconds=1)],
         )
         store.upsert(original)
@@ -633,7 +632,6 @@ class MainWindowTest(unittest.TestCase):
         copied = AutomationScenario(
             name="boot (Copy)",
             description=original.description,
-            transport=original.transport,
             steps=[AutomationStep.from_dict(step.to_dict()) for step in original.steps],
         )
         self.assertEqual(dialog_scenarios, [copied])
@@ -666,6 +664,32 @@ class MainWindowTest(unittest.TestCase):
         window._run_automation_scenario()
 
         self.assertEqual(manager.shell.sent, ["command"])
+
+    def test_same_automation_scenario_runs_on_ssh_and_minicom_consoles(self) -> None:
+        manager = FakeSSHManager()
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        scenario = AutomationScenario(name="portable", steps=[AutomationStep("run", "status")])
+        store.upsert(scenario)
+        window = self.create_window(ssh_manager=manager, automation_store=store)
+        window._activate_shell(manager.shell)
+
+        window._run_automation_scenario()
+        self.assertEqual(manager.shell.sent, ["status"])
+        self.assertIn("Console: SSH shell", window.automation_output.toPlainText())
+
+        window._minicom_session_active = True
+        window._run_automation_scenario()
+        self.assertEqual(manager.shell.sent, ["status", "status"])
+        self.assertIn("Console: Minicom", window.automation_output.toPlainText())
+
+    def test_run_automation_reports_when_no_console_is_active(self) -> None:
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        store.upsert(AutomationScenario(name="portable", steps=[AutomationStep("run", "status")]))
+        window = self.create_window(automation_store=store)
+
+        window._run_automation_scenario()
+
+        self.assertEqual(window.automation_status_label.text(), "Automation: no active console is available")
 
     def test_scenario_selection_keeps_the_last_execution_progress(self) -> None:
         """Returning to a running scenario retains its displayed progress."""

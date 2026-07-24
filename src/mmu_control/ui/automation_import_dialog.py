@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -35,9 +34,6 @@ class AutomationImportDialog(QDialog):
 
         self.name_input = QLineEdit(self)
         self.description_input = QLineEdit(self)
-        self.transport_input = QComboBox(self)
-        self.transport_input.addItem("SSH", "ssh")
-        self.transport_input.addItem("minicom", "minicom")
         self.timeout_input = QSpinBox(self)
         self.timeout_input.setRange(1, 86_400)
         self.timeout_input.setValue(60)
@@ -65,7 +61,6 @@ class AutomationImportDialog(QDialog):
         metadata = QFormLayout()
         metadata.addRow("시나리오 이름", self.name_input)
         metadata.addRow("설명", self.description_input)
-        metadata.addRow("Transport", self.transport_input)
         metadata.addRow("기본 timeout", self.timeout_input)
         layout.addLayout(metadata)
 
@@ -134,7 +129,6 @@ class AutomationImportDialog(QDialog):
         self._scenario = AutomationScenario(
             name=name,
             description=self.description_input.text().strip(),
-            transport=str(self.transport_input.currentData()),
             steps=steps,
         )
         super().accept()

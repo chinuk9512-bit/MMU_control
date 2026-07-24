@@ -92,11 +92,10 @@ class AutomationStep:
 
 @dataclass(slots=True)
 class AutomationScenario:
-    """A sequential automation scenario for one SSH or minicom terminal."""
+    """A sequential automation scenario independent of its execution terminal."""
 
     name: str
     description: str = ""
-    transport: str = "ssh"
     steps: list[AutomationStep] = field(default_factory=list)
 
     @classmethod
@@ -104,11 +103,9 @@ class AutomationScenario:
         """Create a scenario from JSON-compatible data."""
         raw_steps = data.get("steps", [])
         steps = [AutomationStep.from_dict(step) for step in raw_steps if isinstance(step, dict)]
-        transport = str(data.get("transport", "ssh"))
         return cls(
             name=str(data.get("name", "")),
             description=str(data.get("description", "")),
-            transport=transport if transport in {"ssh", "minicom"} else "ssh",
             steps=steps,
         )
 
@@ -117,7 +114,6 @@ class AutomationScenario:
         return {
             "name": self.name,
             "description": self.description,
-            "transport": self.transport,
             "steps": [step.to_dict() for step in self.steps],
         }
 
