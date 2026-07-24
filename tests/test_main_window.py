@@ -11,13 +11,6 @@ from unittest.mock import patch
 from collections.abc import Callable
 from pathlib import Path
 
-import pytest
-
-# PySide6 loads native Qt GUI libraries during import.  Skip these widget
-# tests when a minimal test container does not provide that runtime instead
-# of aborting collection for the entire test suite.
-pytest.importorskip("PySide6.QtGui", exc_type=ImportError)
-
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
 from PySide6.QtGui import QDropEvent, QValidator
 from PySide6.QtTest import QTest
