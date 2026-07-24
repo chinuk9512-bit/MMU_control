@@ -447,6 +447,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_session_active = False
         self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
+        self._local_process: QProcess | None = None
         self._interactive_program = ""
         self._local_cwd = os.getcwd()
         self._server_sftp_directory = os.path.expanduser("~")
@@ -1382,7 +1383,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_usb_ports(self) -> None:
         if self._shell is None or not self._shell.is_open:
-            self.statusBar().showMessage("Connect to SSH before scanning USB ports")
+            self.statusBar().showMessage("USB serial console is available only through the SSH server")
             return
         selected = self._selected_usb_port()
         self.refresh_usb_button.setEnabled(False)
@@ -1425,11 +1426,11 @@ class MainWindow(QMainWindow):
         )
 
     def _connect_mmu_ssh(self) -> None:
-        if self._shell is None or not self._shell.is_open:
-            self.terminal_widget.write_output("Connect to the SSH server before opening an MMU SSH session.")
-            return
         try:
             command = self._build_mmu_ssh_command(self._board_settings())
+            if self._shell is None or not self._shell.is_open:
+                self._start_local_mmu_ssh(command)
+                return
             known_hosts_cleanup_command = SFTPManager.KNOWN_HOSTS_CLEANUP_COMMAND
             self.terminal_widget.write_output(f"$ {known_hosts_cleanup_command}")
             self._shell.send_line(known_hosts_cleanup_command)
@@ -1453,6 +1454,59 @@ class MainWindow(QMainWindow):
         self.mmu_ssh_disconnect_button.setEnabled(True)
         self.board_status_label.setText("MMU: SSH connecting")
         self.statusBar().showMessage("Opening MMU SSH session...")
+
+    def _start_local_mmu_ssh(self, command: str) -> None:
+        """Start a direct Client SSH session from the local Windows PC."""
+        self._close_local_process()
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.readyReadStandardOutput.connect(self._read_local_process_output)
+        process.errorOccurred.connect(self._handle_local_process_error)
+        process.finished.connect(self._handle_local_mmu_ssh_finished)
+        self._local_process = process
+        self.terminal_widget.write_output(f"$ {command}")
+        self.terminal_widget.set_interactive_mode(True)
+        self._interactive_program = "ssh"
+        self._mmu_ssh_session_active = True
+        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_disconnect_button.setEnabled(True)
+        self.board_status_label.setText("MMU: local SSH connecting")
+        self.statusBar().showMessage("Opening local SSH session...")
+        parts = shlex.split(command)
+        process.start(parts[0], parts[1:])
+
+    def _read_local_process_output(self) -> None:
+        """Render output from the local direct SSH process."""
+        if self._local_process is None:
+            return
+        output = bytes(self._local_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        if output:
+            self.terminal_widget.write_stream(output)
+
+    def _write_local_process_input(self, text: str) -> None:
+        """Forward raw terminal input to an active local direct SSH process."""
+        if self._local_process is None or self._local_process.state() == QProcess.ProcessState.NotRunning:
+            return
+        self._local_process.write(text.encode("utf-8"))
+
+    def _handle_local_process_error(self, _error: QProcess.ProcessError) -> None:
+        if self._local_process is None or not self._mmu_ssh_session_active:
+            return
+        self.terminal_widget.write_output(f"Local SSH error: {self._local_process.errorString()}")
+        if self._local_process.state() == QProcess.ProcessState.NotRunning:
+            self._handle_local_mmu_ssh_finished(1, QProcess.ExitStatus.CrashExit)
+
+    def _handle_local_mmu_ssh_finished(self, _exit_code: int, _exit_status: QProcess.ExitStatus) -> None:
+        if not self._mmu_ssh_session_active:
+            return
+        self._read_local_process_output()
+        self._mmu_ssh_session_active = False
+        self._local_process = None
+        self._leave_interactive_mode()
+        self.mmu_ssh_connect_button.setEnabled(self._shell is None or not self._shell.is_open)
+        self.mmu_ssh_disconnect_button.setEnabled(False)
+        self.board_status_label.setText("MMU: local SSH disconnected")
+        self.statusBar().showMessage("Local SSH session closed")
 
     def _build_mmu_ssh_command(self, settings: BoardSettings) -> str:
         if not settings.ip_address.strip():
@@ -1518,11 +1572,13 @@ class MainWindow(QMainWindow):
     def _disconnect_mmu_ssh(self) -> None:
         if self._shell is not None and self._shell.is_open and self._mmu_ssh_session_active:
             self._shell.send_line("exit")
+        elif self._local_process is not None:
+            self._close_local_process()
         self._mmu_ssh_session_active = False
         self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
         self._mmu_ssh_auth_timeout_timer.stop()
-        self.mmu_ssh_connect_button.setEnabled(self._shell is not None and self._shell.is_open)
+        self.mmu_ssh_connect_button.setEnabled(True)
         self.mmu_ssh_disconnect_button.setEnabled(False)
         self.board_status_label.setText("MMU: SSH disconnected")
         self.statusBar().showMessage("Closing MMU SSH session...")
@@ -2212,7 +2268,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_auth_pending = False
         self._mmu_ssh_prompt_buffer = ""
         self._mmu_ssh_auth_timeout_timer.stop()
-        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_connect_button.setEnabled(True)
         self.mmu_ssh_disconnect_button.setEnabled(False)
 
     def _close_local_process(self) -> None:
@@ -2280,7 +2336,7 @@ class MainWindow(QMainWindow):
         self.refresh_usb_button.setEnabled(False)
         self.open_minicom_button.setEnabled(False)
         self.close_minicom_button.setEnabled(False)
-        self.mmu_ssh_connect_button.setEnabled(False)
+        self.mmu_ssh_connect_button.setEnabled(True)
         self.mmu_ssh_disconnect_button.setEnabled(False)
         self._set_sftp_actions_enabled(False)
         self.connection_status_label.setText("SSH: disconnected")
