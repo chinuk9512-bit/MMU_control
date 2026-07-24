@@ -7,7 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from collections.abc import Callable
 from pathlib import Path
 
@@ -291,7 +291,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.close_minicom_button.isEnabled())
         self.assertEqual(window.board_password_input.echoMode(), QLineEdit.EchoMode.Normal)
         self.assertEqual(window.board_ssh_port_input.value(), 22)
-        self.assertFalse(window.mmu_ssh_connect_button.isEnabled())
+        self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
         self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertEqual(window.server_current_path_input.text(), os.path.expanduser("~"))
         self.assertTrue(window.server_current_path_input.isReadOnly())
@@ -1470,6 +1470,30 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertFalse(window._mmu_ssh_auth_timeout_timer.isActive())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH disconnected")
+
+    def test_mmu_ssh_uses_local_process_without_server_connection(self) -> None:
+        """SSH Connect starts a direct local Client SSH session when disconnected."""
+        window = self.create_window()
+        window.board_ip_input.setText("192.168.0.10")
+        window.board_username_input.setText("root")
+        start_local = Mock()
+        window._start_local_mmu_ssh = start_local
+
+        window.mmu_ssh_connect_button.click()
+
+        start_local.assert_called_once_with("ssh root@192.168.0.10 -p 22")
+        self.assertFalse(window.refresh_usb_button.isEnabled())
+        self.assertFalse(window.open_minicom_button.isEnabled())
+
+    def test_disconnected_state_keeps_local_mmu_ssh_available(self) -> None:
+        """Disconnecting from the server still permits direct local Client SSH."""
+        window = self.create_window()
+
+        window._set_disconnected_state("Disconnected")
+
+        self.assertTrue(window.mmu_ssh_connect_button.isEnabled())
+        self.assertFalse(window.refresh_usb_button.isEnabled())
+        self.assertFalse(window.open_minicom_button.isEnabled())
 
     def test_mmu_ssh_connect_displays_output_when_server_does_not_echo_command(self) -> None:
         """SSH Connect must show connection output even when PTY echo is disabled."""
