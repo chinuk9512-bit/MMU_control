@@ -1439,6 +1439,9 @@ class MainWindowTest(unittest.TestCase):
             manager.shell.sent,
             ["rm -f ~/.ssh/known_hosts", "ssh root@fe80::1%eth0 -p 2222"],
         )
+        terminal_output = window.terminal_widget.toPlainText()
+        self.assertIn("$ rm -f ~/.ssh/known_hosts", terminal_output)
+        self.assertIn("$ ssh root@fe80::1%eth0 -p 2222", terminal_output)
         self.assertFalse(window.mmu_ssh_connect_button.isEnabled())
         self.assertTrue(window.mmu_ssh_disconnect_button.isEnabled())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH connecting")
