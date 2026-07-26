@@ -16,6 +16,21 @@ python -m pip install -e .[dev]
 mmu-control
 ```
 
+## Run Web UI
+
+```powershell
+mmu-control-web
+```
+
+During development you can also run the Streamlit entry point directly:
+
+```powershell
+python -m streamlit run .\src\mmu_control\web_app.py
+```
+
+The web UI runs locally and reuses the same settings, command sets, and
+automation scenarios stored in `%APPDATA%/MMUControl`.
+
 ## Board workflows
 
 - SSH connection and board fields are restored when the application restarts.
@@ -48,3 +63,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 ```
 
 The executable is created at `dist\MMUControl.exe`.
+
+## Build Web EXE
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_web_exe.ps1
+```
+
+The web executable is created at `dist\MMUControlWeb.exe` and starts the local
+Streamlit browser UI.
