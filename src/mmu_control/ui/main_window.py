@@ -1859,21 +1859,21 @@ class MainWindow(QMainWindow):
         )
         step_lines: list[str] = []
         for index, step in enumerate(scenario.steps):
-            marker = "○"
+            marker = "pending"
             if index < start_step_index:
-                marker = "↷ not run"
+                marker = "not run"
             elif index in skipped_indices:
-                marker = "↷ skipped"
+                marker = "skipped"
             elif status is not None and status.state.value == "succeeded" and index <= current_index:
-                marker = "✓ completed"
+                marker = "completed"
             elif status is not None and status.state.value in {"failed", "cancelled"} and index == current_index:
-                marker = f"✗ {status.state.value}"
+                marker = status.state.value
             elif is_running_scenario and runner is not None and runner.is_active and index == current_index:
-                marker = "▶ running"
+                marker = "running"
             elif is_running_scenario and index < current_index:
-                marker = "✓ completed"
+                marker = "completed"
             step_lines.append(
-                f"{index + 1}. [{marker}] {step.name or step.command} — "
+                f"{index + 1}. [{marker}] {step.name or step.command} - "
                 f"{step.completion_type.value}: {step.completion_value}"
             )
         progress = status.message if status is not None else "Not running."
@@ -2073,7 +2073,7 @@ class MainWindow(QMainWindow):
         self._remember_automation_progress()
         status = runner.status
         state = status.state.value.replace("_", " ")
-        self.automation_status_label.setText(f"Automation: {state} — {status.message}")
+        self.automation_status_label.setText(f"Automation: {state} - {status.message}")
         scenario = self._selected_automation_scenario()
         if scenario is not None:
             self._render_automation_progress(scenario)
@@ -2803,7 +2803,7 @@ class MainWindow(QMainWindow):
         automation_layout = QVBoxLayout(automation_group)
         automation_actions = QHBoxLayout()
         self.new_automation_button = QPushButton("New Scenario", automation_group)
-        self.import_automation_button = QPushButton("텍스트에서 가져오기", automation_group)
+        self.import_automation_button = QPushButton("Import Text", automation_group)
         self.copy_automation_button = QPushButton("Copy", automation_group)
         self.edit_automation_button = QPushButton("Edit", automation_group)
         self.delete_automation_button = QPushButton("Delete", automation_group)

@@ -719,7 +719,7 @@ class MainWindowTest(unittest.TestCase):
         window.automation_list.setCurrentRow(0)
 
         self.assertIn("Execution progress: Running step 1: run first", window.automation_output.toPlainText())
-        self.assertIn("[▶ running] run first", window.automation_output.toPlainText())
+        self.assertIn("[running] run first", window.automation_output.toPlainText())
 
     def test_run_automation_can_start_at_the_selected_step(self) -> None:
         manager = FakeSSHManager()
@@ -740,7 +740,7 @@ class MainWindowTest(unittest.TestCase):
         window._run_automation_scenario()
 
         self.assertEqual(manager.shell.sent, ["middle-command"])
-        self.assertIn("[↷ not run] first", window.automation_output.toPlainText())
+        self.assertIn("[not run] first", window.automation_output.toPlainText())
 
     def test_create_automation_scenario_keeps_list_when_store_save_fails(self) -> None:
         """A failed new scenario save reports its path without changing the selected scenario."""

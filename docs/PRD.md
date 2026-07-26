@@ -1,14 +1,16 @@
-# Device Control Tool - PRD
+# MMU Control PRD
 
-## 목표
+## Goal
 
-Windows에서 실행되는 Python(PySide6) GUI 애플리케이션으로 Linux Server에 SSH 접속하고, 그 서버를 통해 MMU/Board 개발 업무를 한 화면에서 수행한다.
+MMU Control is a Windows desktop GUI for engineers who need to operate board/MMU workflows through a Linux server and, where supported, directly from the local Windows PC.
 
-## 대상 사용자
+The application should reduce repeated terminal setup by keeping SSH, board, power supply, command-set, SFTP, and automation workflows in one focused tool.
 
-- Windows PC에서 장비 개발/검증을 수행하는 엔지니어
-- Linux Server를 gateway 또는 작업 서버로 사용하여 Board/MMU에 접근하는 사용자
-- Serial console, SSH shell, SFTP, 전원 제어를 반복적으로 수행하는 사용자
+## Target Users
+
+- Engineers validating or developing board/MMU software from a Windows PC.
+- Users who access the board through a Linux server used as a gateway or work host.
+- Users who repeatedly run shell commands, minicom serial sessions, SFTP transfers, power supply commands, and scripted validation scenarios.
 
 ## Primary Workflow
 
@@ -16,117 +18,124 @@ Windows에서 실행되는 Python(PySide6) GUI 애플리케이션으로 Linux Se
 Windows PC
   -> MMU Control GUI
   -> SSH to Linux Server
-  -> Shell / minicom / SFTP / Power Supply command
-  -> Board 또는 MMU
+  -> Linux shell / minicom / Linux-side SFTP / power supply commands
+  -> Board or MMU
 ```
 
-## 핵심 가치
+Direct board SSH is also supported through a local `ssh` process when the Linux server connection is not active.
 
-- SSH 접속 정보와 Board/MMU 정보를 저장하여 반복 입력을 줄인다.
-- Terminal, Serial Console, SFTP, Command Set, Power Supply 작업을 하나의 GUI에서 수행한다.
-- 장시간 실행되거나 blocking 되는 네트워크 작업이 GUI를 멈추지 않도록 한다.
-- 자주 쓰는 여러 줄 shell 명령을 저장하고 재실행한다.
-- Linux Server와 Board/MMU 사이의 파일 전송을 GUI 파일 목록과 drag-and-drop으로 보조한다.
+## Product Value
 
-## 기능 요구사항
+- Save and restore frequently used connection and device fields.
+- Keep terminal, serial console, SFTP, command groups, and automation scenarios in one UI.
+- Run blocking network and file operations without freezing the GUI.
+- Organize reusable multi-line commands and replay them consistently.
+- Transfer files between the Linux server and the board/MMU through an SFTP session, with drag-and-drop support for file-list transfers.
+- Run condition-driven automation scenarios against the active terminal.
 
-### 1. Linux Server SSH
+## Functional Requirements
 
-- Host, Port, Username, Password를 입력할 수 있어야 한다.
-- Connect, Disconnect를 지원해야 한다.
-- 연결 성공 후 interactive shell을 열어 Terminal 탭에 출력해야 한다.
-- 연결 상태를 status bar에 표시해야 한다.
-- 원격 명령 실행, shell channel 생성, 로컬 PC 파일 업로드, USB serial port 검색 기능을 제공해야 한다.
+### Linux Server SSH
 
-### 2. Terminal
+- Accept host, port, username, and password.
+- Connect and disconnect from the Linux server.
+- Open an interactive shell after a successful connection.
+- Show connection state in the status bar.
+- Support remote command execution, shell channels, local PC file upload to the Linux server, and USB serial-port discovery.
 
-- 사용자가 명령을 입력하고 Linux Server shell로 전송할 수 있어야 한다.
-- Linux 출력, minicom 출력, SFTP 출력은 각 목적에 맞는 terminal 영역에 표시되어야 한다.
-- `htop`, `top`, `vi`, `vim`, `nano`, `less`, `more`, `tail -f`, `minicom`처럼 즉시 키 입력이 필요한 프로그램은 interactive mode로 동작해야 한다.
-- `q`, `Ctrl+C`, Backspace 등 raw key 입력을 원격 shell로 즉시 보낼 수 있어야 한다.
-- ANSI/VT escape sequence는 필요한 경우 표시용 텍스트에서 제거할 수 있어야 한다.
+### Terminal
 
-### 3. Board/MMU Serial Console
+- Show an interactive terminal pane for the Linux server shell.
+- Before Linux SSH is connected, allow simple local terminal commands in the current Windows working directory.
+- Send line commands with Enter.
+- Support raw key input for interactive programs such as `minicom`, `htop`, `top`, `vi`, `vim`, `nano`, `less`, `more`, and `tail -f`.
+- Strip ANSI/VT escape/control sequences from displayed output where needed.
+- Keep a separate response pane for configured command responses.
 
-- Linux Server에서 `/dev/ttyUSB*`, `/dev/ttyACM*` 장치를 검색할 수 있어야 한다.
-- 검색된 USB port를 선택할 수 있어야 한다.
-- 선택된 port로 `minicom -o -c off -D <port>`를 실행할 수 있어야 한다.
-- minicom 종료 버튼은 Ctrl-A, X, Enter 시퀀스를 전송해야 한다.
-- Serial Console은 Board 콘솔 영역에서 SSH Console과 구분되어야 한다.
+### Board/MMU Serial Console
 
-### 4. Board/MMU SSH Console
+- Discover `/dev/ttyUSB*` and `/dev/ttyACM*` device paths on the Linux server.
+- Let users select a detected USB serial port.
+- Open `minicom -o -c off -D <port>` in the active Linux server shell.
+- Close minicom by sending Ctrl-A, X, and Enter.
+- Keep serial console state separate from board SSH and SFTP state.
 
-- Board/MMU IP, username, password, SSH port, IPv6 interface 정보를 입력할 수 있어야 한다. IP 입력은 IPv4/IPv6 선택 없이 하나의 필드로 제공한다.
-- Linux Server shell에서 Board/MMU로 SSH 접속하는 command를 구성할 수 있어야 하며, IPv6 interface가 입력되면 `ssh {user}@{IP}%{interface} -p {port}` 형식을 사용한다.
-- Board/MMU SSH Console을 Serial Console과 별도 탭으로 제공해야 한다.
+### Board/MMU SSH Console
 
-### 5. SFTP
+- Accept board/MMU IP or hostname, username, password, SSH port, optional SSH key path, and optional IPv6 interface/zone.
+- Build board SSH destinations correctly for IPv4 and IPv6-with-zone usage.
+- When Linux server SSH is connected, run board SSH from the Linux shell.
+- When Linux server SSH is disconnected, start a local Windows `ssh` process to connect directly to the board.
+- Show board SSH output in its own console area and support disconnect.
 
-- Linux Server에서 `sftp` CLI를 실행하여 Board/MMU에 접속해야 한다.
-- Board/MMU IP, username, password, port, IPv6 interface를 사용할 수 있어야 한다.
-- Password prompt와 first connection authenticity prompt를 처리해야 한다.
-- SFTP session은 메인 Terminal shell과 독립되어야 한다.
-- Server 측 현재 경로와 MMU/Board 측 현재 경로를 표시해야 한다.
-- Server 파일 목록과 MMU/Board 파일 목록을 표시하고 directory 이동을 지원해야 한다.
-- Upload는 Linux Server 파일을 MMU/Board로 `put`해야 한다.
-- Download는 MMU/Board 파일을 Linux Server로 `get`해야 한다.
-- 로컬 PC 파일 drag-and-drop 시 먼저 Linux Server 임시 업로드 경로로 전송한 뒤 SFTP로 MMU/Board에 업로드해야 한다.
+### SFTP
 
-### 6. Command Sets
+- Start a Linux-side `sftp` CLI session from the Linux server to the board/MMU.
+- Use board/MMU IP, username, password, port, optional key path, and optional IPv6 interface.
+- Handle first-connection authenticity prompts and password prompts.
+- Keep the SFTP shell independent from the main terminal shell.
+- Show Linux server and MMU current directories.
+- Show file lists for both sides.
+- Support directory navigation by double-click.
+- Support symlink display and directory-link navigation where detectable.
+- Upload from Linux server to MMU with `put`.
+- Download from MMU to Linux server with `get`.
+- Support drag-and-drop between the two file lists for upload/download.
+- Support Delete/Backspace removal for selected files.
+- For local PC file drops, upload the file to a temporary Linux server path before sending it to the MMU.
 
-- 명령 세트는 이름, 설명, 여러 줄 명령으로 구성되어야 한다.
-- 사용자는 명령 세트를 생성, 수정, 삭제할 수 있어야 한다.
-- 명령 세트는 JSON 파일에 저장되어 앱 재시작 후에도 유지되어야 한다.
-- 선택된 명령 세트의 여러 줄 명령을 순서대로 Terminal shell에 전송할 수 있어야 한다.
-- 기존 JSON schema와 하위 호환되어야 한다.
+### Command Sets
 
-### 6a. Automation Scenarios
+- Let users create, edit, delete, and run named command groups.
+- Store command groups as name, description, multi-line commands, and optional parent folder.
+- Support folders and drag/drop movement of command groups into folders.
+- Persist command groups as JSON under the user data directory.
+- Load legacy flat command-set JSON and save back using the current hierarchical schema.
 
-- 사용자는 SSH shell 또는 minicom 중 하나의 transport에서 실행할 자동화 시나리오를 생성, 수정, 삭제할 수 있어야 한다.
-- 시나리오는 임의 개수의 순차 Step을 가지며, 각 Step의 명령, timeout, 완료 조건을 사용자가 편집할 수 있어야 한다.
-- 완료 조건은 콘솔 문자열/정규식, 최신 프롬프트 정규식, 장비 파일의 문자열/정규식, 시간 대기를 지원해야 한다.
-- 다음 Step은 현재 Step의 완료 조건이 만족될 때만 실행되어야 한다.
-- Step 실패 또는 timeout 시 해당 Step만 2초 후 한 번 재시도하고, 재시도 실패 시 전체 시나리오를 실패 처리해야 한다.
-- 실행 중인 상태, 현재 Step, 실패 사유를 화면에 표시하고 사용자가 중지할 수 있어야 한다.
+### Automation Scenarios
 
-### 7. Settings
+- Let users create, import, copy, edit, delete, run, and stop automation scenarios.
+- Store scenarios as ordered steps.
+- Each step has a command, timeout, optional start condition, and optional completion condition.
+- Supported condition types are none, output contains, output regex, latest prompt regex, remote file contains, remote file regex, and delay.
+- Start conditions can timeout/fail the step, or skip the step when `skip_on_start_condition_failure` is enabled.
+- A run may start from any selected step.
+- The runner retries only the current failing step once after a two-second delay.
+- Show current state, selected start step, skipped steps, failure reason, and terminal target.
+- Import scenarios from pasted text or a UTF-8 text file using the parser rules in `automation_import_parser.py`.
 
-- SSH 정보, Board/MMU 정보, Power Supply 정보, 선택된 USB port, window 크기/최대화 상태, connection panel 확장 상태를 저장해야 한다.
-- 설정 파일이 없으면 기본값으로 시작해야 한다.
-- 설정 파일에 새 필드가 없더라도 기본값을 적용하여 로드해야 한다.
-- 설정 저장은 임시 파일 후 replace 방식으로 손상 가능성을 줄여야 한다.
+### Settings and Profiles
 
-### 8. Connection Profiles
+- Persist SSH, board/MMU, power supply, selected USB port, active profile name, and window state.
+- Load missing settings fields with safe defaults.
+- Save settings atomically through a temporary file and replace.
+- Keep profile models and storage available for future full profile UI work.
 
-- 연결 프로필은 SSH 정보와 Board/MMU 정보를 이름별로 저장할 수 있는 모델/저장소를 제공해야 한다.
-- active profile 이름을 유지할 수 있어야 한다.
-- 현재 구현은 기본 설정 저장 중심이며, UI에서의 전체 프로필 관리 기능은 후속 확장 범위로 둔다.
+### Power Supply
 
-### 9. Power Supply
+- Accept power supply IPv4 address, voltage, and current.
+- Build configured ON, OFF, Status, All Status, and Set commands.
+- Load power command templates from `resources/power_supply_commands.json`.
+- Run power commands on the connected Linux server and show output or errors to the user.
 
-- Power Supply IP, voltage, current를 입력할 수 있어야 한다.
-- ON, OFF, Status, All Status, Set 명령을 실행할 수 있어야 한다.
-- 명령 템플릿은 패키지 리소스 JSON으로 관리되어야 한다.
-- 필수 입력값이 없거나 action이 정의되지 않은 경우 사용자에게 오류를 알려야 한다.
+### Logging and Error Recovery
 
-### 10. Logging / Error Recovery
+- Write application logs under the user data directory.
+- Use rotating file logging.
+- Close logging handlers on application exit.
+- Use retry/backoff helpers for operations that can reasonably be retried.
+- Surface failures through terminal output and/or the status bar.
 
-- 애플리케이션 로그를 사용자 설정 디렉터리에 저장해야 한다.
-- 로그 파일은 크기 제한과 backup count를 갖는 rotating file 방식이어야 한다.
-- 일시 실패 가능 작업은 retry/backoff helper를 사용할 수 있어야 한다.
-- 사용자에게는 status bar와 terminal output을 통해 실패 원인을 알기 쉽게 표시해야 한다.
+### Packaging
 
-### 11. Packaging
+- Provide `mmu-control` as the development entry point.
+- Build a Windows executable through `scripts/build_exe.ps1`.
+- Include package resources required by runtime managers in the PyInstaller spec.
 
-- `mmu-control` console script로 개발 환경에서 실행할 수 있어야 한다.
-- PowerShell build script로 Windows executable을 생성할 수 있어야 한다.
-- PyInstaller spec은 앱 실행에 필요한 package resource를 포함해야 한다.
+## Non-Functional Requirements
 
-## 비기능 요구사항
-
-- GUI thread에서 SSH 연결, 파일 업로드, 원격 명령 실행 같은 blocking 작업을 수행하지 않는다.
-- UI와 business logic을 분리한다.
-- JSON 저장 형식은 하위 호환성을 유지한다.
-- public API에는 type hint와 docstring을 유지한다.
-- 사용자가 선택하거나 입력한 shell 경로/명령 인자는 가능한 경우 quoting/검증한다.
-- 테스트 가능한 단위로 모듈을 나누고 pytest 테스트를 유지한다.
+- Do not run blocking SSH, SFTP, file I/O, or long remote commands on the GUI thread.
+- Keep UI orchestration separate from core business logic where practical.
+- Keep JSON schemas backward compatible when fields are added.
+- Validate and quote shell paths/arguments where user input can affect a command.
+- Keep logic testable without real SSH, SFTP, minicom, power supply, or board hardware.

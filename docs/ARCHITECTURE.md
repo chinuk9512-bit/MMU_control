@@ -1,114 +1,133 @@
 # Architecture
 
-## 개요
+## Overview
 
-MMU Control은 Windows PC에서 실행되는 Python/PySide6 데스크톱 GUI입니다. 사용자는 GUI에서 Linux Server로 SSH 접속한 뒤, 해당 서버를 작업 허브로 사용하여 MMU/Board의 Shell, Serial(minicom), SFTP, 전원 제어 업무를 수행합니다.
-
-기본 흐름은 다음과 같습니다.
+MMU Control is a Python 3.12 / PySide6 Windows desktop application. It connects to a Linux server over SSH, uses that server as the main work host, and supports board/MMU shell, serial, SFTP, power supply, saved-command, and automation workflows.
 
 ```text
 Windows PC GUI
-  -> Paramiko SSH
+  -> PySide6 MainWindow
+  -> Paramiko SSHManager
   -> Linux Server
-  -> Board/MMU Shell, minicom, SFTP, Power Supply command
+  -> shell / minicom / sftp / power supply command
+  -> Board or MMU
 ```
 
-## 기술 스택
+The board SSH console can also run through a local Windows `ssh` process when the Linux server connection is not active.
 
-- Python 3.12 이상
-- PySide6: GUI, Signal/Slot, QThreadPool 기반 백그라운드 실행
-- Paramiko: SSH 접속, 명령 실행, Shell channel, 로컬 PC -> Linux Server 파일 업로드
-- JSON: 설정, 명령 세트, 전원 공급기 명령 템플릿 저장
-- PyInstaller: Windows 실행 파일 패키징
-- pytest: 단위/GUI 로직 테스트
+## Technology Stack
 
-## 소스 구조
+- Python 3.12+
+- PySide6 for widgets, signals/slots, timers, `QThreadPool`, and `QProcess`
+- Paramiko for Linux server SSH, shell channels, command execution, and local-to-server file upload
+- JSON for app settings, command groups, profiles, automation scenarios, and power command templates
+- PyInstaller for Windows executable packaging
+- pytest for model, manager, storage, and UI-logic tests
+
+## Source Layout
 
 ```text
 src/mmu_control/
-  app.py                         # QApplication 생성, MainWindow 실행, 로깅 초기화/종료
-  core/                          # SSH/SFTP/minicom/전원/설정/로깅/터미널 시퀀스 등 비즈니스 로직
-  models/                        # JSON 직렬화 가능한 dataclass 모델
-  storage/                       # 명령 세트와 연결 프로필 JSON 저장소
-  ui/                            # PySide6 위젯, 메인 윈도우, 터미널 위젯, 백그라운드 작업 실행기
-  resources/                     # 패키지에 포함되는 기본 JSON 리소스
+  app.py                         # QApplication startup and logging lifecycle
+  core/                          # SSH, shell, SFTP, minicom, automation, logging, config, retry logic
+  models/                        # JSON-serializable dataclass models
+  storage/                       # JSON stores for command sets, automation scenarios, and profiles
+  ui/                            # PySide6 main window, dialogs, terminal widget, background worker
+  resources/                     # Packaged JSON resources
+  user_scenario/                 # Seed/sample automation scenarios
 ```
 
-## 주요 모듈과 책임
+## Main Modules
 
 ### Entry Point
 
 - `mmu_control.app.main`
-  - 로깅을 설정하고 `QApplication`과 `MainWindow`를 생성합니다.
-  - 애플리케이션 종료 시 로깅 핸들러를 정리합니다.
+  - Configures logging.
+  - Creates `QApplication`.
+  - Creates and shows `MainWindow`.
+  - Shuts down logging handlers when the app exits.
 
 ### UI Layer
 
 - `MainWindow`
-  - SSH 연결 정보, 전원 공급기 정보, Board/MMU 정보 입력 영역을 구성합니다.
-  - Workspace 탭으로 Terminal, Commands, SFTP 기능을 제공합니다.
-  - Board 콘솔 탭으로 Serial Console(minicom)과 SSH Console을 분리합니다.
-  - 설정 로드/저장, 버튼 상태 전환, Shell polling, SFTP 파일 목록 갱신 등 화면 상태를 조율합니다.
+  - Owns the application workflow and visible state.
+  - Builds the connection panel, terminal workspace, SFTP tab, command groups, automation scenarios, board serial console, board SSH console, and response pane.
+  - Coordinates managers and stores.
+  - Polls interactive shells with `QTimer`.
+  - Starts blocking work through `ThreadPoolTaskRunner`.
+  - Starts direct board SSH through `QProcess` when needed.
 - `TerminalWidget`
-  - 출력과 현재 입력 프롬프트를 한 위젯 안에서 관리합니다.
-  - 일반 line-editing 모드와 `minicom`, `htop`, `vi` 등 즉시 키 입력이 필요한 interactive 모드를 지원합니다.
+  - Handles terminal text display, prompt rendering, line editing, paste, clear, and immediate input mode.
 - `CommandEditorDialog`
-  - 이름, 설명, 여러 줄 명령으로 구성된 명령 세트를 편집합니다.
+  - Edits one named command group with description and multi-line command text.
+- `AutomationEditorDialog`
+  - Edits scenario metadata and ordered steps, including start/completion conditions.
+- `AutomationImportDialog`
+  - Creates an unsaved scenario draft from pasted text or a UTF-8 text file.
 - `ThreadPoolTaskRunner`
-  - GUI thread를 막지 않도록 연결, 업로드, 원격 명령 실행 같은 blocking 작업을 Qt global thread pool에서 실행합니다.
+  - Wraps Qt global thread-pool execution and reports success/failure through callbacks.
 
 ### Core Layer
 
 - `SSHManager`
-  - Linux Server SSH 연결 수명주기를 관리합니다.
-  - 연결/해제/재연결, interactive shell 생성, 비대화형 명령 실행, 로컬 PC 파일 업로드, USB serial port 검색을 담당합니다.
+  - Manages the Paramiko SSH client lifecycle.
+  - Connects, disconnects, reconnects, opens shell channels, executes non-interactive commands, uploads local files, and lists USB serial ports.
 - `InteractiveShell`
-  - Paramiko shell channel의 얇은 래퍼입니다.
-  - 즉시 읽기 가능한 출력만 읽고, 명령/원시 입력을 전송합니다.
+  - Wraps a Paramiko shell channel.
+  - Sends raw text or newline-terminated commands.
+  - Reads currently available output without blocking.
+  - Responds to prompts such as password prompts.
 - `SFTPManager`
-  - Linux Server 안에서 실행되는 `sftp` CLI 명령을 구성하고 제어합니다.
-  - Board IP, 사용자, 포트, IPv6 zone/interface, password prompt, authenticity prompt, upload/download/close 명령을 처리합니다.
+  - Builds Linux-side `sftp` commands for board/MMU access.
+  - Handles authenticity and password prompts.
+  - Sends upload/download/cd/rm/bye commands.
+  - Quotes transfer paths.
 - `MinicomManager`
-  - `/dev/ttyUSB*`, `/dev/ttyACM*` 형식만 허용하여 안전한 `minicom -o -c off -D ...` 명령을 만듭니다.
-  - 종료 시 Ctrl-A, X, Enter 시퀀스를 보냅니다.
+  - Validates Linux serial device paths.
+  - Builds `minicom -o -c off -D <port>`.
+  - Sends the minicom close sequence.
 - `PowerSupplyManager`
-  - `resources/power_supply_commands.json`에 정의된 전원 공급기 command template을 로드합니다.
-  - IP/전압/전류 입력값을 검증하고 `on`, `off`, `status`, `all_status`, `set` 명령을 생성합니다.
-- `ConfigManager`
-  - `%APPDATA%/MMUControl/settings.json`에 애플리케이션 설정을 원자적으로 저장합니다.
-  - 기존 JSON과의 하위 호환을 위해 누락 필드는 기본값으로 채웁니다.
-- `TerminalStreamFilter`
-  - ANSI/VT escape sequence와 제어 문자를 제거하면서 출력 chunk 사이의 상태를 유지합니다.
-- `run_with_retry`
-  - 재연결 등 일시 실패 가능 작업에 사용할 retry/backoff helper입니다.
+  - Loads command templates from `resources/power_supply_commands.json`.
+  - Validates configured IP/voltage/current requirements.
+  - Builds power supply action commands.
 - `AutomationRunner`
-  - 하나의 SSH 또는 minicom terminal에서 사용자 정의 Step을 순서대로 실행합니다.
-  - 콘솔/프롬프트/장비 파일/시간 완료 조건을 판정하며, 실패 Step만 2초 뒤 한 번 재시도합니다.
+  - Runs one `AutomationScenario` step by step.
+  - Evaluates start and completion conditions.
+  - Retains a bounded output history for condition checks.
+  - Requests periodic remote-file checks through generated `grep` commands.
+  - Retries the current failing step once.
+- `TerminalStreamFilter`
+  - Removes ANSI/VT/control sequences while preserving parser state across chunks.
+- `ConfigManager`
+  - Loads and saves `%APPDATA%/MMUControl/settings.json`.
+  - Falls back to `~/AppData/Roaming/MMUControl` when `APPDATA` is unavailable.
+- `run_with_retry`
+  - Shared retry/backoff helper.
 
-### Model / Storage Layer
+### Model and Storage Layer
 
-- `AppSettings`
-  - SSH, Board/MMU, 전원 공급기, Window 상태, active profile 이름을 포함합니다.
-- `SSHSettings`, `BoardSettings`, `PowerSupplySettings`, `WindowSettings`
-  - 각 설정 그룹의 직렬화/역직렬화를 담당합니다.
-- `CommandSet`, `CommandSetCollection`
-  - Commands 탭에서 생성/수정/삭제/실행하는 명령 묶음입니다.
-- `AutomationScenario`, `AutomationStep`
-  - 명령, 완료 조건, timeout을 가진 순차 장비 자동화 모델입니다.
-- `ConnectionProfile`, `ProfileCollection`, `ProfileStore`
-  - SSH/Board 연결 설정을 이름별 프로필로 저장하기 위한 모델과 저장소입니다.
-  - 현재 UI는 기본 설정 저장을 중심으로 동작하며, 프로필 저장소는 확장 기반으로 준비되어 있습니다.
+- `AppSettings`, `SSHSettings`, `BoardSettings`, `PowerSupplySettings`, `WindowSettings`
+  - Persist user-entered connection and window state.
+- `CommandSet`, `CommandFolder`, `CommandSetCollection`
+  - Represent hierarchical saved command groups.
+- `AutomationScenario`, `AutomationStep`, `CompletionType`, `AutomationScenarioCollection`
+  - Represent condition-driven terminal automation.
+- `ConnectionProfile`, `ProfileCollection`
+  - Represent future full profile workflows.
 - `CommandSetStore`
-  - `%APPDATA%/MMUControl/command_sets.json`에 명령 세트를 저장합니다.
+  - Persists command folders and command sets in `command_sets.json`.
+  - Upgrades legacy flat command documents to schema version 2.
 - `AutomationStore`
-  - `%APPDATA%/MMUControl/automation_scenarios.json`에 자동화 시나리오를 저장합니다.
+  - Persists scenarios in `automation_scenarios.json`.
+- `ProfileStore`
+  - Persists named profile collections in `profiles.json`.
 
-## 런타임 데이터 흐름
+## Data Flows
 
-### SSH Terminal
+### Linux Server Terminal
 
 ```text
-MainWindow Connect 버튼
+Connect
   -> ThreadPoolTaskRunner
   -> SSHManager.connect()
   -> SSHManager.open_shell()
@@ -117,73 +136,88 @@ MainWindow Connect 버튼
   -> TerminalWidget.write_stream()
 ```
 
-사용자가 Terminal 탭에서 명령을 입력하면 `InteractiveShell.send_line()`으로 Linux Server shell에 전달됩니다. 즉시 입력 모드에서는 key press가 `InteractiveShell.send()`로 바로 전달됩니다.
+User commands entered in the Terminal tab are sent through `InteractiveShell.send_line()`. In immediate input mode, key presses are sent through `InteractiveShell.send()`.
 
-### Serial Console(minicom)
+### Board Serial Console
 
 ```text
 Refresh USB
   -> SSHManager.list_serial_ports()
-  -> /dev/ttyUSB*, /dev/ttyACM* 목록 표시
+  -> device list in UI
 Open Minicom
   -> MinicomManager.build_command()
-  -> Main terminal shell에서 minicom 실행
-  -> TerminalWidget interactive mode 전환
+  -> main Linux shell sends minicom command
+  -> TerminalWidget immediate input mode
 Close Minicom
-  -> Ctrl-A, X, Enter 전송
+  -> Ctrl-A, X, Enter
+```
+
+### Board SSH Console
+
+```text
+SSH Connect
+  -> if Linux shell is connected: send ssh command through InteractiveShell
+  -> else: start local Windows ssh through QProcess
+  -> board console output
 ```
 
 ### SFTP
 
 ```text
 Open SFTP
-  -> 별도 SSH shell 생성
-  -> Linux Server에서 sftp user@board 실행
-  -> prompt/auth/password 처리
-  -> Server/MMU 파일 목록 표시
-Upload/Download/Drag-and-drop
-  -> sftp put/get 명령 전송
-  -> 파일 목록 재갱신
+  -> open a second SSH shell
+  -> SFTPManager.open_session()
+  -> handle authenticity/password prompts
+  -> refresh Linux server and MMU file lists
+Drag server file to MMU
+  -> sftp put
+Drag MMU file to server
+  -> sftp get
+Drop local PC file
+  -> SSHManager.upload_file(local, /tmp/mmu_control_uploads/...)
+  -> sftp put uploaded_server_path
 ```
 
-SFTP는 메인 Terminal shell과 독립된 shell을 사용하므로 SFTP 종료가 Terminal 연결을 닫지 않습니다.
+The SFTP shell is independent from the main terminal shell, so closing SFTP does not close the terminal connection.
 
-### Local PC 파일 Drag-and-drop
+### Automation
 
 ```text
-Windows local file drop
-  -> SSHManager.upload_file()로 Linux Server /tmp/mmu_control_uploads에 업로드
-  -> SFTP put 명령으로 Linux Server 파일을 MMU/Board로 전송
+Run Scenario
+  -> choose active terminal adapter
+  -> AutomationRunner.start()
+  -> poll terminal output
+  -> evaluate start/completion conditions
+  -> optionally send file-check grep command
+  -> update UI status/progress
 ```
 
-### Power Supply
+Automation currently targets the active terminal abstraction and uses remote-file checks only when the selected terminal reports support for them.
+
+## Persistent Files
+
+Default user data location:
 
 ```text
-Power Supply UI 버튼
-  -> PowerSupplyManager.build_command(action)
-  -> SSHManager.execute_command(command)
-  -> TerminalWidget에 실행 결과 출력
+%APPDATA%/MMUControl
 ```
 
-## Threading / 비동기 원칙
+Fallback when `APPDATA` is missing:
 
-- GUI thread에서는 blocking SSH, SFTP, 파일 업로드, 원격 명령 실행을 직접 수행하지 않습니다.
-- `ThreadPoolTaskRunner`가 백그라운드 작업의 성공/실패 콜백을 UI thread로 되돌립니다.
-- Interactive shell 출력은 짧은 주기의 `QTimer` polling으로 읽습니다.
-- SFTP startup timeout timer를 두어 remote prompt가 늦거나 실패한 경우 UI 상태가 무기한 대기하지 않도록 합니다.
+```text
+~/AppData/Roaming/MMUControl
+```
 
-## 저장 파일
+Files:
 
-기본 사용자 데이터 위치는 `%APPDATA%/MMUControl`입니다. `APPDATA`가 없으면 홈 디렉터리 아래 `AppData/Roaming/MMUControl`을 사용합니다. 이 위치는 PyInstaller one-file 실행 파일의 임시 추출 경로와 분리되어 있으므로 재실행 후에도 유지됩니다.
+- `settings.json` - connection, power supply, board, active profile, and window state.
+- `command_sets.json` - hierarchical command folders and command groups.
+- `automation_scenarios.json` - automation scenarios.
+- `profiles.json` - profile storage for future profile UI expansion.
+- `mmu_control.log` - rotating application log.
 
-- `settings.json`: SSH, Board/MMU, Power Supply, Window 상태
-- `command_sets.json`: 사용자 정의 명령 세트
-- `automation_scenarios.json`: 자동화 시나리오
-- `mmu_control.log`: rotating log file
-- `profiles.json`: 연결 프로필 저장소 확장용 파일
+## Packaging
 
-## 패키징
-
-- `pyproject.toml`은 패키지 메타데이터, runtime dependency, dev extra, package data를 정의합니다.
-- `scripts/build_exe.ps1`은 PyInstaller를 실행하여 `dist/MMUControl.exe`를 생성합니다.
-- `MMUControl.spec`은 package resource인 `power_supply_commands.json`을 포함하도록 구성됩니다. 사용자 데이터는 package resource로 포함하지 않습니다.
+- `pyproject.toml` defines package metadata, dependencies, package data, and the `mmu-control` entry point.
+- `MMUControl.spec` defines the PyInstaller executable and bundled resources.
+- `scripts/build_exe.ps1` builds `dist/MMUControl.exe`.
