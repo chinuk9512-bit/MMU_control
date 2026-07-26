@@ -1,10 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 
 streamlit_datas = collect_data_files('streamlit')
 streamlit_hiddenimports = collect_submodules('streamlit')
+streamlit_metadata = copy_metadata('streamlit')
 
 a = Analysis(
     ['src\\mmu_control\\web_app.py'],
@@ -13,6 +14,7 @@ a = Analysis(
     datas=[
         ('src\\mmu_control\\resources\\power_supply_commands.json', 'mmu_control/resources'),
         *streamlit_datas,
+        *streamlit_metadata,
     ],
     hiddenimports=[
         'mmu_control.core.automation_runner',
@@ -52,7 +54,7 @@ exe = EXE(
     strip=False,
     upx=True,
     upx_exclude=[],
-    runtime_tmpdir=None,
+    runtime_tmpdir='C:\\Users\\Public\\MMUControlTemp',
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
