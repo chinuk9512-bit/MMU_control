@@ -42,6 +42,17 @@ class ScenarioStepListWidget(QListWidget):
         super().keyPressEvent(event)
 
 
+class CompletionTypeComboBox(QComboBox):
+    """Combo box that always exposes completion data as CompletionType."""
+
+    def currentData(self, role: int = Qt.ItemDataRole.UserRole) -> CompletionType:  # noqa: N802
+        value = super().currentData(role)
+        try:
+            return CompletionType(str(value))
+        except ValueError:
+            return CompletionType.NONE
+
+
 class AutomationEditorDialog(QDialog):
     """Edit any number of commands and their individual completion conditions."""
 
@@ -73,8 +84,8 @@ class AutomationEditorDialog(QDialog):
         self.command_input = QPlainTextEdit(self)
         self.command_input.setMinimumHeight(self.COMMAND_MINIMUM_HEIGHT)
         self.command_input.setPlaceholderText("Command to send to the currently active console")
-        self.start_type_input = QComboBox(self)
-        self.condition_type_input = QComboBox(self)
+        self.start_type_input = CompletionTypeComboBox(self)
+        self.condition_type_input = CompletionTypeComboBox(self)
         for completion_type, label in (
             (CompletionType.NONE, "No completion condition required"),
             (CompletionType.OUTPUT_CONTAINS, "Console contains text"),
@@ -261,9 +272,9 @@ class AutomationEditorDialog(QDialog):
     def _store_current_step(self) -> None:
         if not 0 <= self._current_index < len(self._steps):
             return
-        start_type = self.start_type_input.currentData()
+        start_type = self._completion_type_from_input(self.start_type_input.currentData())
         start_value, start_file_path = self._condition_inputs(start_type, self.start_value_input, self.start_file_path_input)
-        completion_type = self.condition_type_input.currentData()
+        completion_type = self._completion_type_from_input(self.condition_type_input.currentData())
         completion_value, file_path = self._condition_inputs(completion_type, self.condition_value_input, self.file_path_input)
         self._steps[self._current_index] = AutomationStep(
             name=self.step_name_input.text().strip(),
@@ -299,8 +310,26 @@ class AutomationEditorDialog(QDialog):
         self.error_label.setText("Step saved.")
 
     def _update_condition_labels(self) -> None:
-        self._update_condition_widgets(self.start_type_input.currentData(), self.start_value_input, self.start_file_path_input, "start")
-        self._update_condition_widgets(self.condition_type_input.currentData(), self.condition_value_input, self.file_path_input, "completion")
+        self._update_condition_widgets(
+            self._completion_type_from_input(self.start_type_input.currentData()),
+            self.start_value_input,
+            self.start_file_path_input,
+            "start",
+        )
+        self._update_condition_widgets(
+            self._completion_type_from_input(self.condition_type_input.currentData()),
+            self.condition_value_input,
+            self.file_path_input,
+            "completion",
+        )
+
+    @staticmethod
+    def _completion_type_from_input(value: object) -> CompletionType:
+        """Return a safe enum value even if Qt item data was overwritten."""
+        try:
+            return CompletionType(str(value))
+        except ValueError:
+            return CompletionType.NONE
 
     @staticmethod
     def _condition_inputs(condition_type: CompletionType, value_input: QLineEdit, file_path_input: QLineEdit) -> tuple[str, str]:
