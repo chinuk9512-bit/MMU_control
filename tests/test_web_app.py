@@ -7,6 +7,7 @@ from pathlib import Path
 from mmu_control.models.command_set import CommandSet
 from mmu_control.web_app import (
     _is_shell_open,
+    _patch_streamlit_static_dir_for_pyinstaller,
     command_lines,
     create_web_services,
     parse_find_listing,
@@ -14,6 +15,30 @@ from mmu_control.web_app import (
     resolve_sftp_path,
     settings_from_form_values,
 )
+
+
+def test_main_launches_streamlit_with_production_static_assets() -> None:
+    source = Path("src/mmu_control/web_app.py").read_text(encoding="utf-8")
+
+    assert '"global.developmentMode": False' in source
+    assert "bootstrap.load_config_options(streamlit_options)" in source
+
+
+def test_streamlit_static_dir_patch_uses_pyinstaller_bundle(monkeypatch) -> None:
+    import streamlit.file_util
+
+    tmp_path = Path("build") / "test_streamlit_bundle"
+    bundle_static = tmp_path / "streamlit" / "static"
+    bundle_static.mkdir(parents=True, exist_ok=True)
+    original_get_static_dir = streamlit.file_util.get_static_dir
+    monkeypatch.setattr("sys._MEIPASS", str(tmp_path), raising=False)
+
+    try:
+        _patch_streamlit_static_dir_for_pyinstaller()
+
+        assert streamlit.file_util.get_static_dir() == str(bundle_static)
+    finally:
+        streamlit.file_util.get_static_dir = original_get_static_dir
 
 
 class FakeShell:
@@ -112,3 +137,16 @@ def test_web_pyinstaller_spec_bundles_power_supply_commands_only_as_static_data(
     assert "mmu_control/resources" in spec_text
     assert "command_sets.json" not in spec_text
     assert "automation_scenarios.json" not in spec_text
+
+
+def test_web_pyinstaller_spec_bundles_streamlit_metadata() -> None:
+    spec_text = Path("MMUControlWeb.spec").read_text(encoding="utf-8")
+
+    assert "copy_metadata" in spec_text
+    assert "copy_metadata('streamlit')" in spec_text
+
+
+def test_web_pyinstaller_spec_uses_ascii_runtime_temp_directory() -> None:
+    spec_text = Path("MMUControlWeb.spec").read_text(encoding="utf-8")
+
+    assert "runtime_tmpdir='C:\\\\Users\\\\Public\\\\MMUControlTemp'" in spec_text

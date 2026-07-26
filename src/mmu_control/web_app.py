@@ -210,10 +210,35 @@ def main() -> int:
     try:
         from streamlit.web import bootstrap
 
-        bootstrap.run(str(Path(__file__).resolve()), False, [], {"server.address": "localhost"})
+        streamlit_options = {
+            "global.developmentMode": False,
+            "server.address": "localhost",
+        }
+        bootstrap.load_config_options(streamlit_options)
+        _patch_streamlit_static_dir_for_pyinstaller()
+        bootstrap.run(
+            str(Path(__file__).resolve()),
+            False,
+            [],
+            streamlit_options,
+        )
         return 0
     finally:
         shutdown_logging()
+
+
+def _patch_streamlit_static_dir_for_pyinstaller() -> None:
+    """Point Streamlit at bundled frontend assets in one-file PyInstaller builds."""
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if not bundle_dir:
+        return
+    static_dir = Path(bundle_dir) / "streamlit" / "static"
+    if not static_dir.is_dir():
+        return
+
+    import streamlit.file_util
+
+    streamlit.file_util.get_static_dir = lambda: str(static_dir)
 
 
 def render_app() -> None:
