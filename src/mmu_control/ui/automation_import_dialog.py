@@ -29,7 +29,7 @@ class AutomationImportDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("텍스트에서 시나리오 가져오기")
+        self.setWindowTitle("Import Scenario from Text")
         self._scenario: AutomationScenario | None = None
 
         self.name_input = QLineEdit(self)
@@ -39,17 +39,20 @@ class AutomationImportDialog(QDialog):
         self.timeout_input.setValue(60)
         self.timeout_input.setSuffix(" seconds")
 
-        self.file_source_radio = QRadioButton("파일 선택", self)
-        self.text_source_radio = QRadioButton("직접 붙여넣기", self)
+        self.file_source_radio = QRadioButton("Choose file", self)
+        self.text_source_radio = QRadioButton("Paste text", self)
         self.text_source_radio.setChecked(True)
         self.file_path_input = QLineEdit(self)
-        self.file_path_input.setPlaceholderText("명령 텍스트 파일 (/// 구분선 3줄로 여러 줄 명령 구분)")
-        self.file_browse_button = QPushButton("찾아보기…", self)
+        self.file_path_input.setPlaceholderText(
+            "Command text file (three /// separator lines split multi-line commands)"
+        )
+        self.file_browse_button = QPushButton("Browse...", self)
         self.file_browse_button.clicked.connect(self._choose_file)
         self.text_input = QPlainTextEdit(self)
         self.text_input.setPlaceholderText(
-            "명령을 붙여넣으세요. /가 2개 이상인 줄 3줄 연속은 구분선이며, "
-            "구분선 사이의 여러 줄은 하나의 명령입니다. #으로 시작하는 줄은 주석입니다."
+            "Paste commands here. Three consecutive lines containing at least two / "
+            "characters are separators. Lines between separators become one command. "
+            "Lines starting with # are comments."
         )
         self.error_label = QLabel("", self)
         self.error_label.setStyleSheet("color: #b00020;")
@@ -62,9 +65,9 @@ class AutomationImportDialog(QDialog):
     def _build_layout(self) -> None:
         layout = QVBoxLayout(self)
         metadata = QFormLayout()
-        metadata.addRow("시나리오 이름", self.name_input)
-        metadata.addRow("설명", self.description_input)
-        metadata.addRow("기본 timeout", self.timeout_input)
+        metadata.addRow("Scenario name", self.name_input)
+        metadata.addRow("Description", self.description_input)
+        metadata.addRow("Default timeout", self.timeout_input)
         layout.addLayout(metadata)
 
         layout.addWidget(self.file_source_radio)
@@ -77,7 +80,7 @@ class AutomationImportDialog(QDialog):
         layout.addWidget(self.error_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("가져오기")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Import")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -90,7 +93,9 @@ class AutomationImportDialog(QDialog):
         self.text_input.setEnabled(not file_source)
 
     def _choose_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "명령 텍스트 파일 선택", "", "Text files (*.txt);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose command text file", "", "Text files (*.txt);;All files (*)"
+        )
         if path:
             self.file_path_input.setText(path)
             self.file_source_radio.setChecked(True)
@@ -100,15 +105,15 @@ class AutomationImportDialog(QDialog):
             return self.text_input.toPlainText()
         path_text = self.file_path_input.text().strip()
         if not path_text:
-            self.error_label.setText("가져올 텍스트 파일을 선택하세요.")
+            self.error_label.setText("Choose a text file to import.")
             return None
         try:
             return Path(path_text).read_text(encoding="utf-8")
         except OSError as exc:
-            self.error_label.setText(f"텍스트 파일을 읽을 수 없습니다: {exc}")
+            self.error_label.setText(f"Could not read the text file: {exc}")
             return None
         except UnicodeError:
-            self.error_label.setText("텍스트 파일은 UTF-8 인코딩이어야 합니다.")
+            self.error_label.setText("The text file must be UTF-8 encoded.")
             return None
 
     def scenario(self) -> AutomationScenario | None:
@@ -120,14 +125,17 @@ class AutomationImportDialog(QDialog):
         self.error_label.clear()
         name = self.name_input.text().strip()
         if not name:
-            self.error_label.setText("시나리오 이름은 필수입니다.")
+            self.error_label.setText("Scenario name is required.")
             return
         text = self._source_text()
         if text is None:
             return
         steps = parse_automation_commands(text, self.timeout_input.value())
         if not steps:
-            self.error_label.setText("가져올 명령이 없습니다. 빈 줄과 # 주석 줄을 제외한 명령을 입력하세요.")
+            self.error_label.setText(
+                "No commands were found to import. Enter commands other than blank lines "
+                "and # comment lines."
+            )
             return
         self._scenario = AutomationScenario(
             name=name,

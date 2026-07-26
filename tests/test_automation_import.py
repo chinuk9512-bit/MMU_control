@@ -49,7 +49,7 @@ class AutomationImportDialogTest(unittest.TestCase):
 
         self.assertNotEqual(dialog.result(), QDialog.DialogCode.Accepted)
         self.assertIsNone(dialog.scenario())
-        self.assertIn("가져올 명령이 없습니다", dialog.error_label.text())
+        self.assertIn("No commands were found to import", dialog.error_label.text())
 
     def test_multiline_commands_are_preserved_in_the_imported_draft(self) -> None:
         dialog = AutomationImportDialog()
