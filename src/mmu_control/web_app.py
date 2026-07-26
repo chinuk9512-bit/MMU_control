@@ -286,6 +286,11 @@ def _settings(st: Any) -> AppSettings:
     return st.session_state.settings
 
 
+def _is_shell_open(shell: InteractiveShell | None) -> bool:
+    """Return whether a shell object exists and can accept input."""
+    return shell is not None and shell.is_open
+
+
 def _append_output(st: Any, key: str, text: str, limit: int = 20000) -> None:
     if not text:
         return
@@ -668,9 +673,10 @@ def _render_commands_tab(st: Any) -> None:
         except CommandSetStoreError as exc:
             st.error(str(exc))
     cols = st.columns(2)
-    if cols[0].button("Run command set", disabled=command_set is None or st.session_state.shell is None):
+    shell = st.session_state.get("shell")
+    if cols[0].button("Run command set", disabled=command_set is None or not _is_shell_open(shell)):
         for line in command_lines(command_set):
-            st.session_state.shell.send_line(line)
+            shell.send_line(line)
             _append_output(st, "terminal_output", f"$ {line}\n")
     if cols[1].button("Delete command set", disabled=command_set is None):
         services.command_set_store.delete(command_set.name)
@@ -696,8 +702,9 @@ def _render_automation_tab(st: Any) -> None:
     else:
         start_index = 0
     cols = st.columns(2)
-    if cols[0].button("Run scenario", disabled=scenario is None or st.session_state.shell is None):
-        runner = AutomationRunner(st.session_state.shell.send_line)
+    shell = st.session_state.get("shell")
+    if cols[0].button("Run scenario", disabled=scenario is None or not _is_shell_open(shell)):
+        runner = AutomationRunner(shell.send_line)
         try:
             runner.start(scenario, start_step_index=start_index)
             runner.receive_initial_output(st.session_state.terminal_output[-AutomationRunner.OUTPUT_LIMIT :])
@@ -739,16 +746,17 @@ def _render_power_tab(st: Any) -> None:
     services = _services(st)
     services.power_supply_manager.update_settings(_settings(st).power_supply)
     cols = st.columns(5)
+    shell = st.session_state.get("shell")
     for column, action, label in zip(
         cols,
         ["set", "on", "off", "status", "all_status"],
         ["Set", "ON", "OFF", "Status", "All Status"],
         strict=True,
     ):
-        if column.button(label, disabled=st.session_state.shell is None):
+        if column.button(label, disabled=not _is_shell_open(shell)):
             try:
                 command = services.power_supply_manager.build_command(action)
-                st.session_state.shell.send_line(command)
+                shell.send_line(command)
             except (PowerSupplyCommandError, AttributeError) as exc:
                 st.error(str(exc))
                 continue

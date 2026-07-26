@@ -6,6 +6,7 @@ from pathlib import Path
 
 from mmu_control.models.command_set import CommandSet
 from mmu_control.web_app import (
+    _is_shell_open,
     command_lines,
     create_web_services,
     parse_find_listing,
@@ -13,6 +14,11 @@ from mmu_control.web_app import (
     resolve_sftp_path,
     settings_from_form_values,
 )
+
+
+class FakeShell:
+    def __init__(self, is_open: bool) -> None:
+        self.is_open = is_open
 
 
 def test_create_web_services_uses_default_managers() -> None:
@@ -55,6 +61,12 @@ def test_command_lines_ignores_blank_lines() -> None:
     command_set = CommandSet("Boot", commands="\n echo one \n\nreboot\n")
 
     assert command_lines(command_set) == ["echo one", "reboot"]
+
+
+def test_is_shell_open_requires_live_shell() -> None:
+    assert not _is_shell_open(None)
+    assert not _is_shell_open(FakeShell(False))
+    assert _is_shell_open(FakeShell(True))
 
 
 def test_parse_find_listing_matches_file_kinds() -> None:
