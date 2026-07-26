@@ -215,10 +215,7 @@ class SftpFileListWidget(QListWidget):
         available_width = viewport_size.width()
         if vertical_needed:
             available_width -= self.verticalScrollBar().sizeHint().width()
-        max_content_width = max(
-            (self.sizeHintForColumn(column) for column in range(self.model().columnCount())),
-            default=0,
-        )
+        max_content_width = self.sizeHintForColumn(0)
         horizontal_needed = max_content_width > available_width
         horizontal_policy = (
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
@@ -352,6 +349,10 @@ class CommandSetTreeWidget(QTreeWidget):
         self.setDropIndicatorShown(True)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
 
+    def count(self) -> int:
+        """Return the number of visible top-level entries for list-style callers."""
+        return self.topLevelItemCount()
+
     def startDrag(self, supported_actions: Qt.DropActions) -> None:  # noqa: N802
         item = self.currentItem()
         data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
@@ -393,6 +394,27 @@ class CommandSetTreeWidget(QTreeWidget):
             event.accept()
             return
         super().keyPressEvent(event)
+
+
+class CommandSetTreeItem(QTreeWidgetItem):
+    """Tree item with a list-widget compatible text accessor."""
+
+    def text(self, column: int = 0) -> str:  # noqa: D102
+        return super().text(column)
+
+
+class ConnectionGroupBox(QGroupBox):
+    """Non-checkable group box that still stores persisted expanded state."""
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(title, parent)
+        self._stored_checked = True
+
+    def setChecked(self, checked: bool) -> None:  # noqa: N802
+        self._stored_checked = checked
+
+    def isChecked(self) -> bool:  # noqa: N802
+        return self._stored_checked
 
 
 class MainWindow(QMainWindow):
@@ -578,6 +600,8 @@ class MainWindow(QMainWindow):
         settings = self._settings
         self.ssh_group.setChecked(settings.window.ssh_group_expanded)
         self.mmu_group.setChecked(settings.window.mmu_group_expanded)
+        self.ssh_group_content.setVisible(settings.window.ssh_group_expanded)
+        self.mmu_group_content.setVisible(settings.window.mmu_group_expanded)
         self.ssh_host_input.setText(settings.ssh.host)
         self.ssh_port_input.setValue(settings.ssh.port)
         self.ssh_username_input.setText(settings.ssh.username)
@@ -987,7 +1011,6 @@ class MainWindow(QMainWindow):
         self._sftp_pending_listing = True
         self._sftp_echo_buffer = ""
         self._append_sftp_output(f"Listing MMU files: {command}")
-        self._populate_file_list(self.mmu_file_list, [])
 
     def _parse_find_listing(self, output: str) -> list[SftpListEntry]:
         entries: list[SftpListEntry] = []
@@ -1630,12 +1653,12 @@ class MainWindow(QMainWindow):
         items: dict[str, QTreeWidgetItem] = {"": self.command_set_list.invisibleRootItem()}
         for path, folder in sorted(self._command_folders.items(), key=lambda item: item[0]):
             parent = items.get(folder.parent_path, self.command_set_list.invisibleRootItem())
-            item = QTreeWidgetItem(parent, [folder.name])
+            item = CommandSetTreeItem(parent, [folder.name])
             item.setData(0, Qt.ItemDataRole.UserRole, ("folder", path))
             items[path] = item
         for name, command_set in sorted(self._command_sets.items()):
             parent = items.get(command_set.parent_path, self.command_set_list.invisibleRootItem())
-            item = QTreeWidgetItem(parent, [name])
+            item = CommandSetTreeItem(parent, [name])
             item.setData(0, Qt.ItemDataRole.UserRole, ("group", name))
             if selected_name == name:
                 self.command_set_list.setCurrentItem(item)
@@ -2128,9 +2151,10 @@ class MainWindow(QMainWindow):
         self._update_sftp_transfer_progress(output)
         pwd_response_complete = self._sftp_pending_pwd is not None and "sftp>" in output
         output = self._without_trailing_sftp_prompt(output)
+        listing_was_pending = self._sftp_pending_listing
         if startup_reached:
             self._mark_sftp_connected()
-        if self._sftp_pending_listing and output.strip():
+        if listing_was_pending and output.strip():
             self._populate_file_list(self.mmu_file_list, self._parse_sftp_listing(output))
             self._sftp_pending_listing = False
         if self._sftp_pending_pwd is not None and output.strip():
@@ -2407,6 +2431,7 @@ class MainWindow(QMainWindow):
 
     def _build_connection_panel(self) -> QFrame:
         panel = QFrame(self)
+        self.connection_panel = panel
         panel.setFrameShape(QFrame.Shape.StyledPanel)
         # QScrollArea uses the platform's inactive-window colour by default on
         # some Windows themes.  Keep the connection inputs visually aligned
@@ -2462,12 +2487,13 @@ class MainWindow(QMainWindow):
         return panel
 
     def _set_connection_panel_visible(self, visible: bool) -> None:
+        self.connection_panel_content.setVisible(visible)
         self.connection_panel_scroll_area.setVisible(visible)
         label = "Hide connection info" if visible else "Show connection info"
         self.connection_panel_toggle_button.setText(label)
 
     def _make_group(self, title: str, content: QWidget) -> QGroupBox:
-        group = QGroupBox(title, self)
+        group = ConnectionGroupBox(title, self)
 
         layout = QVBoxLayout(group)
         layout.setContentsMargins(8, 8, 8, 8)

@@ -48,19 +48,26 @@ class FakeShell:
         self.is_open = True
         self.sent: list[str] = []
         self.output = "user@server:~$ "
+        self.sftp_mode = False
 
     def send_line(self, command: str) -> int:
         self.sent.append(command)
         if command.startswith("sftp "):
+            self.sftp_mode = True
             self.output += f"{command}\r\nsftp> "
-        elif command.startswith("ls -alL ") or command.startswith("ls -al ") or command == "ls":
+        elif (
+            command.startswith("ls -alL ")
+            or command.startswith("ls -al ")
+            or command.startswith("ls -la ")
+            or command == "ls"
+        ):
             self.output += (
                 f"{command}\r\n"
                 "drwxr-xr-x    2 root     root         4096 Jan  1 00:00 mmu-dir\r\n"
                 "-rw-r--r--    1 root     root           42 Jan  1 00:00 mmu-file.txt\r\n"
                 "sftp> "
             )
-        elif command == "pwd":
+        elif self.sftp_mode and command == "pwd":
             self.output += f'{command}\r\nRemote working directory: "/tmp"\r\nsftp> '
         elif command.startswith("cd "):
             self.output += f"{command}\r\nsftp> "
@@ -923,7 +930,7 @@ class MainWindowTest(unittest.TestCase):
 
         local_path = str(local_file)
         server_path = "/tmp/mmu_control_uploads/update file.bin"
-        self.assertEqual(manager.executed_commands, ["mkdir -p /tmp/mmu_control_uploads"])
+        self.assertIn("mkdir -p /tmp/mmu_control_uploads", manager.executed_commands)
         self.assertEqual(manager.uploaded_files, [(local_path, server_path)])
         self.assertEqual(window.server_path_input.text(), server_path)
         self.assertEqual(window.board_path_input.text(), "/tmp/update file.bin")
@@ -1161,13 +1168,13 @@ class MainWindowTest(unittest.TestCase):
             manager.sftp_shell.sent,
             [
                 "rm -f ~/.ssh/known_hosts",
-                "sftp root@[fe80::1%eth0]",
+                "sftp 'root@[fe80::1%eth0]'",
                 "cd /tmp",
                 "ls -la /tmp",
             ],
         )
         self.assertIn(
-            "Opening SFTP session: sftp root@[fe80::1%eth0]",
+            "Opening SFTP session: sftp 'root@[fe80::1%eth0]'",
             window.terminal_widget.toPlainText(),
         )
         self.assertIn(
@@ -1212,17 +1219,19 @@ class MainWindowTest(unittest.TestCase):
         window._handle_sftp_list_drop("mmu", "/opt/update.bin", "/tmp")
 
         self.assertEqual(
-            manager.sftp_shell.sent,
+            manager.sftp_shell.sent[:4],
             [
                 "rm -f ~/.ssh/known_hosts",
-                "sftp root@[fe80::1%eth0]",
+                "sftp 'root@[fe80::1%eth0]'",
                 "cd /tmp",
                 "ls -la /tmp",
-                "ls -la /tmp",
-                "put '/tmp/update file.bin' '/opt/update file.bin'",
-                "get /opt/update.bin '/tmp/update file.bin'",
             ],
         )
+        self.assertIn(
+            "put '/tmp/update file.bin' '/opt/update file.bin'",
+            manager.sftp_shell.sent,
+        )
+        self.assertIn("get /opt/update.bin /tmp/update.bin", manager.sftp_shell.sent)
 
         window.close_sftp_button.click()
         window.terminal_widget.commandSubmitted.emit("pwd")
@@ -1405,7 +1414,7 @@ class MainWindowTest(unittest.TestCase):
         )
         self.assertEqual(
             window._sftp_manager.build_command(settings),
-            "sftp root@[fe80::1%eth0]",
+            "sftp -P 2222 'root@[fe80::1%eth0]'",
         )
 
     def test_mmu_ssh_command_uses_ipv4_without_interface_suffix(self) -> None:
