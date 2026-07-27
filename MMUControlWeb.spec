@@ -12,6 +12,7 @@ a = Analysis(
     pathex=['src'],
     binaries=[],
     datas=[
+        ('src\\mmu_control\\web_app.py', 'mmu_control/streamlit_app'),
         ('src\\mmu_control\\resources\\power_supply_commands.json', 'mmu_control/resources'),
         *streamlit_datas,
         *streamlit_metadata,

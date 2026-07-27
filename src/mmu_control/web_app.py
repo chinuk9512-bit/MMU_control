@@ -208,6 +208,7 @@ def main() -> int:
 
     configure_logging()
     try:
+        streamlit_script = _streamlit_script_path()
         from streamlit.web import bootstrap
 
         streamlit_options = {
@@ -217,7 +218,7 @@ def main() -> int:
         bootstrap.load_config_options(streamlit_options)
         _patch_streamlit_static_dir_for_pyinstaller()
         bootstrap.run(
-            str(Path(__file__).resolve()),
+            str(streamlit_script),
             False,
             [],
             streamlit_options,
@@ -225,6 +226,23 @@ def main() -> int:
         return 0
     finally:
         shutdown_logging()
+
+
+def _streamlit_script_path() -> Path:
+    """Return the source script Streamlit should execute in this environment."""
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        script_path = Path(bundle_dir) / "mmu_control" / "streamlit_app" / "web_app.py"
+    else:
+        script_path = Path(__file__).resolve()
+
+    if not script_path.is_file():
+        raise FileNotFoundError(
+            f"Streamlit application script was not found at {script_path}. "
+            "The PyInstaller bundle may be missing src/mmu_control/web_app.py "
+            "as mmu_control/streamlit_app/web_app.py."
+        )
+    return script_path
 
 
 def _patch_streamlit_static_dir_for_pyinstaller() -> None:
