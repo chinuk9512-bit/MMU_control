@@ -91,12 +91,28 @@ class AutomationStep:
 
 
 @dataclass(slots=True)
+class AutomationFolder:
+    """A folder used to organize automation scenarios."""
+
+    name: str
+    parent_path: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AutomationFolder":
+        return cls(name=str(data.get("name", "")), parent_path=str(data.get("parent_path", "")))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "parent_path": self.parent_path}
+
+
+@dataclass(slots=True)
 class AutomationScenario:
     """A sequential automation scenario independent of its execution terminal."""
 
     name: str
     description: str = ""
     steps: list[AutomationStep] = field(default_factory=list)
+    parent_path: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AutomationScenario":
@@ -107,6 +123,7 @@ class AutomationScenario:
             name=str(data.get("name", "")),
             description=str(data.get("description", "")),
             steps=steps,
+            parent_path=str(data.get("parent_path", "")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -115,6 +132,7 @@ class AutomationScenario:
             "name": self.name,
             "description": self.description,
             "steps": [step.to_dict() for step in self.steps],
+            "parent_path": self.parent_path,
         }
 
 
@@ -122,25 +140,38 @@ class AutomationScenario:
 class AutomationScenarioCollection:
     """Collection of persisted automation scenarios."""
 
-    schema_version: int = 1
+    schema_version: int = 2
+    folders: dict[str, AutomationFolder] = field(default_factory=dict)
     scenarios: dict[str, AutomationScenario] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AutomationScenarioCollection":
         """Create a collection from JSON-compatible data."""
         scenarios: dict[str, AutomationScenario] = {}
+        folders: dict[str, AutomationFolder] = {}
+        version = int(data.get("schema_version", 1))
+        raw_folders = data.get("folders", {})
+        if version >= 2 and isinstance(raw_folders, dict):
+            for path, raw_folder in raw_folders.items():
+                if isinstance(raw_folder, dict):
+                    folder = AutomationFolder.from_dict(raw_folder)
+                    if folder.name:
+                        folders[str(path).strip("/")] = folder
         raw_scenarios = data.get("scenarios", {})
         if isinstance(raw_scenarios, dict):
             for name, raw_scenario in raw_scenarios.items():
                 if isinstance(raw_scenario, dict):
                     scenario = AutomationScenario.from_dict({"name": name, **raw_scenario})
+                    if version < 2:
+                        scenario.parent_path = ""
                     if scenario.name:
                         scenarios[scenario.name] = scenario
-        return cls(schema_version=int(data.get("schema_version", 1)), scenarios=scenarios)
+        return cls(schema_version=2, folders=folders, scenarios=scenarios)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the collection to JSON-compatible data."""
         return {
             "schema_version": self.schema_version,
+            "folders": {path: folder.to_dict() for path, folder in sorted(self.folders.items())},
             "scenarios": {name: scenario.to_dict() for name, scenario in sorted(self.scenarios.items())},
         }
