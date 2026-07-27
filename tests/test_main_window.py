@@ -1350,7 +1350,7 @@ class MainWindowTest(unittest.TestCase):
                 power_supply=PowerSupplySettings(
                     ip_address="192.168.0.100", voltage="12.5", current="1.25"
                 ),
-                window=WindowSettings(ssh_group_expanded=False, mmu_group_expanded=True),
+                window=WindowSettings(ssh_group_expanded=False, mmu_group_expanded=False),
             )
         )
         window = self.create_window(config_manager=config)
@@ -1365,12 +1365,28 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.power_supply_ip_input.text(), "192.168.0.100")
         self.assertEqual(window.power_supply_voltage_input.text(), "12.5")
         self.assertEqual(window.power_supply_current_input.text(), "1.25")
-        self.assertFalse(window.ssh_group.isChecked())
-        self.assertTrue(window.ssh_group_content.isHidden())
-        self.assertTrue(window.mmu_group.isChecked())
+        window.show()
+        self.app.processEvents()
+        visible_connection_controls = (
+            window.ssh_group_content,
+            window.ssh_host_input,
+            window.ssh_username_input,
+            window.ssh_password_input,
+            window.ssh_port_input,
+            window.connect_button,
+            window.disconnect_button,
+            window.mmu_group_content,
+            window.board_ip_input,
+            window.board_username_input,
+            window.board_password_input,
+            window.board_ssh_port_input,
+            window.mmu_ssh_connect_button,
+            window.mmu_ssh_disconnect_button,
+        )
+        for control in visible_connection_controls:
+            with self.subTest(control=control.objectName() or type(control).__name__):
+                self.assertTrue(control.isVisible())
 
-        window.ssh_group.setChecked(True)
-        window.mmu_group.setChecked(False)
         window.board_ip_input.setText("192.168.0.10")
         window.board_interface_input.setText("eth0")
         window.power_supply_ip_input.setText("192.168.0.101")
@@ -1386,7 +1402,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(saved_settings.power_supply.voltage, "24")
         self.assertEqual(saved_settings.power_supply.current, "2")
         self.assertTrue(saved_settings.window.ssh_group_expanded)
-        self.assertFalse(saved_settings.window.mmu_group_expanded)
+        self.assertTrue(saved_settings.window.mmu_group_expanded)
 
     def test_board_ip_input_has_no_ip_version_selector(self) -> None:
         """The SSH console accepts a single IP field for both IP address families."""

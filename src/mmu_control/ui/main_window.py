@@ -403,20 +403,6 @@ class CommandSetTreeItem(QTreeWidgetItem):
         return super().text(column)
 
 
-class ConnectionGroupBox(QGroupBox):
-    """Non-checkable group box that still stores persisted expanded state."""
-
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(title, parent)
-        self._stored_checked = True
-
-    def setChecked(self, checked: bool) -> None:  # noqa: N802
-        self._stored_checked = checked
-
-    def isChecked(self) -> bool:  # noqa: N802
-        return self._stored_checked
-
-
 class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
 
@@ -598,10 +584,6 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Could not load settings")
             return
         settings = self._settings
-        self.ssh_group.setChecked(settings.window.ssh_group_expanded)
-        self.mmu_group.setChecked(settings.window.mmu_group_expanded)
-        self.ssh_group_content.setVisible(settings.window.ssh_group_expanded)
-        self.mmu_group_content.setVisible(settings.window.mmu_group_expanded)
         self.ssh_host_input.setText(settings.ssh.host)
         self.ssh_port_input.setValue(settings.ssh.port)
         self.ssh_username_input.setText(settings.ssh.username)
@@ -632,8 +614,11 @@ class MainWindow(QMainWindow):
             width=geometry.width(),
             height=geometry.height(),
             is_maximized=self.isMaximized(),
-            ssh_group_expanded=self.ssh_group.isChecked(),
-            mmu_group_expanded=self.mmu_group.isChecked(),
+            # Retain these fields for compatibility with older settings files.
+            # Connection groups are no longer collapsible, so they are always
+            # persisted as expanded.
+            ssh_group_expanded=True,
+            mmu_group_expanded=True,
         )
         try:
             self._config_manager.save(self._settings)
@@ -2493,7 +2478,7 @@ class MainWindow(QMainWindow):
         self.connection_panel_toggle_button.setText(label)
 
     def _make_group(self, title: str, content: QWidget) -> QGroupBox:
-        group = ConnectionGroupBox(title, self)
+        group = QGroupBox(title, self)
 
         layout = QVBoxLayout(group)
         layout.setContentsMargins(8, 8, 8, 8)
