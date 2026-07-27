@@ -1911,19 +1911,19 @@ class MainWindow(QMainWindow):
         )
         step_lines: list[str] = []
         for index, step in enumerate(scenario.steps):
-            marker = "pending"
+            marker = "○"
             if index < start_step_index:
-                marker = "not run"
+                marker = "↷ not run"
             elif index in skipped_indices:
-                marker = "skipped"
+                marker = "↷ skipped"
             elif status is not None and status.state.value == "succeeded" and index <= current_index:
-                marker = "completed"
+                marker = "✓ completed"
             elif status is not None and status.state.value in {"failed", "cancelled"} and index == current_index:
-                marker = status.state.value
+                marker = f"✗ {status.state.value}"
             elif is_running_scenario and runner is not None and runner.is_active and index == current_index:
-                marker = "running"
+                marker = "▶ running"
             elif is_running_scenario and index < current_index:
-                marker = "completed"
+                marker = "✓ completed"
             step_lines.append(
                 f"{index + 1}. [{marker}] {step.name or step.command} - "
                 f"{step.completion_type.value}: {step.completion_value}"
