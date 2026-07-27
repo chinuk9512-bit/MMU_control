@@ -280,6 +280,10 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.copy_automation_button.isEnabled())
         self.assertEqual(window.run_automation_button.text(), "Run Scenario")
         self.assertEqual(window.automation_start_step_input.count(), 0)
+        self.assertEqual(
+            window.automation_start_step_input.minimumWidth(),
+            window._automation_start_step_default_width * 3,
+        )
         self.assertIsNotNone(window.automation_list)
         command_actions = window.new_folder_button.parentWidget().layout()
         self.assertIs(command_actions.itemAt(0).widget(), window.new_folder_button)

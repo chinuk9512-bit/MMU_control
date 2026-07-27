@@ -2912,6 +2912,10 @@ class MainWindow(QMainWindow):
         self.delete_automation_button = QPushButton("Delete", automation_group)
         self.run_automation_button = QPushButton("Run Scenario", automation_group)
         self.automation_start_step_input = QComboBox(automation_group)
+        self._automation_start_step_default_width = self.automation_start_step_input.sizeHint().width()
+        self.automation_start_step_input.setMinimumWidth(
+            self._automation_start_step_default_width * 3
+        )
         self.automation_start_step_input.setToolTip("Choose the step at which to start the scenario.")
         self.stop_automation_button = QPushButton("Stop", automation_group)
         self.edit_automation_button.setEnabled(False)
