@@ -88,10 +88,23 @@ The application host also needs:
 
 ## Recommended Setup
 
+From Command Prompt or PowerShell, run the repository installer. It validates
+Python 3.12 or newer, creates or reuses `.venv`, and installs all runtime and
+development dependencies. It also builds `dist\MMUControl.exe` with PyInstaller:
+
 ```powershell
-python -m venv .venv
+.\install.bat
+```
+
+If the installer fails, the equivalent manual commands can be used for
+troubleshooting:
+
+```powershell
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .[dev]
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+python -m PyInstaller --clean -y "MMUControl.spec"
 ```
 
 ## Run
