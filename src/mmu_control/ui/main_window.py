@@ -403,6 +403,56 @@ class CommandSetTreeItem(QTreeWidgetItem):
         return super().text(column)
 
 
+class AutomationTreeWidget(QTreeWidget):
+    """Scenario tree that allows only scenarios to be dragged into folders."""
+
+    SCENARIO_MIME_TYPE = "application/x-mmu-control-automation-scenario"
+    scenarioDropped = Signal(str, str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+    def count(self) -> int:
+        return self.topLevelItemCount()
+
+    def setCurrentRow(self, row: int) -> None:
+        self.setCurrentItem(self.topLevelItem(row))
+
+    def startDrag(self, supported_actions: Qt.DropActions) -> None:  # noqa: N802
+        item = self.currentItem()
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        if not isinstance(data, tuple) or data[0] != "scenario":
+            return
+        mime = QMimeData()
+        mime.setData(self.SCENARIO_MIME_TYPE, QByteArray(data[1].encode()))
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(supported_actions, Qt.DropAction.MoveAction)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(self.SCENARIO_MIME_TYPE):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    dragMoveEvent = dragEnterEvent
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        if not event.mimeData().hasFormat(self.SCENARIO_MIME_TYPE):
+            super().dropEvent(event)
+            return
+        name = bytes(event.mimeData().data(self.SCENARIO_MIME_TYPE)).decode()
+        target = self.itemAt(event.position().toPoint())
+        data = target.data(0, Qt.ItemDataRole.UserRole) if target else None
+        parent_path = data[1] if isinstance(data, tuple) and data[0] == "folder" else ""
+        self.scenarioDropped.emit(name, parent_path)
+        event.acceptProposedAction()
+
+
 class MainWindow(QMainWindow):
     """Primary window for the MMU control application."""
 
@@ -430,6 +480,7 @@ class MainWindow(QMainWindow):
         self._command_sets: dict[str, CommandSet] = {}
         self._command_folders: dict[str, CommandFolder] = {}
         self._automation_scenarios: dict[str, AutomationScenario] = {}
+        self._automation_folders = {}
         self._automation_runner: AutomationRunner | None = None
         self._automation_terminal: AutomationTerminal | None = None
         self._automation_progress: dict[str, AutomationProgressSnapshot] = {}
@@ -501,6 +552,7 @@ class MainWindow(QMainWindow):
         self.delete_command_button.clicked.connect(self._delete_command_set)
         self.run_command_set_button.clicked.connect(self._run_command_set)
         self.new_automation_button.clicked.connect(self._create_automation_scenario)
+        self.new_automation_folder_button.clicked.connect(self._create_automation_folder)
         self.import_automation_button.clicked.connect(self._import_automation_scenario)
         self.copy_automation_button.clicked.connect(self._copy_automation_scenario)
         self.edit_automation_button.clicked.connect(self._edit_automation_scenario)
@@ -508,6 +560,7 @@ class MainWindow(QMainWindow):
         self.run_automation_button.clicked.connect(self._run_automation_scenario)
         self.stop_automation_button.clicked.connect(self._stop_automation)
         self.automation_list.currentItemChanged.connect(self._show_selected_automation_scenario)
+        self.automation_list.scenarioDropped.connect(self._move_automation_scenario)
         self.open_sftp_button.clicked.connect(self._open_sftp)
         self.close_sftp_button.clicked.connect(self._close_sftp_session)
         self.server_path_input.localFileDropped.connect(self._handle_sftp_file_drop)
@@ -1776,28 +1829,41 @@ class MainWindow(QMainWindow):
     def _load_automation_scenarios(self) -> None:
         """Load persisted automation scenarios without preventing app startup."""
         try:
-            self._automation_scenarios = dict(self._automation_store.load().scenarios)
+            collection = self._automation_store.load()
+            self._automation_scenarios = dict(collection.scenarios)
+            self._automation_folders = dict(collection.folders)
         except Exception as exc:
             self._automation_scenarios = {}
+            self._automation_folders = {}
             self.terminal_widget.write_output(f"Could not load automation scenarios: {exc}")
         self._refresh_automation_list()
 
     def _refresh_automation_list(self, selected_name: str | None = None) -> None:
         self.automation_list.clear()
-        for name in sorted(self._automation_scenarios):
-            item = QListWidgetItem(name)
-            item.setData(Qt.ItemDataRole.UserRole, name)
-            self.automation_list.addItem(item)
+        items: dict[str, QTreeWidgetItem] = {"": self.automation_list.invisibleRootItem()}
+        for path, folder in sorted(self._automation_folders.items()):
+            item = QTreeWidgetItem(items.get(folder.parent_path, items[""]), [folder.name])
+            item.setData(0, Qt.ItemDataRole.UserRole, ("folder", path))
+            items[path] = item
+        for name, scenario in sorted(self._automation_scenarios.items()):
+            item = QTreeWidgetItem(items.get(scenario.parent_path, items[""]), [name])
+            item.setData(0, Qt.ItemDataRole.UserRole, ("scenario", name))
             if name == selected_name:
                 self.automation_list.setCurrentItem(item)
+        self.automation_list.expandAll()
         if self.automation_list.currentItem() is None and self.automation_list.count():
             self.automation_list.setCurrentRow(0)
         self._set_automation_actions_enabled(self.automation_list.currentItem() is not None)
 
     def _selected_automation_scenario(self) -> AutomationScenario | None:
         item = self.automation_list.currentItem()
-        name = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
-        return self._automation_scenarios.get(name) if isinstance(name, str) else None
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item is not None else None
+        return self._automation_scenarios.get(data[1]) if isinstance(data, tuple) and data[0] == "scenario" else None
+
+    def _selected_automation_folder_path(self) -> str | None:
+        item = self.automation_list.currentItem()
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        return data[1] if isinstance(data, tuple) and data[0] == "folder" else None
 
     def _show_selected_automation_scenario(self, *_items: QListWidgetItem | None) -> None:
         self._remember_automation_progress()
@@ -1806,6 +1872,7 @@ class MainWindow(QMainWindow):
             self.automation_output.clear()
             self.automation_start_step_input.clear()
             self._set_automation_actions_enabled(False)
+            self.delete_automation_button.setEnabled(self._selected_automation_folder_path() is not None)
             return
         self._populate_automation_start_step_input(scenario)
         self._render_automation_progress(scenario)
@@ -1893,8 +1960,13 @@ class MainWindow(QMainWindow):
 
     def _create_automation_scenario(self) -> None:
         dialog = AutomationEditorDialog(parent=self)
+        parent_path = self._selected_automation_folder_path() or ""
+        self._configure_automation_editor_folders(dialog, parent_path)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self._save_automation_scenario(dialog.scenario())
+            scenario = dialog.scenario()
+            if not hasattr(dialog, "parent_folder_input"):
+                scenario.parent_path = parent_path
+            self._save_automation_scenario(scenario)
 
     def _import_automation_scenario(self) -> None:
         """Import commands into a draft, then let the user review it before saving."""
@@ -1904,7 +1976,9 @@ class MainWindow(QMainWindow):
         scenario = import_dialog.scenario()
         if scenario is None:
             return
+        scenario.parent_path = self._selected_automation_folder_path() or ""
         editor = AutomationEditorDialog(scenario, self)
+        self._configure_automation_editor_folders(editor, scenario.parent_path)
         if editor.exec() == QDialog.DialogCode.Accepted:
             self._save_automation_scenario(editor.scenario())
 
@@ -1916,8 +1990,20 @@ class MainWindow(QMainWindow):
         copied = AutomationScenario.from_dict(scenario.to_dict())
         copied.name = self._next_automation_copy_name(scenario.name)
         dialog = AutomationEditorDialog(copied, self)
+        self._configure_automation_editor_folders(dialog, copied.parent_path)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._save_automation_scenario(dialog.scenario())
+
+    def _configure_automation_editor_folders(self, dialog: object, selected_path: str) -> None:
+        """Populate the editor folder picker while supporting simple dialog test doubles."""
+        combo = getattr(dialog, "parent_folder_input", None)
+        if not isinstance(combo, QComboBox):
+            return
+        combo.clear()
+        combo.addItem("Top level", "")
+        for path in sorted(self._automation_folders):
+            combo.addItem(path, path)
+        combo.setCurrentIndex(max(0, combo.findData(selected_path)))
 
     def _next_automation_copy_name(self, name: str) -> str:
         """Return a scenario name that will not replace an existing scenario."""
@@ -1934,6 +2020,7 @@ class MainWindow(QMainWindow):
         if scenario is None:
             return
         dialog = AutomationEditorDialog(scenario, self)
+        self._configure_automation_editor_folders(dialog, scenario.parent_path)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             edited = dialog.scenario()
             if edited.name != scenario.name:
@@ -1946,12 +2033,21 @@ class MainWindow(QMainWindow):
 
     def _delete_automation_scenario(self) -> None:
         scenario = self._selected_automation_scenario()
-        if scenario is None:
+        folder = self._selected_automation_folder_path()
+        if scenario is not None:
+            if QMessageBox.question(self, "Delete Automation", f"Delete automation '{scenario.name}'?") != QMessageBox.StandardButton.Yes:
+                return
+            collection = self._automation_store.delete(scenario.name)
+            self._automation_progress.pop(scenario.name, None)
+        elif folder is not None:
+            answer = QMessageBox.question(self, "Delete Folder", f"Delete '{folder}' and all of its contents? Choose No to move its contents to the parent folder.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+            if answer == QMessageBox.StandardButton.Cancel:
+                return
+            collection = self._automation_store.delete_folder(folder, delete_contents=answer == QMessageBox.StandardButton.Yes)
+        else:
             return
-        if QMessageBox.question(self, "Delete Automation", f"Delete automation '{scenario.name}'?") != QMessageBox.StandardButton.Yes:
-            return
-        self._automation_scenarios = dict(self._automation_store.delete(scenario.name).scenarios)
-        self._automation_progress.pop(scenario.name, None)
+        self._automation_scenarios = dict(collection.scenarios)
+        self._automation_folders = dict(collection.folders)
         self._refresh_automation_list()
 
     def _save_automation_scenario(self, scenario: AutomationScenario) -> bool:
@@ -1962,8 +2058,29 @@ class MainWindow(QMainWindow):
             self._show_automation_save_error("saving scenario", exc)
             return False
         self._automation_scenarios = dict(collection.scenarios)
+        self._automation_folders = dict(collection.folders)
         self._refresh_automation_list(scenario.name)
         return True
+
+    def _create_automation_folder(self) -> None:
+        name, accepted = QInputDialog.getText(self, "New Folder", "Folder name")
+        if not accepted or not name.strip():
+            return
+        collection = self._automation_store.create_folder(name, self._selected_automation_folder_path() or "")
+        self._automation_scenarios, self._automation_folders = dict(collection.scenarios), dict(collection.folders)
+        self._refresh_automation_list()
+
+    def _move_automation_scenario(self, name: str, parent_path: str) -> None:
+        scenario = self._automation_scenarios.get(name)
+        if scenario is None or scenario.parent_path == parent_path:
+            return
+        try:
+            collection = self._automation_store.move_scenario(name, parent_path)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Could not move scenario: {exc}")
+            return
+        self._automation_scenarios, self._automation_folders = dict(collection.scenarios), dict(collection.folders)
+        self._refresh_automation_list(name)
 
     def _show_automation_save_error(self, action: str, error: Exception) -> None:
         """Expose a scenario persistence error without changing the current list state."""
@@ -2788,6 +2905,7 @@ class MainWindow(QMainWindow):
         automation_layout = QVBoxLayout(automation_group)
         automation_actions = QHBoxLayout()
         self.new_automation_button = QPushButton("New Scenario", automation_group)
+        self.new_automation_folder_button = QPushButton("New Folder", automation_group)
         self.import_automation_button = QPushButton("Import Text", automation_group)
         self.copy_automation_button = QPushButton("Copy", automation_group)
         self.edit_automation_button = QPushButton("Edit", automation_group)
@@ -2803,6 +2921,7 @@ class MainWindow(QMainWindow):
         self.stop_automation_button.setEnabled(False)
         for button in (
             self.new_automation_button,
+            self.new_automation_folder_button,
             self.import_automation_button,
             self.copy_automation_button,
             self.edit_automation_button,
@@ -2815,7 +2934,8 @@ class MainWindow(QMainWindow):
         automation_run_controls.addWidget(self.run_automation_button)
         automation_run_controls.addWidget(self.stop_automation_button)
         automation_run_controls.addStretch(1)
-        self.automation_list = QListWidget(automation_group)
+        self.automation_list = AutomationTreeWidget(automation_group)
+        self.automation_list.setHeaderHidden(True)
         self.automation_output = QPlainTextEdit(automation_group)
         self.automation_output.setReadOnly(True)
         self.automation_output.setPlaceholderText("Scenario execution progress appears here.")

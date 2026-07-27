@@ -67,6 +67,7 @@ class AutomationEditorDialog(QDialog):
         self,
         scenario: AutomationScenario | None = None,
         parent: QWidget | None = None,
+        folder_paths: list[str] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Automation Scenario")
@@ -77,6 +78,14 @@ class AutomationEditorDialog(QDialog):
         self._updating_step_selection = False
         self.name_input = QLineEdit(scenario.name if scenario else "", self)
         self.description_input = QLineEdit(scenario.description if scenario else "", self)
+        self.parent_folder_input = QComboBox(self)
+        self.parent_folder_input.addItem("Top level", "")
+        for path in folder_paths or []:
+            self.parent_folder_input.addItem(path, path)
+        if scenario is not None:
+            index = self.parent_folder_input.findData(scenario.parent_path)
+            if index >= 0:
+                self.parent_folder_input.setCurrentIndex(index)
         self.step_list = ScenarioStepListWidget(self)
         self.step_list.setMinimumHeight(self.STEP_LIST_MINIMUM_HEIGHT)
         self.step_list.currentRowChanged.connect(self._select_step)
@@ -125,6 +134,7 @@ class AutomationEditorDialog(QDialog):
         form = QFormLayout()
         form.addRow("Name", self.name_input)
         form.addRow("Description", self.description_input)
+        form.addRow("Parent folder", self.parent_folder_input)
 
         add_button = QPushButton("Add Step", self)
         duplicate_button = QPushButton("Duplicate", self)
@@ -205,6 +215,7 @@ class AutomationEditorDialog(QDialog):
             name=self.name_input.text().strip(),
             description=self.description_input.text().strip(),
             steps=self._steps,
+            parent_path=str(self.parent_folder_input.currentData() or ""),
         )
 
     def accept(self) -> None:
