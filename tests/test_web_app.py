@@ -8,6 +8,7 @@ from mmu_control.models.command_set import CommandSet
 from mmu_control.web_app import (
     _is_shell_open,
     _patch_streamlit_static_dir_for_pyinstaller,
+    _streamlit_script_path,
     command_lines,
     create_web_services,
     parse_find_listing,
@@ -15,6 +16,32 @@ from mmu_control.web_app import (
     resolve_sftp_path,
     settings_from_form_values,
 )
+
+
+def test_streamlit_script_path_uses_module_file_without_pyinstaller(monkeypatch) -> None:
+    monkeypatch.delattr("sys._MEIPASS", raising=False)
+
+    assert _streamlit_script_path() == Path("src/mmu_control/web_app.py").resolve()
+
+
+def test_streamlit_script_path_uses_bundled_data_file(monkeypatch, tmp_path) -> None:
+    bundled_script = tmp_path / "mmu_control" / "streamlit_app" / "web_app.py"
+    bundled_script.parent.mkdir(parents=True)
+    bundled_script.write_text("# bundled Streamlit script\n", encoding="utf-8")
+    monkeypatch.setattr("sys._MEIPASS", str(tmp_path), raising=False)
+
+    assert _streamlit_script_path() == bundled_script
+
+
+def test_streamlit_script_path_explains_missing_bundle_data(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("sys._MEIPASS", str(tmp_path), raising=False)
+
+    try:
+        _streamlit_script_path()
+    except FileNotFoundError as exc:
+        assert "mmu_control/streamlit_app/web_app.py" in str(exc)
+    else:
+        raise AssertionError("Missing bundled Streamlit script did not raise")
 
 
 def test_main_launches_streamlit_with_production_static_assets() -> None:
@@ -137,6 +164,13 @@ def test_web_pyinstaller_spec_bundles_power_supply_commands_only_as_static_data(
     assert "mmu_control/resources" in spec_text
     assert "command_sets.json" not in spec_text
     assert "automation_scenarios.json" not in spec_text
+
+
+def test_web_pyinstaller_spec_bundles_streamlit_script_as_data() -> None:
+    spec_text = Path("MMUControlWeb.spec").read_text(encoding="utf-8")
+
+    assert r"src\\mmu_control\\web_app.py" in spec_text
+    assert "mmu_control/streamlit_app" in spec_text
 
 
 def test_web_pyinstaller_spec_bundles_streamlit_metadata() -> None:
