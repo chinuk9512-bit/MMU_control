@@ -2,12 +2,24 @@
 
 Windows Python GUI application for connecting to a Linux server over SSH and controlling board workflows such as shell, minicom, and SFTP.
 
-## Setup
+## Recommended Setup
+
+From Command Prompt or PowerShell, run the installer. It selects Python 3.12 or
+newer, creates (or reuses) `.venv`, and installs the runtime and development
+dependencies. It also builds the desktop executable at `dist\MMUControl.exe`:
 
 ```powershell
-python -m venv .venv
+.\install.bat
+```
+
+If the installer fails, use these manual commands for troubleshooting:
+
+```powershell
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .[dev]
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+python -m PyInstaller --clean -y "MMUControl.spec"
 ```
 
 ## Run
