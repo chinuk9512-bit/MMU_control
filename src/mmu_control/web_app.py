@@ -737,6 +737,13 @@ def _render_automation_tab(st: Any) -> None:
     selected = st.selectbox("Scenario", names, index=0 if names else None)
     scenario = collection.scenarios.get(selected) if selected else None
     _render_automation_editor(st, scenario)
+    if scenario is not None and st.button("Copy scenario"):
+        copied = copy_automation_scenario(scenario, set(collection.scenarios))
+        try:
+            services.automation_store.upsert(copied)
+            st.success(f'Scenario copied as "{copied.name}".')
+        except AutomationStoreError as exc:
+            st.error(str(exc))
     st.divider()
     if scenario is not None:
         start_options = [f"{index + 1}: {step.name or step.command}" for index, step in enumerate(scenario.steps)]
@@ -760,6 +767,21 @@ def _render_automation_tab(st: Any) -> None:
     if runner is not None:
         st.info(f"{runner.status.state}: {runner.status.message}")
     st.text_area("Automation output", st.session_state.automation_output, height=260)
+
+
+def copy_automation_scenario(
+    scenario: AutomationScenario,
+    existing_names: set[str],
+) -> AutomationScenario:
+    """Return an independent scenario copy with a non-conflicting name."""
+    copied = AutomationScenario.from_dict(scenario.to_dict())
+    base_name = f"{scenario.name} (Copy)"
+    copied.name = base_name
+    copy_number = 2
+    while copied.name in existing_names:
+        copied.name = f"{base_name} {copy_number}"
+        copy_number += 1
+    return copied
 
 
 def _render_automation_editor(st: Any, scenario: AutomationScenario | None) -> None:
