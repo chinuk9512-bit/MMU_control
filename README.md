@@ -15,7 +15,7 @@ dependencies. It also builds the desktop executable at `dist\MMUControl.exe`:
 If the installer fails, use these manual commands for troubleshooting:
 
 ```powershell
-py -3.12 -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
