@@ -10,16 +10,16 @@ if errorlevel 1 (
     exit /b %EXIT_CODE%
 )
 
-set "PYTHON_CMD=py -3.12"
-%PYTHON_CMD% --version >nul 2>&1
+rem Prefer the newest Python 3 registered with the Windows launcher. Requesting
+rem exactly 3.12 fails when a newer compatible version (for example 3.14) is
+rem the only installed version.
+set "PYTHON_CMD=py -3"
+%PYTHON_CMD% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" >nul 2>&1
 if errorlevel 1 (
     set "PYTHON_CMD=python"
-    python --version >nul 2>&1
+    python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" >nul 2>&1
     if errorlevel 1 goto :python_not_found
 )
-
-%PYTHON_CMD% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)"
-if errorlevel 1 goto :python_too_old
 
 if exist ".venv\Scripts\python.exe" (
     echo [INFO] Reusing the existing virtual environment at ".venv".
@@ -57,12 +57,7 @@ exit /b 0
 set "EXIT_CODE=%errorlevel%"
 echo [ERROR] Python was not found. Python 3.12 or newer must be installed.
 echo Install Python from https://www.python.org/downloads/ and enable the Python launcher or add Python to PATH, then run "install.bat" again.
-exit /b %EXIT_CODE%
-
-:python_too_old
-set "EXIT_CODE=%errorlevel%"
-echo [ERROR] The available Python version is older than 3.12.
-echo Install Python 3.12 or newer and ensure "py -3.12" or "python" can find it, then run "install.bat" again.
+echo If Python 3.12 or newer is already installed, verify it with "py -3 --version" or "python --version".
 exit /b %EXIT_CODE%
 
 :venv_failed
