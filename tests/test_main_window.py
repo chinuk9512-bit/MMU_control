@@ -725,6 +725,39 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn("Execution progress: Running step 1: run first", window.automation_output.toPlainText())
         self.assertIn("[▶ running] run first", window.automation_output.toPlainText())
 
+    def test_running_scenario_progress_refresh_preserves_user_scroll_position(self) -> None:
+        """Periodic progress updates do not pull the step list back to the top."""
+        manager = FakeSSHManager()
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        scenario = AutomationScenario(
+            name="long-running",
+            steps=[
+                AutomationStep(
+                    f"step {index}",
+                    f"command-{index}",
+                    CompletionType.OUTPUT_CONTAINS,
+                    "done",
+                )
+                for index in range(40)
+            ],
+        )
+        store.upsert(scenario)
+        window = self.create_window(ssh_manager=manager, automation_store=store)
+        window._activate_shell(manager.shell)
+        window.show()
+        self.app.processEvents()
+        window._run_automation_scenario()
+        self.app.processEvents()
+
+        scroll_bar = window.automation_output.verticalScrollBar()
+        self.assertGreater(scroll_bar.maximum(), 0)
+        user_position = scroll_bar.maximum() // 2
+        scroll_bar.setValue(user_position)
+
+        window._update_automation_status()
+
+        self.assertEqual(scroll_bar.value(), user_position)
+
     def test_run_automation_can_start_at_the_selected_step(self) -> None:
         manager = FakeSSHManager()
         store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
