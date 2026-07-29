@@ -1,0 +1,10 @@
+Command 저장 위치
+=================
+
+%APPDATA%\MMUControl\command_sets.json
+
+일반적인 전체 경로:
+C:\Users\<Windows 사용자 이름>\AppData\Roaming\MMUControl\command_sets.json
+
+APPDATA 환경 변수가 없는 경우:
+<사용자 홈>\AppData\Roaming\MMUControl\command_sets.json
