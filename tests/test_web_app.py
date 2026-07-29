@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mmu_control.models.automation import AutomationScenario, AutomationStep, CompletionType
 from mmu_control.models.command_set import CommandSet
 from mmu_control.web_app import (
     _is_shell_open,
     _patch_streamlit_static_dir_for_pyinstaller,
     _streamlit_script_path,
     command_lines,
+    copy_automation_scenario,
     create_web_services,
     parse_find_listing,
     parse_sftp_listing,
@@ -119,6 +121,38 @@ def test_is_shell_open_requires_live_shell() -> None:
     assert not _is_shell_open(None)
     assert not _is_shell_open(FakeShell(False))
     assert _is_shell_open(FakeShell(True))
+
+
+def test_copy_automation_scenario_preserves_data_as_an_independent_copy() -> None:
+    original = AutomationScenario(
+        name="Boot",
+        description="Boot the board",
+        steps=[
+            AutomationStep(
+                name="Wait",
+                command="boot",
+                completion_type=CompletionType.OUTPUT_CONTAINS,
+                completion_value="ready",
+            )
+        ],
+        parent_path="Regression/Nightly",
+    )
+
+    copied = copy_automation_scenario(original, {"Boot", "Boot (Copy)"})
+
+    assert copied == AutomationScenario(
+        name="Boot (Copy) 2",
+        description=original.description,
+        steps=[AutomationStep.from_dict(original.steps[0].to_dict())],
+        parent_path=original.parent_path,
+    )
+    assert copied.steps[0] is not original.steps[0]
+
+
+def test_copy_automation_scenario_uses_the_default_copy_name_when_available() -> None:
+    copied = copy_automation_scenario(AutomationScenario(name="Boot"), {"Boot"})
+
+    assert copied.name == "Boot (Copy)"
 
 
 def test_parse_find_listing_matches_file_kinds() -> None:
