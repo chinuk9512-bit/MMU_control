@@ -1892,6 +1892,10 @@ class MainWindow(QMainWindow):
 
     def _render_automation_progress(self, scenario: AutomationScenario) -> None:
         """Render scenario steps and its most recently observed progress."""
+        vertical_scroll_bar = self.automation_output.verticalScrollBar()
+        horizontal_scroll_bar = self.automation_output.horizontalScrollBar()
+        vertical_scroll_position = vertical_scroll_bar.value()
+        horizontal_scroll_position = horizontal_scroll_bar.value()
         runner = self._automation_runner
         active_scenario = runner.scenario if runner is not None else None
         is_running_scenario = active_scenario is not None and active_scenario.name == scenario.name
@@ -1938,6 +1942,11 @@ class MainWindow(QMainWindow):
             f"Name: {scenario.name}\nConsole: {terminal_name}\nDescription: {scenario.description}\n\n"
             f"Execution progress: {progress}\n\n" + "\n".join(step_lines)
         )
+        # This view is refreshed on every automation poll.  Replacing its text
+        # moves both scroll bars to the origin, so restore the user's viewport
+        # after the progress markers have been updated.
+        vertical_scroll_bar.setValue(vertical_scroll_position)
+        horizontal_scroll_bar.setValue(horizontal_scroll_position)
 
     def _remember_automation_progress(self) -> None:
         """Keep progress visible after the user selects another scenario."""
