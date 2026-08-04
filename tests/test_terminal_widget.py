@@ -13,9 +13,11 @@ import pytest
 pytest.importorskip("PySide6.QtGui", exc_type=ImportError)
 
 from PySide6.QtCore import QMimeData, Qt
+from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
+from mmu_control.core.terminal_sequences import TerminalStyle
 from mmu_control.ui.terminal_widget import TerminalWidget
 
 
@@ -26,6 +28,15 @@ class TerminalWidgetTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         """Create a QApplication for widget tests."""
         cls.app = QApplication.instance() or QApplication(sys.argv)
+
+    def test_all_terminal_text_uses_bold_weight(self) -> None:
+        """The terminal font and plain output remain bold without ANSI styling."""
+        widget = TerminalWidget(prompt="mmu> ")
+
+        self.assertEqual(widget.font().weight(), QFont.Weight.Bold)
+        self.assertEqual(
+            widget._text_format(TerminalStyle()).fontWeight(), QFont.Weight.Bold
+        )
 
     def test_submit_command_and_append_output(self) -> None:
         """Typing a command emits it and output appears in the same widget."""
