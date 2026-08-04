@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
 
@@ -13,7 +13,7 @@ TERMINAL_FOREGROUND = QColor("#f2f4f7")
 APPLICATION_STYLE_SHEET = """
 QWidget {
     color: #f2f4f7;
-    font-weight: 500;
+    font-weight: 700;
 }
 QToolTip {
     color: #ffffff;
@@ -25,7 +25,7 @@ QGroupBox {
     border: 2px solid #626a76;
     border-radius: 5px;
     margin-top: 10px;
-    font-weight: 600;
+    font-weight: 700;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
@@ -46,7 +46,7 @@ QTableWidget {
     border: 2px solid #626a76;
     border-radius: 4px;
     padding: 3px;
-    font-weight: 500;
+    font-weight: 700;
 }
 QLineEdit:focus,
 QTextEdit:focus,
@@ -65,7 +65,7 @@ QPushButton {
     border: 2px solid #737c89;
     border-radius: 4px;
     padding: 5px 10px;
-    font-weight: 600;
+    font-weight: 700;
 }
 QPushButton:hover {
     background-color: #414854;
@@ -95,6 +95,9 @@ QDoubleSpinBox:disabled {
 def apply_dark_theme(app: QApplication) -> None:
     """Apply a low-glare, high-contrast dark palette to the application."""
     app.setStyle("Fusion")
+    font = app.font()
+    font.setWeight(QFont.Weight.Bold)
+    app.setFont(font)
     palette = QPalette()
     colors = {
         QPalette.ColorRole.Window: "#202328",

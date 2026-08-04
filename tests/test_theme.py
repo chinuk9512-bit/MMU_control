@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("PySide6.QtGui", exc_type=ImportError)
 
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
 from mmu_control.ui.theme import apply_dark_theme
@@ -39,7 +39,10 @@ class ThemeTest(unittest.TestCase):
         self.assertIn("QPushButton {", style_sheet)
         self.assertIn("border: 2px solid #626a76;", style_sheet)
         self.assertIn("border: 2px solid #79b8f3;", style_sheet)
-        self.assertIn("font-weight: 600;", style_sheet)
+        self.assertIn("font-weight: 700;", style_sheet)
+        self.assertNotIn("font-weight: 500;", style_sheet)
+        self.assertNotIn("font-weight: 600;", style_sheet)
+        self.assertEqual(self.app.font().weight(), QFont.Weight.Bold)
 
 
 if __name__ == "__main__":

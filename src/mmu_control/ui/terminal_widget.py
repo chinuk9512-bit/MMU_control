@@ -36,7 +36,9 @@ class TerminalWidget(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setUndoRedoEnabled(False)
         self.setMaximumBlockCount(10_000)
-        self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        terminal_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        terminal_font.setWeight(QFont.Weight.Bold)
+        self.setFont(terminal_font)
         self.setStyleSheet(
             f"QPlainTextEdit {{ background-color: {TERMINAL_BACKGROUND.name()}; "
             f"color: {TERMINAL_FOREGROUND.name()}; selection-background-color: #355f87; }}"
@@ -114,9 +116,9 @@ class TerminalWidget(QPlainTextEdit):
         text_format.setBackground(
             QColor(*style.background) if style.background else TERMINAL_BACKGROUND
         )
-        text_format.setFontWeight(
-            QFont.Weight.Bold if style.bold else QFont.Weight.Normal
-        )
+        # Keep every terminal character bold, including output without an ANSI
+        # bold sequence. Other ANSI attributes still apply independently.
+        text_format.setFontWeight(QFont.Weight.Bold)
         if style.dim:
             foreground = text_format.foreground().color()
             foreground.setAlpha(150)
