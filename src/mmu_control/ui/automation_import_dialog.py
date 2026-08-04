@@ -55,7 +55,7 @@ class AutomationImportDialog(QDialog):
             "Lines starting with # are comments."
         )
         self.error_label = QLabel("", self)
-        self.error_label.setStyleSheet("color: #b00020;")
+        self.error_label.setStyleSheet("color: #ff7b86;")
 
         self.file_source_radio.toggled.connect(self._update_source_controls)
         self.text_source_radio.toggled.connect(self._update_source_controls)

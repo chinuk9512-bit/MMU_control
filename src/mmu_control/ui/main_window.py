@@ -2544,10 +2544,6 @@ class MainWindow(QMainWindow):
         panel = QFrame(self)
         self.connection_panel = panel
         panel.setFrameShape(QFrame.Shape.StyledPanel)
-        # QScrollArea uses the platform's inactive-window colour by default on
-        # some Windows themes.  Keep the connection inputs visually aligned
-        # with the white workspace below them.
-        panel.setStyleSheet("QFrame { background-color: white; }")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -2586,9 +2582,6 @@ class MainWindow(QMainWindow):
         )
         self.connection_panel_scroll_area.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        self.connection_panel_scroll_area.setStyleSheet(
-            "QScrollArea, QScrollArea > QWidget > QWidget { background-color: white; }"
         )
         self.connection_panel_scroll_area.setWidget(self.connection_panel_content)
         layout.addWidget(self.connection_panel_scroll_area)

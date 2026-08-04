@@ -29,7 +29,7 @@ class CommandEditorDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Command Group")
         self._error_label = QLabel("", self)
-        self._error_label.setStyleSheet("color: #b00020;")
+        self._error_label.setStyleSheet("color: #ff7b86;")
 
         self.name_input = QLineEdit(self)
         self.description_input = QLineEdit(self)
