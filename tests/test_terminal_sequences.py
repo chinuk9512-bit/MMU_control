@@ -44,6 +44,27 @@ class TerminalSequencesTest(unittest.TestCase):
 
         self.assertEqual(cleaned, "┌──┐ text")
 
+    def test_preserves_sgr_styles_across_chunks(self) -> None:
+        """Split colour sequences produce styled fragments and reset cleanly."""
+        stream_filter = TerminalStreamFilter()
+
+        self.assertEqual(stream_filter.feed_styled("\x1b[38;2;10;"), [])
+        fragments = stream_filter.feed_styled("20;30mRGB\x1b[0m plain")
+
+        self.assertEqual([fragment.text for fragment in fragments], ["RGB", " plain"])
+        self.assertEqual(fragments[0].style.foreground, (10, 20, 30))
+        self.assertIsNone(fragments[1].style.foreground)
+
+    def test_supports_standard_and_indexed_ansi_colors(self) -> None:
+        """Linux shell 16-colour and 256-colour output retains its colours."""
+        fragments = TerminalStreamFilter().feed_styled(
+            "\x1b[1;34mblue\x1b[48;5;196m red-background"
+        )
+
+        self.assertEqual(fragments[0].style.foreground, (36, 114, 200))
+        self.assertTrue(fragments[0].style.bold)
+        self.assertEqual(fragments[1].style.background, (255, 0, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

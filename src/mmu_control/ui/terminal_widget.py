@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QMimeData, Qt, Signal
-from PySide6.QtGui import QFontDatabase, QKeyEvent, QKeySequence, QTextCursor
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontDatabase,
+    QKeyEvent,
+    QKeySequence,
+    QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtWidgets import QApplication, QPlainTextEdit
 
-from mmu_control.core.terminal_sequences import TerminalStreamFilter, strip_terminal_sequences
+from mmu_control.core.terminal_sequences import TerminalStreamFilter, TerminalStyle, TerminalText
+from mmu_control.ui.theme import TERMINAL_BACKGROUND, TERMINAL_FOREGROUND
 
 
 class TerminalWidget(QPlainTextEdit):
@@ -28,6 +37,10 @@ class TerminalWidget(QPlainTextEdit):
         self.setUndoRedoEnabled(False)
         self.setMaximumBlockCount(10_000)
         self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.setStyleSheet(
+            f"QPlainTextEdit {{ background-color: {TERMINAL_BACKGROUND.name()}; "
+            f"color: {TERMINAL_FOREGROUND.name()}; selection-background-color: #355f87; }}"
+        )
         self.setPlainText(self._prompt)
         self._move_cursor_to_end()
 
@@ -58,13 +71,13 @@ class TerminalWidget(QPlainTextEdit):
         """Append command output above the live prompt."""
         if not text:
             return
-        text = strip_terminal_sequences(text)
-        if not text:
+        fragments = TerminalStreamFilter().feed_styled(text)
+        if not fragments:
             return
         cursor = self._remove_live_input()
         if cursor.position() and str(self.document().characterAt(cursor.position() - 1)) != "\n":
             cursor.insertText("\n")
-        cursor.insertText(text)
+        self._insert_terminal_fragments(cursor, fragments)
         if not text.endswith("\n"):
             cursor.insertText("\n")
         self._insert_live_input(cursor)
@@ -73,16 +86,50 @@ class TerminalWidget(QPlainTextEdit):
         """Append raw shell output without forcing a trailing newline."""
         if not text:
             return
-        text = self._stream_filter.feed(text)
-        if not text:
+        fragments = self._stream_filter.feed_styled(text)
+        if not fragments:
             return
         cursor = self._remove_live_input()
-        self._insert_terminal_stream_text(cursor, text)
+        overwrite_from_carriage_return = False
+        for fragment in fragments:
+            cursor.setCharFormat(self._text_format(fragment.style))
+            overwrite_from_carriage_return = self._insert_terminal_stream_text(
+                cursor, fragment.text, overwrite_from_carriage_return
+            )
         self._insert_live_input(cursor)
 
-    def _insert_terminal_stream_text(self, cursor: QTextCursor, text: str) -> None:
+    def _insert_terminal_fragments(
+        self, cursor: QTextCursor, fragments: list[TerminalText]
+    ) -> None:
+        """Insert parsed terminal fragments with their requested formatting."""
+        for fragment in fragments:
+            cursor.insertText(fragment.text, self._text_format(fragment.style))
+
+    def _text_format(self, style: TerminalStyle) -> QTextCharFormat:
+        """Convert terminal display attributes into a Qt character format."""
+        text_format = QTextCharFormat()
+        text_format.setForeground(
+            QColor(*style.foreground) if style.foreground else TERMINAL_FOREGROUND
+        )
+        text_format.setBackground(
+            QColor(*style.background) if style.background else TERMINAL_BACKGROUND
+        )
+        text_format.setFontWeight(
+            QFont.Weight.Bold if style.bold else QFont.Weight.Normal
+        )
+        if style.dim:
+            foreground = text_format.foreground().color()
+            foreground.setAlpha(150)
+            text_format.setForeground(foreground)
+        return text_format
+
+    def _insert_terminal_stream_text(
+        self,
+        cursor: QTextCursor,
+        text: str,
+        overwrite_from_carriage_return: bool = False,
+    ) -> bool:
         """Render printable stream text plus simple terminal erase characters."""
-        overwrite_from_carriage_return = False
         for character in text.replace("\r\n", "\n"):
             if character == "\r":
                 # A bare CR returns to column zero; it is commonly used for
@@ -104,6 +151,7 @@ class TerminalWidget(QPlainTextEdit):
             ):
                 cursor.deleteChar()
             cursor.insertText(character)
+        return overwrite_from_carriage_return
 
     def clear_terminal(self) -> None:
         """Clear the terminal and restore the prompt."""
@@ -319,7 +367,7 @@ class TerminalWidget(QPlainTextEdit):
         return cursor
 
     def _insert_live_input(self, cursor: QTextCursor) -> None:
-        cursor.insertText(f"{self._prompt}{self._buffer}")
+        cursor.insertText(f"{self._prompt}{self._buffer}", self._text_format(TerminalStyle()))
         self.setTextCursor(cursor)
         self.ensureCursorVisible()
 

@@ -61,6 +61,20 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget.toPlainText(), "Downloading 20%")
 
+    def test_ansi_color_is_applied_and_reset_to_terminal_foreground(self) -> None:
+        """Remote ANSI colours are rendered without colouring later text."""
+        widget = TerminalWidget(prompt="")
+
+        widget.write_stream("\x1b[31mred\x1b[0m plain")
+        cursor = widget.textCursor()
+        cursor.setPosition(1)
+        red = cursor.charFormat().foreground().color().name()
+        cursor.setPosition(5)
+        plain = cursor.charFormat().foreground().color().name()
+
+        self.assertEqual(red, "#cd3131")
+        self.assertEqual(plain, "#e6e6e6")
+
     def test_typing_and_output_do_not_replace_the_whole_document(self) -> None:
         """Incremental rendering avoids the old full-document redraw bottleneck."""
 

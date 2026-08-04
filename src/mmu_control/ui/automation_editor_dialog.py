@@ -124,7 +124,7 @@ class AutomationEditorDialog(QDialog):
         self.save_step_button = QPushButton("Save Step", self)
         self.save_step_button.clicked.connect(self._save_current_step)
         self.error_label = QLabel("", self)
-        self.error_label.setStyleSheet("color: #b00020;")
+        self.error_label.setStyleSheet("color: #ff7b86;")
         self._build_layout()
         self._refresh_step_list()
         self.step_list.setCurrentRow(0)
@@ -304,11 +304,11 @@ class AutomationEditorDialog(QDialog):
     def _save_current_step(self) -> None:
         """Save the selected step without closing the scenario editor."""
         if not 0 <= self._current_index < len(self._steps):
-            self.error_label.setStyleSheet("color: #b00020;")
+            self.error_label.setStyleSheet("color: #ff7b86;")
             self.error_label.setText("Select a step to save.")
             return
         if not self.command_input.toPlainText().strip():
-            self.error_label.setStyleSheet("color: #b00020;")
+            self.error_label.setStyleSheet("color: #ff7b86;")
             self.error_label.setText("Step command is required.")
             return
 
@@ -317,7 +317,7 @@ class AutomationEditorDialog(QDialog):
         self.step_list.item(self._current_index).setText(
             f"{self._current_index + 1}. {step.name or step.command or 'Unnamed step'}"
         )
-        self.error_label.setStyleSheet("color: #006400;")
+        self.error_label.setStyleSheet("color: #69db8b;")
         self.error_label.setText("Step saved.")
 
     def _update_condition_labels(self) -> None:
