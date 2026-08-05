@@ -30,4 +30,4 @@ jobs:
       - name: Run tests headlessly
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest tests/test_main_window.py
+        run: pytest -q
