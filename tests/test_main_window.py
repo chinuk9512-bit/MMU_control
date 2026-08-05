@@ -11,6 +11,10 @@ from unittest.mock import Mock, patch
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
 from PySide6.QtGui import QDropEvent, QValidator
 from PySide6.QtTest import QTest
