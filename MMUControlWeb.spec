@@ -26,6 +26,7 @@ a = Analysis(
         'mmu_control.core.power_supply_manager',
         'mmu_control.core.sftp_manager',
         'mmu_control.core.ssh_manager',
+        'mmu_control.core.ttyd_manager',
         'mmu_control.models.automation',
         'mmu_control.models.command_set',
         'mmu_control.models.profile',

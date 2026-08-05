@@ -20,6 +20,7 @@ from mmu_control.core.minicom_manager import MinicomError, MinicomManager
 from mmu_control.core.power_supply_manager import PowerSupplyCommandError, PowerSupplyManager
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHConnectionError, SSHManager
+from mmu_control.core.ttyd_manager import TtydError, TtydManager
 from mmu_control.models.automation import (
     AutomationScenario,
     AutomationStep,
@@ -56,6 +57,7 @@ class WebServices:
     sftp_manager: SFTPManager
     minicom_manager: MinicomManager
     power_supply_manager: PowerSupplyManager
+    ttyd_manager: TtydManager
     config_manager: ConfigManager
     command_set_store: CommandSetStore
     automation_store: AutomationStore
@@ -68,6 +70,7 @@ def create_web_services() -> WebServices:
         sftp_manager=SFTPManager(),
         minicom_manager=MinicomManager(),
         power_supply_manager=PowerSupplyManager(),
+        ttyd_manager=TtydManager(),
         config_manager=ConfigManager.create_default(),
         command_set_store=CommandSetStore.create_default(),
         automation_store=AutomationStore.create_default(),
@@ -308,6 +311,8 @@ def _init_state(st: Any) -> None:
         "sftp_active": False,
         "minicom_active": False,
         "terminal_output": "",
+        "terminal_ttyd_url": "",
+        "terminal_ttyd_error": "",
         "sftp_output": "",
         "server_sftp_directory": os.path.expanduser("~"),
         "mmu_sftp_directory": "/tmp",
@@ -434,10 +439,18 @@ def _connect_ssh(st: Any) -> None:
     try:
         services.ssh_manager.connect(settings.ssh)
         shell = services.ssh_manager.open_shell()
+        ttyd_session = services.ttyd_manager.start_ssh_terminal(settings.ssh)
     except SSHConnectionError as exc:
         st.error(str(exc))
         return
+    except TtydError as exc:
+        services.ttyd_manager.stop()
+        services.ssh_manager.disconnect()
+        st.error(str(exc))
+        return
     st.session_state.shell = shell
+    st.session_state.terminal_ttyd_url = ttyd_session.url
+    st.session_state.terminal_ttyd_error = ""
     _append_output(st, "terminal_output", f"Connected to {settings.ssh.host}.\n")
 
 
@@ -445,11 +458,14 @@ def _disconnect_ssh(st: Any) -> None:
     services = _services(st)
     _close_shell(st.session_state.get("sftp_shell"))
     _close_shell(st.session_state.get("shell"))
+    services.ttyd_manager.stop()
     services.ssh_manager.disconnect()
     st.session_state.shell = None
     st.session_state.sftp_shell = None
     st.session_state.sftp_active = False
     st.session_state.minicom_active = False
+    st.session_state.terminal_ttyd_url = ""
+    st.session_state.terminal_ttyd_error = ""
     st.session_state.automation_runner = None
     _append_output(st, "terminal_output", "Disconnected.\n")
 
@@ -465,19 +481,17 @@ def _close_shell(shell: InteractiveShell | None) -> None:
 
 def _render_terminal_tab(st: Any) -> None:
     shell = st.session_state.get("shell")
-    cols = st.columns([3, 1, 1])
-    command = cols[0].text_input("Command", key="terminal_command")
-    if cols[1].button("Send", disabled=shell is None or not shell.is_open):
-        if command.strip():
-            shell.send_line(command)
-            _append_output(st, "terminal_output", f"$ {command}\n")
-    raw_text = st.text_input("Raw input", key="terminal_raw")
-    if st.button("Send raw", disabled=shell is None or not shell.is_open):
-        if raw_text:
-            shell.send(raw_text)
-    if st.button("Clear terminal output"):
+    ttyd_url = st.session_state.get("terminal_ttyd_url", "")
+    if ttyd_url and shell is not None and shell.is_open:
+        st.caption("Interactive terminal is provided by ttyd. App actions below still use the managed SSH shell.")
+        st.components.v1.iframe(ttyd_url, height=560, scrolling=False)
+        st.caption(f"ttyd endpoint: {ttyd_url}")
+    else:
+        st.info("Connect SSH to open a ttyd browser terminal.")
+    if st.button("Clear managed terminal log"):
         st.session_state.terminal_output = ""
-    st.text_area("Terminal output", st.session_state.terminal_output, height=520)
+    with st.expander("Managed SSH shell log used by automation and app actions"):
+        st.text_area("Managed terminal output", st.session_state.terminal_output, height=260)
 
     usb_cols = st.columns(4)
     if usb_cols[0].button("Refresh USB", disabled=shell is None or not shell.is_open):
