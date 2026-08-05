@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mmu_control.core.ttyd_manager import TtydError, TtydManager
 from mmu_control.models.automation import AutomationScenario, AutomationStep, CompletionType
 from mmu_control.models.command_set import CommandSet
 from mmu_control.web_app import (
@@ -82,9 +83,93 @@ def test_create_web_services_uses_default_managers() -> None:
     assert services.sftp_manager is not None
     assert services.minicom_manager is not None
     assert services.power_supply_manager is not None
+    assert services.ttyd_manager is not None
     assert services.config_manager is not None
     assert services.command_set_store is not None
     assert services.automation_store is not None
+
+
+class FakeTtydProcess:
+    def __init__(self, command: list[str], **_kwargs: object) -> None:
+        self.command = command
+        self.terminated = False
+        self.killed = False
+
+    def poll(self) -> int | None:
+        return None if not self.terminated and not self.killed else 0
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+def test_ttyd_manager_builds_ssh_terminal_command(tmp_path) -> None:
+    executable = tmp_path / "ttyd"
+    executable.write_text("", encoding="utf-8")
+    manager = TtydManager(executable=str(executable), process_factory=FakeTtydProcess)
+    settings = settings_from_form_values(
+        ssh_host="server.local",
+        ssh_port=2222,
+        ssh_username="user",
+        ssh_password="secret",
+        board_ip="",
+        board_username="",
+        board_password="",
+        board_interface="",
+        board_usb_port="",
+        board_ssh_port=22,
+        power_ip="",
+        power_voltage="",
+        power_current="",
+    )
+
+    session = manager.start_ssh_terminal(settings.ssh)
+
+    assert session.url.startswith("http://127.0.0.1:")
+    assert manager.session == session
+    assert manager._process.command[:5] == [str(executable), "--interface", "127.0.0.1", "--port", str(session.port)]
+    assert manager._process.command[5:] == [
+        "ssh",
+        "-p",
+        "2222",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "user@server.local",
+    ]
+    manager.stop()
+    assert not manager.is_running
+
+
+def test_ttyd_manager_reports_missing_executable(monkeypatch) -> None:
+    monkeypatch.setenv("MMU_CONTROL_TTYD", "missing-ttyd")
+    manager = TtydManager()
+    settings = settings_from_form_values(
+        ssh_host="server.local",
+        ssh_port=22,
+        ssh_username="user",
+        ssh_password="",
+        board_ip="",
+        board_username="",
+        board_password="",
+        board_interface="",
+        board_usb_port="",
+        board_ssh_port=22,
+        power_ip="",
+        power_voltage="",
+        power_current="",
+    )
+
+    try:
+        manager.start_ssh_terminal(settings.ssh)
+    except TtydError as exc:
+        assert "Configured ttyd executable was not found" in str(exc)
+    else:
+        raise AssertionError("Missing ttyd executable did not raise")
 
 
 def test_settings_from_form_values_builds_app_settings() -> None:

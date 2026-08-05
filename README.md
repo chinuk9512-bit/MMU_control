@@ -41,7 +41,12 @@ python -m streamlit run .\src\mmu_control\web_app.py
 ```
 
 The web UI runs locally and reuses the same settings, command sets, and
-automation scenarios stored in `%APPDATA%/MMUControl`.
+automation scenarios stored in `%APPDATA%/MMUControl`. Its Terminal tab embeds
+a browser terminal served by `ttyd`, so install `ttyd` and make it available on
+`PATH`, or set `MMU_CONTROL_TTYD` to the full `ttyd` executable path before
+starting `mmu-control-web`. The embedded terminal runs a normal local `ssh`
+client, so the browser terminal may prompt for SSH credentials separately from
+the app-managed Paramiko connection used by automation and buttons.
 
 ## Board workflows
 

@@ -6,7 +6,8 @@
 - `PySide6>=6.7` for the Windows desktop GUI, Qt widgets, timers, signals, `QThreadPool`, and `QProcess`.
 - `paramiko>=3.4` for Linux server SSH, interactive shell channels, remote command execution, and local PC to Linux server upload support.
 - `streamlit>=1.37` for the local browser-based web UI.
-- A local `ssh` executable on PATH when using direct board/MMU SSH without an active Linux server connection.
+- `ttyd` executable on PATH, or `MMU_CONTROL_TTYD` pointing to it, for the Streamlit web Terminal tab.
+- A local `ssh` executable on PATH for the Streamlit web Terminal tab hosted by `ttyd` and when using direct board/MMU SSH without an active Linux server connection.
 
 These are the direct dependencies declared by the project. Their transitive dependencies are resolved by `pip`; they should not be maintained as a separate manual list here.
 
@@ -84,7 +85,7 @@ The application host also needs:
 - Windows with PowerShell for the documented `.venv` and executable build workflow.
 - Network access from the host to the configured Linux SSH server (normally TCP port 22, or the configured alternative).
 - A writable per-user application-data directory for settings, scenarios, command sets, profiles, and logs.
-- A web browser for `mmu-control-web`; the Streamlit server is started locally by the command.
+- A web browser for `mmu-control-web`; the Streamlit server is started locally by the command and embeds a localhost `ttyd` terminal endpoint after SSH connection.
 
 ## Recommended Setup
 
