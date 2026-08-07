@@ -9,6 +9,7 @@ import re
 import shlex
 import subprocess
 import time
+from collections import deque
 from dataclasses import dataclass
 
 from PySide6.QtCore import QByteArray, QMimeData, QPoint, QProcess, QRegularExpression, QTimer, Qt, Signal
@@ -458,6 +459,9 @@ class MainWindow(QMainWindow):
 
     AUTOMATION_OUTPUT_LIMIT = AutomationRunner.OUTPUT_LIMIT
     MMU_SSH_AUTH_TIMEOUT_MS = 3000
+    TERMINAL_FLUSH_INTERVAL_MS = 20
+    TERMINAL_FLUSH_CHARACTER_LIMIT = 32_768
+    TERMINAL_PENDING_CHARACTER_LIMIT = 262_144
 
     def __init__(
         self,
@@ -491,6 +495,9 @@ class MainWindow(QMainWindow):
         self._echo_buffer = ""
         self._automation_output_filter = TerminalStreamFilter()
         self._recent_automation_output = ""
+        self._pending_terminal_output: deque[str] = deque()
+        self._pending_terminal_characters = 0
+        self._terminal_output_truncated = False
         self._sftp_pending_echo: str | None = None
         self._sftp_pending_listing = False
         self._sftp_pending_pwd: str | None = None
@@ -536,6 +543,10 @@ class MainWindow(QMainWindow):
         self._automation_timer = QTimer(self)
         self._automation_timer.setInterval(100)
         self._automation_timer.timeout.connect(self._poll_automation)
+        self._terminal_flush_timer = QTimer(self)
+        self._terminal_flush_timer.setSingleShot(True)
+        self._terminal_flush_timer.setInterval(self.TERMINAL_FLUSH_INTERVAL_MS)
+        self._terminal_flush_timer.timeout.connect(self._flush_terminal_output)
         self._wire_events()
         self._load_command_sets()
         self._load_automation_scenarios()
@@ -715,7 +726,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_session_active = False
         self._mmu_ssh_prompt_buffer = ""
         self._leave_interactive_mode()
-        self.terminal_widget.clear_terminal()
+        self._clear_terminal_display()
         self.terminal_widget.set_prompt("")
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
@@ -747,7 +758,7 @@ class MainWindow(QMainWindow):
             self._run_local_terminal_command(command)
             return
         if command.strip().lower() in {"clear", "cls"}:
-            self.terminal_widget.clear_terminal()
+            self._clear_terminal_display()
             return
         try:
             self._shell.send_line(command)
@@ -782,7 +793,7 @@ class MainWindow(QMainWindow):
         if not command:
             return
         if command.lower() in {"clear", "cls"}:
-            self.terminal_widget.clear_terminal()
+            self._clear_terminal_display()
             return
         if command.lower() in {"pwd", "cd"}:
             self.terminal_widget.write_output(self._local_cwd)
@@ -1286,7 +1297,7 @@ class MainWindow(QMainWindow):
         if not command:
             return
         if command.lower() in {"clear", "cls"}:
-            self.terminal_widget.clear_terminal()
+            self._clear_terminal_display()
             return
         if command.lower() in {"pwd", "cd"}:
             self._append_sftp_output(self._local_cwd)
@@ -1542,7 +1553,7 @@ class MainWindow(QMainWindow):
             return
         output = bytes(self._local_process.readAllStandardOutput()).decode("utf-8", errors="replace")
         if output:
-            self.terminal_widget.write_stream(output)
+            self._queue_terminal_output(output)
 
     def _write_local_process_input(self, text: str) -> None:
         """Forward raw terminal input to an active local direct SSH process."""
@@ -2213,7 +2224,66 @@ class MainWindow(QMainWindow):
         if self._mmu_ssh_session_active:
             self._handle_mmu_ssh_auth(output)
         if output:
-            self.terminal_widget.write_stream(output)
+            self._queue_terminal_output(output)
+
+    def _queue_terminal_output(self, output: str) -> None:
+        """Render terminal output in bounded batches without delaying control logic."""
+        if not output:
+            return
+        self._pending_terminal_output.append(output)
+        self._pending_terminal_characters += len(output)
+        dropped_characters = 0
+        while self._pending_terminal_characters > self.TERMINAL_PENDING_CHARACTER_LIMIT:
+            excess = self._pending_terminal_characters - self.TERMINAL_PENDING_CHARACTER_LIMIT
+            oldest = self._pending_terminal_output[0]
+            if len(oldest) <= excess:
+                self._pending_terminal_output.popleft()
+                self._pending_terminal_characters -= len(oldest)
+                dropped_characters += len(oldest)
+            else:
+                self._pending_terminal_output[0] = oldest[excess:]
+                self._pending_terminal_characters -= excess
+                dropped_characters += excess
+        if dropped_characters and not self._terminal_output_truncated:
+            notice = "\r\n[Terminal display output truncated during a log burst.]\r\n"
+            self._pending_terminal_output.appendleft(notice)
+            self._pending_terminal_characters += len(notice)
+            self._terminal_output_truncated = True
+        if not self._terminal_flush_timer.isActive():
+            self._flush_terminal_output()
+            if not self._terminal_flush_timer.isActive():
+                # Keep a short cooldown so repeated readyRead signals coalesce.
+                self._terminal_flush_timer.start()
+
+    def _clear_terminal_display(self) -> None:
+        """Clear rendered and not-yet-rendered terminal output together."""
+        self._terminal_flush_timer.stop()
+        self._pending_terminal_output.clear()
+        self._pending_terminal_characters = 0
+        self._terminal_output_truncated = False
+        self.terminal_widget.clear_terminal()
+
+    def _flush_terminal_output(self) -> None:
+        """Write at most one display budget and yield back to Qt between batches."""
+        remaining = self.TERMINAL_FLUSH_CHARACTER_LIMIT
+        chunks: list[str] = []
+        while self._pending_terminal_output and remaining:
+            chunk = self._pending_terminal_output.popleft()
+            if len(chunk) <= remaining:
+                chunks.append(chunk)
+                self._pending_terminal_characters -= len(chunk)
+                remaining -= len(chunk)
+            else:
+                chunks.append(chunk[:remaining])
+                self._pending_terminal_output.appendleft(chunk[remaining:])
+                self._pending_terminal_characters -= remaining
+                remaining = 0
+        if chunks:
+            self.terminal_widget.write_stream("".join(chunks))
+        if self._pending_terminal_output:
+            self._terminal_flush_timer.start()
+        else:
+            self._terminal_output_truncated = False
 
     def _poll_sftp_shell(self) -> None:
         if self._sftp_shell is None:

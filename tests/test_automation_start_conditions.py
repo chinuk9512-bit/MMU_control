@@ -225,6 +225,26 @@ class AutomationStartConditionRunnerTest(unittest.TestCase):
         self.assertEqual(self.sent, ["command"])
         self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
 
+    def test_completion_marker_is_found_before_large_chunk_is_bounded(self) -> None:
+        """A marker near the start of a log burst is evaluated before history trimming."""
+        scenario = AutomationScenario(
+            name="large-output",
+            steps=[
+                AutomationStep(
+                    "run",
+                    "command",
+                    completion_type=CompletionType.OUTPUT_CONTAINS,
+                    completion_value="completed-marker",
+                )
+            ],
+        )
+
+        self.runner.start(scenario)
+        self.runner.receive_output("completed-marker\n" + ("noise\n" * 10_000))
+
+        self.assertEqual(self.sent, ["command"])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
     def test_file_start_condition_sends_command_only_after_match(self) -> None:
         scenario = AutomationScenario(
             name="start-file",

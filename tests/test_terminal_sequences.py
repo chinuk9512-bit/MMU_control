@@ -65,6 +65,15 @@ class TerminalSequencesTest(unittest.TestCase):
         self.assertTrue(fragments[0].style.bold)
         self.assertEqual(fragments[1].style.background, (255, 0, 0))
 
+    def test_large_plain_chunk_is_coalesced_into_one_fragment(self) -> None:
+        """A log burst does not build a new immutable fragment per character."""
+        output = "client-log-line\n" * 10_000
+
+        fragments = TerminalStreamFilter().feed_styled(output)
+
+        self.assertEqual(len(fragments), 1)
+        self.assertEqual(fragments[0].text, output)
+
 
 if __name__ == "__main__":
     unittest.main()

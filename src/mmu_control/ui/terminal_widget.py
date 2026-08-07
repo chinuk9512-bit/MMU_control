@@ -132,27 +132,51 @@ class TerminalWidget(QPlainTextEdit):
         overwrite_from_carriage_return: bool = False,
     ) -> bool:
         """Render printable stream text plus simple terminal erase characters."""
-        for character in text.replace("\r\n", "\n"):
+        normalized_text = text.replace("\r\n", "\n")
+        index = 0
+        while index < len(normalized_text):
+            character = normalized_text[index]
             if character == "\r":
                 # A bare CR returns to column zero; it is commonly used for
                 # progress lines and must not create a new terminal line.
                 cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
                 overwrite_from_carriage_return = True
-                continue
-            if character == "\n":
-                cursor.insertText(character)
-                overwrite_from_carriage_return = False
+                index += 1
                 continue
             if character == "\b":
                 if cursor.position() > 0:
                     cursor.deletePreviousChar()
+                index += 1
                 continue
+            if character == "\n":
+                cursor.insertText("\n")
+                overwrite_from_carriage_return = False
+                index += 1
+                continue
+            next_control = index
+            while (
+                next_control < len(normalized_text)
+                and normalized_text[next_control] not in "\r\b\n"
+            ):
+                next_control += 1
+            printable_text = normalized_text[index:next_control]
             if (
                 overwrite_from_carriage_return
                 and cursor.positionInBlock() < cursor.block().length() - 1
             ):
-                cursor.deleteChar()
-            cursor.insertText(character)
+                available = cursor.block().length() - 1 - cursor.positionInBlock()
+                overwrite_length = min(len(printable_text), available)
+                if overwrite_length:
+                    cursor.movePosition(
+                        QTextCursor.MoveOperation.Right,
+                        QTextCursor.MoveMode.KeepAnchor,
+                        overwrite_length,
+                    )
+                    cursor.insertText(printable_text[:overwrite_length])
+                printable_text = printable_text[overwrite_length:]
+            if printable_text:
+                cursor.insertText(printable_text)
+            index = next_control
         return overwrite_from_carriage_return
 
     def clear_terminal(self) -> None:

@@ -89,13 +89,21 @@ class TerminalStreamFilter:
     def feed_styled(self, text: str) -> list[TerminalText]:
         """Return visible text fragments with their ANSI display attributes."""
         fragments: list[TerminalText] = []
+        buffered_characters: list[str] = []
+        buffered_style: TerminalStyle | None = None
+
+        def flush() -> None:
+            nonlocal buffered_characters
+            if buffered_characters and buffered_style is not None:
+                fragments.append(TerminalText("".join(buffered_characters), buffered_style))
+                buffered_characters = []
 
         def append(character: str) -> None:
-            if fragments and fragments[-1].style == self._style:
-                previous = fragments[-1]
-                fragments[-1] = TerminalText(previous.text + character, previous.style)
-            else:
-                fragments.append(TerminalText(character, self._style))
+            nonlocal buffered_style
+            if buffered_style != self._style:
+                flush()
+                buffered_style = self._style
+            buffered_characters.append(character)
 
         for character in text:
             code = ord(character)
@@ -169,6 +177,7 @@ class TerminalStreamFilter:
             if self._state in {"osc_escape", "string_escape"}:
                 base_state = self._state.removesuffix("_escape")
                 self._state = "text" if character == "\\" else base_state
+        flush()
         return fragments
 
     def _apply_sgr(self, parameters: str) -> None:

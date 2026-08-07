@@ -72,6 +72,15 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget.toPlainText(), "Downloading 20%")
 
+    def test_large_stream_chunk_preserves_all_lines(self) -> None:
+        """A large batched insertion renders the same text as small output."""
+        widget = TerminalWidget(prompt="")
+        output = "client-log-line\n" * 5_000
+
+        widget.write_stream(output)
+
+        self.assertEqual(widget.toPlainText(), output)
+
     def test_ansi_color_is_applied_and_reset_to_terminal_foreground(self) -> None:
         """Remote ANSI colours are rendered without colouring later text."""
         widget = TerminalWidget(prompt="")
