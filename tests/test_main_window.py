@@ -518,6 +518,23 @@ class MainWindowTest(unittest.TestCase):
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
         self.assertEqual(window.connection_status_label.text(), "SSH: connected")
 
+    def test_connected_ssh_output_preserves_ansi_color_for_terminal(self) -> None:
+        """Automation cleanup must not remove ANSI colours from displayed output."""
+        manager = FakeSSHManager()
+        window = self.create_window(ssh_manager=manager)
+        window._activate_shell(manager.shell)
+        manager.shell.output = "\x1b[31merror\x1b[0m plain"
+
+        window._poll_shell()
+
+        cursor = window.terminal_widget.textCursor()
+        cursor.setPosition(window.terminal_widget.toPlainText().index("error") + 1)
+        error_color = cursor.charFormat().foreground().color().name()
+        cursor.setPosition(window.terminal_widget.toPlainText().index("plain") + 1)
+        plain_color = cursor.charFormat().foreground().color().name()
+        self.assertEqual(error_color, "#cd3131")
+        self.assertEqual(plain_color, "#e6e6e6")
+
     def test_clear_command_clears_connected_ssh_terminal(self) -> None:
         """Clear removes prior terminal content while SSH is connected."""
         manager = FakeSSHManager()

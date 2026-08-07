@@ -2212,19 +2212,21 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._show_connection_error(exc)
             return
-        output = self._filter_command_echo(output)
-        output = self._automation_output_filter.feed(output)
-        if self._automation_runner is not None and output:
-            self._automation_runner.receive_output(output)
+        display_output = self._filter_command_echo(output)
+        plain_output = self._automation_output_filter.feed(display_output)
+        if self._automation_runner is not None and plain_output:
+            self._automation_runner.receive_output(plain_output)
             self._update_automation_status()
-        if output:
+        if plain_output:
             self._recent_automation_output = (
-                f"{self._recent_automation_output}{output}"[-self.AUTOMATION_OUTPUT_LIMIT :]
+                f"{self._recent_automation_output}{plain_output}"[
+                    -self.AUTOMATION_OUTPUT_LIMIT :
+                ]
             )
         if self._mmu_ssh_session_active:
-            self._handle_mmu_ssh_auth(output)
-        if output:
-            self._queue_terminal_output(output)
+            self._handle_mmu_ssh_auth(plain_output)
+        if display_output:
+            self._queue_terminal_output(display_output)
 
     def _queue_terminal_output(self, output: str) -> None:
         """Render terminal output in bounded batches without delaying control logic."""
