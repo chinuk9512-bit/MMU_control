@@ -119,15 +119,17 @@ class AutomationRunner:
         step = self.current_step
         if step is None:
             return
-        self._output = f"{self._output}{output}"[-self.OUTPUT_LIMIT :]
+        candidate_output = f"{self._output}{output}"
         condition_type = self._condition_type(step)
-        if condition_type in {
+        matched = condition_type in {
             CompletionType.OUTPUT_CONTAINS,
             CompletionType.OUTPUT_REGEX,
             CompletionType.PROMPT_REGEX,
             CompletionType.REMOTE_FILE_CONTAINS,
             CompletionType.REMOTE_FILE_REGEX,
-        } and self._output_matches():
+        } and self._output_matches(candidate_output)
+        self._output = candidate_output[-self.OUTPUT_LIMIT :]
+        if matched:
             self._condition_satisfied()
 
     def receive_file_result(self, matched: bool, error: Exception | None = None) -> None:
@@ -295,15 +297,16 @@ class AutomationRunner:
         if self._output_matches():
             self._condition_satisfied()
 
-    def _output_matches(self) -> bool:
+    def _output_matches(self, output: str | None = None) -> bool:
         step = self.current_step
         assert step is not None
+        output = self._output if output is None else output
         condition_type = self._condition_type(step)
         condition_value = self._condition_value(step)
         if condition_type == CompletionType.OUTPUT_CONTAINS:
-            return self._output_contains(condition_value)
+            return self._output_contains(condition_value, output)
         if condition_type in {CompletionType.REMOTE_FILE_CONTAINS, CompletionType.REMOTE_FILE_REGEX}:
-            return "__MMU_AUTOMATION_FILE_MATCH__" in self._output
+            return "__MMU_AUTOMATION_FILE_MATCH__" in output
         flags = re.MULTILINE
         try:
             pattern = re.compile(condition_value, flags)
@@ -311,16 +314,18 @@ class AutomationRunner:
             self.fail_current_step(f"Invalid {self._condition_name()} regular expression: {exc}")
             return False
         if condition_type == CompletionType.PROMPT_REGEX:
-            latest_line = self._latest_output_line()
+            latest_line = self._latest_output_line(output)
             return bool(pattern.fullmatch(latest_line.strip()))
-        return bool(pattern.search(self._output))
+        return bool(pattern.search(output))
 
-    def _latest_output_line(self) -> str:
+    def _latest_output_line(self, output: str | None = None) -> str:
         """Return the final terminal line, including one ended by a newline."""
-        normalized_output = self._output.replace("\r\n", "\n").replace("\r", "\n")
+        output = self._output if output is None else output
+        normalized_output = output.replace("\r\n", "\n").replace("\r", "\n")
         lines = normalized_output.splitlines()
         return lines[-1] if lines else ""
 
-    def _output_contains(self, condition_value: str) -> bool:
+    def _output_contains(self, condition_value: str, output: str | None = None) -> bool:
         """Match displayed text in the latest terminal line or prior output."""
-        return condition_value in self._latest_output_line() or condition_value in self._output
+        output = self._output if output is None else output
+        return condition_value in self._latest_output_line(output) or condition_value in output

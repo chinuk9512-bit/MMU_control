@@ -682,6 +682,36 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(manager.shell.sent, ["command"])
 
+    def test_log_burst_keeps_scenario_control_path_ahead_of_display_queue(self) -> None:
+        """Display throttling must not drop a scenario completion marker."""
+        manager = FakeSSHManager()
+        store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
+        scenario = AutomationScenario(
+            name="burst",
+            steps=[
+                AutomationStep(
+                    "run",
+                    "command",
+                    completion_type=CompletionType.OUTPUT_CONTAINS,
+                    completion_value="completed-marker",
+                )
+            ],
+        )
+        store.upsert(scenario)
+        window = self.create_window(ssh_manager=manager, automation_store=store)
+        window._activate_shell(manager.shell)
+        window._run_automation_scenario()
+        manager.shell.output = "completed-marker\n" + ("noise\n" * 100_000)
+
+        window._poll_shell()
+
+        self.assertEqual(manager.shell.sent, ["command"])
+        self.assertEqual(window._automation_runner.status.state.value, "succeeded")
+        self.assertLessEqual(
+            window._pending_terminal_characters,
+            window.TERMINAL_PENDING_CHARACTER_LIMIT + 100,
+        )
+
     def test_same_automation_scenario_runs_on_ssh_and_minicom_consoles(self) -> None:
         manager = FakeSSHManager()
         store = AutomationStore(Path(self.temp_dir.name) / "automation.json")
