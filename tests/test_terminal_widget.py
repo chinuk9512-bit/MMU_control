@@ -13,7 +13,7 @@ import pytest
 pytest.importorskip("PySide6.QtGui", exc_type=ImportError)
 
 from PySide6.QtCore import QMimeData, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -142,6 +142,55 @@ class TerminalWidgetTest(unittest.TestCase):
         QTest.keyClick(widget, Qt.Key.Key_Return)
 
         self.assertEqual(submitted, ["hello"])
+
+    def test_stream_output_preserves_command_cursor_between_chunks(self) -> None:
+        """Background stream chunks do not move the live command cursor."""
+        widget = TerminalWidget(prompt="mmu> ")
+        widget.show()
+        widget.setFocus()
+        QTest.keyClicks(widget, "abcd")
+        QTest.keyClick(widget, Qt.Key.Key_Left)
+        QTest.keyClick(widget, Qt.Key.Key_Left)
+
+        widget.write_stream("background log\r\n")
+        widget.write_stream("another log\r\n")
+
+        self.assertEqual(widget._buffer, "abcd")
+        self.assertEqual(widget._buffer_cursor_index(), 2)
+        QTest.keyClick(widget, Qt.Key.Key_X)
+        self.assertEqual(widget._buffer, "abXcd")
+
+    def test_write_output_preserves_command_cursor(self) -> None:
+        """Command output does not move the cursor within live input."""
+        widget = TerminalWidget(prompt="mmu> ")
+        widget.show()
+        widget.setFocus()
+        QTest.keyClicks(widget, "abcd")
+        QTest.keyClick(widget, Qt.Key.Key_Left)
+        QTest.keyClick(widget, Qt.Key.Key_Left)
+
+        widget.write_output("background log\r\n")
+
+        self.assertEqual(widget._buffer, "abcd")
+        self.assertEqual(widget._buffer_cursor_index(), 2)
+        QTest.keyClick(widget, Qt.Key.Key_X)
+        self.assertEqual(widget._buffer, "abXcd")
+
+    def test_stream_output_preserves_live_input_selection(self) -> None:
+        """Stream output preserves both ends of a live-input selection."""
+        widget = TerminalWidget(prompt="mmu> ")
+        QTest.keyClicks(widget, "abcd")
+        widget._set_cursor_at_buffer_index(1)
+        cursor = widget.textCursor()
+        cursor.setPosition(cursor.position() + 2, QTextCursor.MoveMode.KeepAnchor)
+        widget.setTextCursor(cursor)
+
+        widget.write_stream("background log\r\n")
+
+        cursor = widget.textCursor()
+        self.assertEqual(widget._live_buffer_index(cursor.anchor()), 1)
+        self.assertEqual(widget._live_buffer_index(cursor.position()), 3)
+        self.assertEqual(cursor.selectedText(), "bc")
 
     def test_backspace_uses_current_command_cursor_position(self) -> None:
         """Backspace removes the character before the cursor, not always the tail."""
