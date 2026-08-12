@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from PySide6.QtCore import QMimeData, Qt, Signal
 from PySide6.QtGui import (
     QColor,
@@ -16,6 +18,14 @@ from PySide6.QtWidgets import QApplication, QPlainTextEdit
 
 from mmu_control.core.terminal_sequences import TerminalStreamFilter, TerminalStyle, TerminalText
 from mmu_control.ui.theme import TERMINAL_BACKGROUND, TERMINAL_FOREGROUND
+
+
+@dataclass(frozen=True)
+class _LiveCursorState:
+    """Cursor anchor and position relative to the editable command buffer."""
+
+    anchor: int
+    position: int
 
 
 class TerminalWidget(QPlainTextEdit):
@@ -48,9 +58,11 @@ class TerminalWidget(QPlainTextEdit):
 
     def set_prompt(self, prompt: str) -> None:
         """Change the prompt text shown before the editable command line."""
+        cursor_state = self._capture_live_cursor()
         cursor = self._remove_live_input()
         self._prompt = prompt
         self._insert_live_input(cursor)
+        self._restore_live_cursor(cursor_state)
 
     def set_interactive_mode(self, enabled: bool) -> None:
         """Switch between line editing and immediate remote key input."""
@@ -76,6 +88,7 @@ class TerminalWidget(QPlainTextEdit):
         fragments = TerminalStreamFilter().feed_styled(text)
         if not fragments:
             return
+        cursor_state = self._capture_live_cursor()
         cursor = self._remove_live_input()
         if cursor.position() and str(self.document().characterAt(cursor.position() - 1)) != "\n":
             cursor.insertText("\n")
@@ -83,6 +96,7 @@ class TerminalWidget(QPlainTextEdit):
         if not text.endswith("\n"):
             cursor.insertText("\n")
         self._insert_live_input(cursor)
+        self._restore_live_cursor(cursor_state)
 
     def write_stream(self, text: str) -> None:
         """Append raw shell output without forcing a trailing newline."""
@@ -91,6 +105,7 @@ class TerminalWidget(QPlainTextEdit):
         fragments = self._stream_filter.feed_styled(text)
         if not fragments:
             return
+        cursor_state = self._capture_live_cursor()
         cursor = self._remove_live_input()
         overwrite_from_carriage_return = False
         for fragment in fragments:
@@ -99,6 +114,7 @@ class TerminalWidget(QPlainTextEdit):
                 cursor, fragment.text, overwrite_from_carriage_return
             )
         self._insert_live_input(cursor)
+        self._restore_live_cursor(cursor_state)
 
     def _insert_terminal_fragments(
         self, cursor: QTextCursor, fragments: list[TerminalText]
@@ -399,11 +415,38 @@ class TerminalWidget(QPlainTextEdit):
 
     def _buffer_cursor_index(self) -> int:
         """Return the current cursor location relative to the editable buffer."""
+        return self._live_buffer_index(self.textCursor().position())
+
+    def _live_buffer_index(self, document_position: int) -> int:
+        """Convert a document position to a clamped live-buffer index."""
         text_length = len(self.toPlainText())
         live_length = len(self._prompt) + len(self._buffer)
         command_start = max(0, text_length - live_length + len(self._prompt))
-        index = self.textCursor().position() - command_start
+        index = document_position - command_start
         return max(0, min(len(self._buffer), index))
+
+    def _capture_live_cursor(self) -> _LiveCursorState:
+        """Capture the cursor and selection relative to the live input."""
+        cursor = self.textCursor()
+        return _LiveCursorState(
+            anchor=self._live_buffer_index(cursor.anchor()),
+            position=self._live_buffer_index(cursor.position()),
+        )
+
+    def _restore_live_cursor(self, state: _LiveCursorState) -> None:
+        """Restore a cursor and selection captured from the live input."""
+        text_length = len(self.toPlainText())
+        live_length = len(self._prompt) + len(self._buffer)
+        command_start = max(0, text_length - live_length + len(self._prompt))
+        anchor = max(0, min(len(self._buffer), state.anchor))
+        position = max(0, min(len(self._buffer), state.position))
+        cursor = self.textCursor()
+        cursor.setPosition(command_start + anchor)
+        cursor.setPosition(
+            command_start + position, QTextCursor.MoveMode.KeepAnchor
+        )
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
 
     def _set_cursor_at_buffer_index(self, index: int) -> None:
         """Move the cursor to an index inside the editable command buffer."""
