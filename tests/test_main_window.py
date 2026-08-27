@@ -16,7 +16,7 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
 
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
-from PySide6.QtGui import QDropEvent, QTextCursor, QValidator
+from PySide6.QtGui import QDropEvent, QTextCursor, QTextFormat, QValidator
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -620,9 +620,18 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertTrue(window.run_command_line_button.isEnabled())
         self.assertEqual(window.command_set_output.textCursor().blockNumber(), 0)
+        selections = window.command_set_output.extraSelections()
+        self.assertEqual(len(selections), 1)
+        self.assertEqual(selections[0].cursor.blockNumber(), 0)
+        self.assertTrue(
+            selections[0].format.boolProperty(QTextFormat.Property.FullWidthSelection)
+        )
         window.run_command_line_button.click()
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
+        selections = window.command_set_output.extraSelections()
+        self.assertEqual(len(selections), 1)
+        self.assertEqual(selections[0].cursor.blockNumber(), 1)
 
         window.run_command_line_button.click()
         self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
@@ -646,6 +655,9 @@ class MainWindowTest(unittest.TestCase):
 
         self.assertEqual(manager.shell.sent, [])
         self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
+        selections = window.command_set_output.extraSelections()
+        self.assertEqual(len(selections), 1)
+        self.assertEqual(selections[0].cursor.blockNumber(), 1)
 
     def test_run_line_disconnected_and_folder_selection_are_safe(self) -> None:
         """Unavailable shells and non-command tree rows never send or move."""
@@ -666,6 +678,7 @@ class MainWindowTest(unittest.TestCase):
         window.command_set_list.setCurrentItem(folder)
         self.assertFalse(window.run_command_line_button.isEnabled())
         self.assertEqual(window.command_set_output.toPlainText(), "")
+        self.assertEqual(window.command_set_output.extraSelections(), [])
         window._run_current_command_line()
         self.assertEqual(manager.shell.sent, [])
 
