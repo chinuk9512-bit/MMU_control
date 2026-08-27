@@ -85,21 +85,20 @@ def default_user_data_directory() -> Path:
 def project_storage_root(project_root: Path | None = None) -> Path:
     """Return the stable root used for project-managed JSON data.
 
-    A frozen application stores beside the executable, never in PyInstaller's
-    temporary extraction directory.  Development callers may provide the
-    project root explicitly; otherwise the current directory and its parents
-    are searched for the ``src/mmu_control`` source tree.
+    A frozen application searches from the executable directory toward the
+    project root, so an executable in ``dist`` does not place user data below
+    that build-output directory.  Development callers may provide the project
+    root explicitly; otherwise the current directory and its parents are
+    searched for the ``src/mmu_control`` source tree.
     """
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-
     if project_root is not None:
         root = Path(project_root).resolve()
         if not (root / "src" / "mmu_control").is_dir():
             raise ValueError(f"Project root does not contain src/mmu_control: {root}")
         return root
 
-    for candidate in (Path.cwd().resolve(), *Path.cwd().resolve().parents):
+    search_start = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path.cwd().resolve()
+    for candidate in (search_start, *search_start.parents):
         if (candidate / "src" / "mmu_control").is_dir():
             return candidate
     raise RuntimeError(
