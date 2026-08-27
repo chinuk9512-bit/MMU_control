@@ -42,8 +42,9 @@ class AutomationRunner:
     # start condition without retaining an unbounded terminal transcript.
     OUTPUT_LIMIT = 300
 
-    def __init__(self, send_line: Callable[[str], None]) -> None:
+    def __init__(self, send_line: Callable[[str], None], resolve_command: Callable[[str], str] | None = None) -> None:
         self._send_line = send_line
+        self._resolve_command = resolve_command or (lambda command: command)
         self._scenario: AutomationScenario | None = None
         self._step_index = -1
         self._start_step_index = 0
@@ -243,7 +244,7 @@ class AutomationRunner:
         self._deadline = time.monotonic() + step.timeout_seconds
         self._message = f"Running step {self._step_index + 1}: {step.name or step.command}"
         try:
-            self._send_line(step.command)
+            self._send_line(self._resolve_command(step.command))
         except Exception as exc:
             self.fail_current_step(f"Could not send command: {exc}")
             return
