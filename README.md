@@ -66,6 +66,14 @@ the app-managed Paramiko connection used by automation and buttons.
   `src/mmu_control/user_command/command_sets.json`.
 - Automation scenarios are loaded from and saved to
   `src/mmu_control/user_scenario/automation_scenarios.json`.
+- In development these paths are relative to the repository/project root. In a
+  PyInstaller build they are relative to the executable directory (not its
+  temporary extraction directory). For example, `C:\MMUControl\MMUControl.exe`
+  stores the files at
+  `C:\MMUControl\src\mmu_control\user_command\command_sets.json` and
+  `C:\MMUControl\src\mmu_control\user_scenario\automation_scenarios.json`.
+- The application must have write permission for the `user_command` and
+  `user_scenario` directories. A save failure reports the actual target path.
 - These JSON files can be committed so the team can manage the same commands and
   scenarios together. Do not put IDs, passwords, or other secrets in them.
 - The Scenarios tab loads this file when the application starts and refreshes the scenario list after a scenario is saved.

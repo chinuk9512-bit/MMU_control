@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mmu_control.core.config_manager import project_storage_root
 from mmu_control.models.automation import AutomationFolder, AutomationScenario, AutomationScenarioCollection
 
 
@@ -25,9 +26,9 @@ class AutomationStore:
         return self._path
 
     @classmethod
-    def create_default(cls) -> "AutomationStore":
+    def create_default(cls, project_root: Path | None = None) -> "AutomationStore":
         """Create a store for the scenario data shared with the source tree."""
-        package_directory = Path(__file__).resolve().parent.parent
+        package_directory = project_storage_root(project_root) / "src" / "mmu_control"
         return cls(package_directory / "user_scenario" / "automation_scenarios.json")
 
     def load(self) -> AutomationScenarioCollection:
