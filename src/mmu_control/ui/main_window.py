@@ -595,6 +595,9 @@ class MainWindow(QMainWindow):
         self.usb_port_combo.currentTextChanged.connect(self._update_minicom_button)
         self.command_set_list.currentItemChanged.connect(self._show_selected_command_set)
         self.command_set_list.commandSetDropped.connect(self._move_command_set)
+        self.command_set_output.cursorPositionChanged.connect(
+            self._highlight_current_command_line
+        )
         self.power_on_button.clicked.connect(lambda: self._run_power_supply_command("on"))
         self.power_off_button.clicked.connect(lambda: self._run_power_supply_command("off"))
         self.power_status_button.clicked.connect(lambda: self._run_power_supply_command("status"))
