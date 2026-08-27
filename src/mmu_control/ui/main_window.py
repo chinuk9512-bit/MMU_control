@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QKeyEvent,
     QRegularExpressionValidator,
     QTextCursor,
+    QTextFormat,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -53,6 +54,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QTabWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -1799,6 +1801,7 @@ class MainWindow(QMainWindow):
             return
 
         cursor = self.command_set_output.textCursor()
+        self._highlight_current_command_line()
         command = cursor.block().text().strip()
         if not command:
             return
@@ -1806,7 +1809,17 @@ class MainWindow(QMainWindow):
         if not cursor.movePosition(QTextCursor.MoveOperation.NextBlock):
             cursor.movePosition(QTextCursor.MoveOperation.End)
         self.command_set_output.setTextCursor(cursor)
+        self._highlight_current_command_line()
         self.command_set_output.ensureCursorVisible()
+
+    def _highlight_current_command_line(self) -> None:
+        """Highlight the command line at the output widget's cursor."""
+        selection = QTextEdit.ExtraSelection()
+        selection.cursor = self.command_set_output.textCursor()
+        selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+        selection.format.setBackground(QColor("#f4c95d"))
+        selection.format.setForeground(QColor("#1b1f23"))
+        self.command_set_output.setExtraSelections([selection])
 
     def _save_command_set(self, command_set: CommandSet) -> None:
         collection = self._command_set_store.upsert(command_set)
@@ -1843,6 +1856,7 @@ class MainWindow(QMainWindow):
             folder_path = self._selected_folder_path()
             self.command_set_details_label.setText(f"Folder: {folder_path}" if folder_path else "")
             self.command_set_output.clear()
+            self.command_set_output.setExtraSelections([])
             self._set_command_actions_enabled(False)
             self.delete_command_button.setEnabled(folder_path is not None)
             return
@@ -1854,6 +1868,7 @@ class MainWindow(QMainWindow):
         cursor = self.command_set_output.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.Start)
         self.command_set_output.setTextCursor(cursor)
+        self._highlight_current_command_line()
         self.command_set_output.ensureCursorVisible()
         self._set_command_actions_enabled(True)
 
