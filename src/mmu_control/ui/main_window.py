@@ -68,6 +68,7 @@ from mmu_control.core.power_supply_manager import PowerSupplyCommandError, Power
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
 from mmu_control.core.terminal_sequences import TerminalStreamFilter
+from mmu_control.core.variable_resolver import MissingVariablesError, VariableResolver
 from mmu_control.models.command_set import CommandFolder, CommandSet
 from mmu_control.models.automation import AutomationScenario
 from mmu_control.models.settings import (
@@ -79,6 +80,7 @@ from mmu_control.models.settings import (
 )
 from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.storage.automation_store import AutomationStore
+from mmu_control.storage.variable_store import VariableStore, VariableStoreError
 from mmu_control.ui.background_worker import TaskRunner, ThreadPoolTaskRunner
 from mmu_control.ui.command_editor_dialog import CommandEditorDialog
 from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
@@ -471,6 +473,7 @@ class MainWindow(QMainWindow):
         ssh_manager: SSHManager | None = None,
         command_set_store: CommandSetStore | None = None,
         automation_store: AutomationStore | None = None,
+        variable_store: VariableStore | None = None,
         config_manager: ConfigManager | None = None,
         task_runner: TaskRunner | None = None,
     ) -> None:
@@ -478,6 +481,7 @@ class MainWindow(QMainWindow):
         self._ssh_manager = ssh_manager or SSHManager()
         self._command_set_store = command_set_store or CommandSetStore.create_default()
         self._automation_store = automation_store or AutomationStore.create_default()
+        self._variable_store = variable_store or VariableStore.create_default()
         self._config_manager = config_manager or ConfigManager.create_default()
         self._task_runner = task_runner or ThreadPoolTaskRunner(self)
         self._sftp_manager = SFTPManager()
@@ -1787,6 +1791,11 @@ class MainWindow(QMainWindow):
         commands = self._commands_in(command_set)
         if not commands:
             return
+        try:
+            commands = self._resolve_commands(commands)
+        except (VariableStoreError, MissingVariablesError) as exc:
+            self.terminal_widget.write_output(f"Command variables error: {exc}")
+            return
         for command in commands:
             self._shell.send_line(command)
         self.statusBar().showMessage(f"Commands sent from group '{command_set.name}'.")
@@ -1808,6 +1817,11 @@ class MainWindow(QMainWindow):
         command = cursor.block().text().strip()
         if not command:
             return
+        try:
+            command = self._resolve_commands([command])[0]
+        except (VariableStoreError, MissingVariablesError) as exc:
+            self.terminal_widget.write_output(f"Command variables error: {exc}")
+            return
         self._shell.send_line(command)
         if not cursor.movePosition(QTextCursor.MoveOperation.NextBlock):
             cursor.movePosition(QTextCursor.MoveOperation.End)
@@ -1823,6 +1837,14 @@ class MainWindow(QMainWindow):
         selection.format.setBackground(QColor("#f4c95d"))
         selection.format.setForeground(QColor("#1b1f23"))
         self.command_set_output.setExtraSelections([selection])
+
+    def _resolve_commands(self, commands: list[str]) -> list[str]:
+        """Resolve every command before any command in a group is sent."""
+        variables = self._variable_store.load()
+        missing = set().union(*(VariableResolver.names(command) for command in commands)) - variables.keys()
+        if missing:
+            raise MissingVariablesError(set(missing))
+        return [VariableResolver.resolve(command, variables) for command in commands]
 
     def _save_command_set(self, command_set: CommandSet) -> None:
         collection = self._command_set_store.upsert(command_set)
@@ -2196,7 +2218,15 @@ class MainWindow(QMainWindow):
         if terminal is None:
             self.automation_status_label.setText("Automation: no active console is available")
             return
-        self._automation_runner = AutomationRunner(terminal.send_line)
+        try:
+            variables = self._variable_store.load()
+        except VariableStoreError as exc:
+            self.automation_status_label.setText(f"Automation variables error: {exc}")
+            return
+        self._automation_runner = AutomationRunner(
+            terminal.send_line,
+            lambda command: VariableResolver.resolve(command, variables),
+        )
         self._automation_terminal = terminal
         try:
             start_step_index = self.automation_start_step_input.currentData()

@@ -76,6 +76,24 @@ the app-managed Paramiko connection used by automation and buttons.
   `user_scenario` directories. A save failure reports the actual target path.
 - These JSON files can be committed so the team can manage the same commands and
   scenarios together. Do not put IDs, passwords, or other secrets in them.
+- Shared commands and scenario steps may reference per-user values with the
+  `${VARIABLE_NAME}` syntax, for example `ssh ${MMU_USERNAME}@${MMU_HOST}`.
+  Literal remote-shell placeholders can be escaped as `$${VARIABLE_NAME}`.
+- Each user supplies the actual values in `%APPDATA%\MMUControl\variables.json`
+  (or `~/AppData/Roaming/MMUControl/variables.json` when `APPDATA` is unset):
+
+  ```json
+  {
+    "schema_version": 1,
+    "variables": {
+      "MMU_USERNAME": "your-user-name",
+      "MMU_PASSWORD": "your-password"
+    }
+  }
+  ```
+
+  This file is outside the repository and is never copied into command or
+  scenario JSON. If any referenced variable is missing, the command is not sent.
 - The Scenarios tab loads this file when the application starts and refreshes the scenario list after a scenario is saved.
 
 ## Test

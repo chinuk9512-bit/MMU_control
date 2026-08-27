@@ -20,6 +20,7 @@ from mmu_control.core.power_supply_manager import PowerSupplyCommandError, Power
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHConnectionError, SSHManager
 from mmu_control.core.ttyd_manager import TtydError, TtydManager
+from mmu_control.core.variable_resolver import MissingVariablesError, VariableResolver
 from mmu_control.models.automation import (
     AutomationScenario,
     AutomationStep,
@@ -33,6 +34,7 @@ from mmu_control.models.settings import (
 )
 from mmu_control.storage.automation_store import AutomationStore, AutomationStoreError
 from mmu_control.storage.command_set_store import CommandSetStore, CommandSetStoreError
+from mmu_control.storage.variable_store import VariableStore, VariableStoreError
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +61,7 @@ class WebServices:
     config_manager: ConfigManager
     command_set_store: CommandSetStore
     automation_store: AutomationStore
+    variable_store: VariableStore
 
 
 def create_web_services() -> WebServices:
@@ -72,7 +75,17 @@ def create_web_services() -> WebServices:
         config_manager=ConfigManager.create_default(),
         command_set_store=CommandSetStore.create_default(),
         automation_store=AutomationStore.create_default(),
+        variable_store=VariableStore.create_default(),
     )
+
+
+def resolve_commands(commands: list[str], store: VariableStore) -> list[str]:
+    """Resolve a complete command batch before any line is sent."""
+    variables = store.load()
+    missing = set().union(*(VariableResolver.names(command) for command in commands)) - variables.keys()
+    if missing:
+        raise MissingVariablesError(set(missing))
+    return [VariableResolver.resolve(command, variables) for command in commands]
 
 
 def settings_from_form_values(
@@ -742,9 +755,15 @@ def _render_commands_tab(st: Any) -> None:
     cols = st.columns(3)
     shell = st.session_state.get("shell")
     if cols[0].button("Run command set", disabled=command_set is None or not _is_shell_open(shell)):
-        for line in command_lines(command_set):
-            shell.send_line(line)
-            _append_output(st, "terminal_output", f"$ {line}\n")
+        template_lines = command_lines(command_set)
+        try:
+            lines_to_run = resolve_commands(template_lines, services.variable_store)
+        except (VariableStoreError, MissingVariablesError) as exc:
+            st.error(f"Command variables error: {exc}")
+            lines_to_run = []
+        for template, resolved in zip(template_lines, lines_to_run, strict=True):
+            shell.send_line(resolved)
+            _append_output(st, "terminal_output", f"$ {template}\n")
     line_index = st.session_state.get("command_line_index", 0)
     lines = command_lines(command_set) if command_set is not None else []
     if cols[1].button(
@@ -754,9 +773,14 @@ def _render_commands_tab(st: Any) -> None:
     ):
         line, next_index = next_command_line(command_set, line_index)
         if line is not None:
-            shell.send_line(line)
-            _append_output(st, "terminal_output", f"$ {line}\n")
-            st.session_state["command_line_index"] = next_index
+            try:
+                resolved_line = resolve_commands([line], services.variable_store)[0]
+            except (VariableStoreError, MissingVariablesError) as exc:
+                st.error(f"Command variables error: {exc}")
+            else:
+                shell.send_line(resolved_line)
+                _append_output(st, "terminal_output", f"$ {line}\n")
+                st.session_state["command_line_index"] = next_index
     st.caption(
         f"Run next line uses a stored non-empty-line index (not the editor caret): "
         f"{min(line_index + 1, len(lines)) if lines else 0} of {len(lines)}."
@@ -804,7 +828,15 @@ def _render_automation_tab(st: Any) -> None:
     if cols[0].button(
         "Run scenario", disabled=scenario is None or not start_options or not _is_shell_open(shell)
     ):
-        runner = AutomationRunner(shell.send_line)
+        try:
+            variables = services.variable_store.load()
+        except VariableStoreError as exc:
+            st.error(f"Automation variables error: {exc}")
+            return
+        runner = AutomationRunner(
+            shell.send_line,
+            lambda command: VariableResolver.resolve(command, variables),
+        )
         try:
             runner.start(scenario, start_step_index=start_index)
             runner.receive_initial_output(st.session_state.terminal_output[-AutomationRunner.OUTPUT_LIMIT :])
