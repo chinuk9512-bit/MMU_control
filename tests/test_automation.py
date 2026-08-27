@@ -32,13 +32,16 @@ class AutomationStoreTest(unittest.TestCase):
 
     def test_default_store_uses_frozen_executable_directory_and_persists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            executable = Path(directory) / "MMUControl.exe"
+            project_root = Path(directory)
+            (project_root / "src" / "mmu_control").mkdir(parents=True)
+            executable = project_root / "dist" / "MMUControl.exe"
             with patch("mmu_control.core.config_manager.sys.frozen", True, create=True), patch(
                 "mmu_control.core.config_manager.sys.executable", str(executable)
             ):
                 store = AutomationStore.create_default()
-                expected = Path(directory) / "src" / "mmu_control" / "user_scenario" / "automation_scenarios.json"
+                expected = project_root / "src" / "mmu_control" / "user_scenario" / "automation_scenarios.json"
                 self.assertEqual(store.path, expected)
+                self.assertNotIn(project_root / "dist", expected.parents)
                 store.upsert(AutomationScenario(name="frozen"))
                 self.assertIn("frozen", AutomationStore.create_default().load().scenarios)
 

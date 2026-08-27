@@ -26,13 +26,16 @@ class CommandSetStoreTest(unittest.TestCase):
 
     def test_create_default_uses_frozen_executable_directory_and_persists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            executable = Path(directory) / "MMUControl.exe"
+            project_root = Path(directory)
+            (project_root / "src" / "mmu_control").mkdir(parents=True)
+            executable = project_root / "dist" / "MMUControl.exe"
             with patch("mmu_control.core.config_manager.sys.frozen", True, create=True), patch(
                 "mmu_control.core.config_manager.sys.executable", str(executable)
             ):
                 store = CommandSetStore.create_default()
-                expected = Path(directory) / "src" / "mmu_control" / "user_command" / "command_sets.json"
+                expected = project_root / "src" / "mmu_control" / "user_command" / "command_sets.json"
                 self.assertEqual(store.command_sets_path, expected)
+                self.assertNotIn(project_root / "dist", expected.parents)
                 store.upsert(CommandSet("frozen", commands="echo ok"))
                 self.assertIn("frozen", CommandSetStore.create_default().load().command_sets)
 
