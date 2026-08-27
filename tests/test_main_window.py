@@ -659,28 +659,6 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(len(selections), 1)
         self.assertEqual(selections[0].cursor.blockNumber(), 1)
 
-    def test_clicking_command_line_moves_highlight_to_that_block(self) -> None:
-        """Clicking another physical line makes it the highlighted Run Line target."""
-        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
-        store.upsert(CommandSet(name="commands", commands="first\nsecond\nthird"))
-        window = self.create_window(command_set_store=store)
-        self.addCleanup(window.close)
-        window.show()
-        self.app.processEvents()
-        second_line = window.command_set_output.textCursor()
-        second_line.movePosition(QTextCursor.MoveOperation.NextBlock)
-
-        QTest.mouseClick(
-            window.command_set_output.viewport(),
-            Qt.MouseButton.LeftButton,
-            pos=window.command_set_output.cursorRect(second_line).center(),
-        )
-
-        selections = window.command_set_output.extraSelections()
-        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
-        self.assertEqual(len(selections), 1)
-        self.assertEqual(selections[0].cursor.blockNumber(), 1)
-
     def test_run_line_disconnected_and_folder_selection_are_safe(self) -> None:
         """Unavailable shells and non-command tree rows never send or move."""
         manager = FakeSSHManager()

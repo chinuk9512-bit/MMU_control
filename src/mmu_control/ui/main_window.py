@@ -1817,9 +1817,6 @@ class MainWindow(QMainWindow):
 
     def _highlight_current_command_line(self) -> None:
         """Highlight the command line at the output widget's cursor."""
-        if self._selected_command_set() is None:
-            self.command_set_output.setExtraSelections([])
-            return
         selection = QTextEdit.ExtraSelection()
         selection.cursor = self.command_set_output.textCursor()
         selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
