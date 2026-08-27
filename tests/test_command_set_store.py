@@ -5,21 +5,36 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mmu_control.models.command_set import CommandSet
-from mmu_control.storage import command_set_store
 from mmu_control.storage.command_set_store import CommandSetStore
 
 
 class CommandSetStoreTest(unittest.TestCase):
     """Tests for JSON command set storage."""
 
-    def test_create_default_uses_source_tree_path(self) -> None:
-        """The default store uses the command data tracked with the package."""
-        store = CommandSetStore.create_default()
+    def test_create_default_uses_explicit_development_project_and_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src" / "mmu_control").mkdir(parents=True)
+            store = CommandSetStore.create_default(root)
+            expected = root / "src" / "mmu_control" / "user_command" / "command_sets.json"
+            self.assertEqual(store.command_sets_path, expected)
+            store.upsert(CommandSet("persisted", commands="pwd"))
+            self.assertIn("persisted", CommandSetStore.create_default(root).load().command_sets)
 
-        expected_path = Path(command_set_store.__file__).resolve().parent.parent / "user_command" / "command_sets.json"
-        self.assertEqual(store.command_sets_path, expected_path)
+    def test_create_default_uses_frozen_executable_directory_and_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "MMUControl.exe"
+            with patch("mmu_control.core.config_manager.sys.frozen", True, create=True), patch(
+                "mmu_control.core.config_manager.sys.executable", str(executable)
+            ):
+                store = CommandSetStore.create_default()
+                expected = Path(directory) / "src" / "mmu_control" / "user_command" / "command_sets.json"
+                self.assertEqual(store.command_sets_path, expected)
+                store.upsert(CommandSet("frozen", commands="echo ok"))
+                self.assertIn("frozen", CommandSetStore.create_default().load().command_sets)
 
     def test_upsert_load_and_delete_command_set(self) -> None:
         """Command sets can be saved, loaded, replaced, and deleted."""

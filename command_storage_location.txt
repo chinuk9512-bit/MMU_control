@@ -3,9 +3,16 @@ Command 저장 위치
 
 src\mmu_control\user_command\command_sets.json
 
+예: 실행 파일이 C:\MMUControl\MMUControl.exe이면 실제 절대경로는
+C:\MMUControl\src\mmu_control\user_command\command_sets.json 입니다.
+
 시나리오 저장 위치
 ====================
 
 src\mmu_control\user_scenario\automation_scenarios.json
 
+예: 실행 파일이 C:\MMUControl\MMUControl.exe이면 실제 절대경로는
+C:\MMUControl\src\mmu_control\user_scenario\automation_scenarios.json 입니다.
+
 이 파일들은 Git으로 공유될 수 있으므로 ID, PW 등의 비밀 정보를 저장하지 마세요.
+저장하려면 위 user_command 및 user_scenario 디렉터리에 쓰기 권한이 필요합니다.

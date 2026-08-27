@@ -8,24 +8,39 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from mmu_control.core.automation_runner import AutomationRunner, AutomationState
 from mmu_control.models.automation import AutomationScenario, AutomationStep, CompletionType
-from mmu_control.storage import automation_store
 from mmu_control.storage.automation_store import AutomationStore
 
 
 class AutomationStoreTest(unittest.TestCase):
     """Automation JSON data is persisted with its completion conditions."""
 
-    def test_default_store_uses_source_tree_path(self) -> None:
-        """Default scenarios use the scenario data tracked with the package."""
-        store = AutomationStore.create_default()
+    def test_default_store_uses_development_project_and_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src" / "mmu_control").mkdir(parents=True)
+            store = AutomationStore.create_default(root)
+            expected = root / "src" / "mmu_control" / "user_scenario" / "automation_scenarios.json"
+            self.assertEqual(store.path, expected)
+            store.upsert(AutomationScenario(name="persisted"))
+            self.assertIn("persisted", AutomationStore.create_default(root).load().scenarios)
 
-        expected_path = Path(automation_store.__file__).resolve().parent.parent / "user_scenario" / "automation_scenarios.json"
-        self.assertEqual(store._path, expected_path)
+    def test_default_store_uses_frozen_executable_directory_and_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "MMUControl.exe"
+            with patch("mmu_control.core.config_manager.sys.frozen", True, create=True), patch(
+                "mmu_control.core.config_manager.sys.executable", str(executable)
+            ):
+                store = AutomationStore.create_default()
+                expected = Path(directory) / "src" / "mmu_control" / "user_scenario" / "automation_scenarios.json"
+                self.assertEqual(store.path, expected)
+                store.upsert(AutomationScenario(name="frozen"))
+                self.assertIn("frozen", AutomationStore.create_default().load().scenarios)
 
     def test_upsert_load_and_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

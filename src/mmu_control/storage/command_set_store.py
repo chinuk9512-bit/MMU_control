@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mmu_control.core.config_manager import project_storage_root
 from mmu_control.models.command_set import CommandFolder, CommandSet, CommandSetCollection
 
 
@@ -24,9 +25,9 @@ class CommandSetStore:
         return self._command_sets_path
 
     @classmethod
-    def create_default(cls) -> "CommandSetStore":
+    def create_default(cls, project_root: Path | None = None) -> "CommandSetStore":
         """Create a store for the command data shared with the source tree."""
-        package_directory = Path(__file__).resolve().parent.parent
+        package_directory = project_storage_root(project_root) / "src" / "mmu_control"
         return cls(package_directory / "user_command" / "command_sets.json")
 
     def load(self) -> CommandSetCollection:

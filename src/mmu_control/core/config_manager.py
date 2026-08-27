@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -79,3 +80,29 @@ def default_user_data_directory() -> Path:
     appdata = os.environ.get("APPDATA")
     base_path = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
     return base_path / "MMUControl"
+
+
+def project_storage_root(project_root: Path | None = None) -> Path:
+    """Return the stable root used for project-managed JSON data.
+
+    A frozen application stores beside the executable, never in PyInstaller's
+    temporary extraction directory.  Development callers may provide the
+    project root explicitly; otherwise the current directory and its parents
+    are searched for the ``src/mmu_control`` source tree.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+
+    if project_root is not None:
+        root = Path(project_root).resolve()
+        if not (root / "src" / "mmu_control").is_dir():
+            raise ValueError(f"Project root does not contain src/mmu_control: {root}")
+        return root
+
+    for candidate in (Path.cwd().resolve(), *Path.cwd().resolve().parents):
+        if (candidate / "src" / "mmu_control").is_dir():
+            return candidate
+    raise RuntimeError(
+        "Unable to locate project root containing src/mmu_control; "
+        "provide project_root explicitly."
+    )
