@@ -96,10 +96,15 @@ class AutomationRunner:
         if not 0 <= start_step_index < len(scenario.steps):
             raise ValueError("Automation start step must be within the scenario.")
         self._scenario = scenario
-        self._start_step_index = start_step_index
-        self._step_index = start_step_index
+        next_step_index = self._next_enabled_step_index(start_step_index)
+        self._start_step_index = next_step_index if next_step_index is not None else start_step_index
+        self._step_index = next_step_index if next_step_index is not None else -1
         self._retried = False
         self._skipped_step_indices.clear()
+        if next_step_index is None:
+            self._state = AutomationState.SUCCEEDED
+            self._message = "Automation completed successfully; no enabled steps remain."
+            return
         self._start_current_step()
 
     def receive_initial_output(self, output: str) -> None:
@@ -273,13 +278,22 @@ class AutomationRunner:
         output produced by any preceding step in the same run.
         """
         assert self._scenario is not None
-        if self._step_index + 1 >= len(self._scenario.steps):
+        next_step_index = self._next_enabled_step_index(self._step_index + 1)
+        if next_step_index is None:
             self._state = AutomationState.SUCCEEDED
             self._message = "Automation completed successfully."
             return
-        self._step_index += 1
+        self._step_index = next_step_index
         self._retried = False
         self._start_current_step()
+
+    def _next_enabled_step_index(self, start_index: int) -> int | None:
+        """Return the first enabled step at or after ``start_index``."""
+        assert self._scenario is not None
+        return next(
+            (index for index in range(start_index, len(self._scenario.steps)) if self._scenario.steps[index].enabled),
+            None,
+        )
 
     def _evaluate_retained_start_condition(self) -> None:
         """Start the current step when retained output already satisfies it."""

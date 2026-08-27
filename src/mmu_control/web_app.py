@@ -785,15 +785,25 @@ def _render_automation_tab(st: Any) -> None:
         except AutomationStoreError as exc:
             st.error(str(exc))
     st.divider()
+    start_options: list[int] = []
     if scenario is not None:
-        start_options = [f"{index + 1}: {step.name or step.command}" for index, step in enumerate(scenario.steps)]
-        start_label = st.selectbox("Start step", start_options, index=0 if start_options else None)
-        start_index = start_options.index(start_label) if start_label else 0
+        start_options = [index for index, step in enumerate(scenario.steps) if step.enabled]
+        selected_start_index = st.selectbox(
+            "Start step",
+            start_options,
+            index=0 if start_options else None,
+            format_func=lambda index: (
+                f"{index + 1}: {scenario.steps[index].name or scenario.steps[index].command}"
+            ),
+        )
+        start_index = selected_start_index if selected_start_index is not None else 0
     else:
         start_index = 0
     cols = st.columns(2)
     shell = st.session_state.get("shell")
-    if cols[0].button("Run scenario", disabled=scenario is None or not _is_shell_open(shell)):
+    if cols[0].button(
+        "Run scenario", disabled=scenario is None or not start_options or not _is_shell_open(shell)
+    ):
         runner = AutomationRunner(shell.send_line)
         try:
             runner.start(scenario, start_step_index=start_index)
@@ -834,9 +844,27 @@ def _render_automation_editor(st: Any, scenario: AutomationScenario | None) -> N
             "\n".join(step.command for step in scenario.steps) if scenario else "",
             height=160,
         )
+        existing_steps = scenario.steps if scenario else []
+        enabled_values = [
+            st.checkbox(
+                f"Enable step {index + 1}: {step.name or step.command or 'Unnamed step'}",
+                value=step.enabled,
+                key=f"automation_step_enabled_{scenario.name}_{index}",
+            )
+            for index, step in enumerate(existing_steps)
+        ]
         saved = st.form_submit_button("Save scenario")
     if saved:
-        steps = [AutomationStep(command=line.strip()) for line in raw_steps.splitlines() if line.strip()]
+        commands = [line.strip() for line in raw_steps.splitlines() if line.strip()]
+        steps = []
+        for index, command in enumerate(commands):
+            if index < len(existing_steps):
+                step = AutomationStep.from_dict(existing_steps[index].to_dict())
+                step.command = command
+                step.enabled = enabled_values[index]
+            else:
+                step = AutomationStep(command=command)
+            steps.append(step)
         try:
             services.automation_store.upsert(AutomationScenario(name=name, description=description, steps=steps))
             st.success("Scenario saved.")

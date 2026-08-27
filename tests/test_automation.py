@@ -51,6 +51,13 @@ class AutomationStoreTest(unittest.TestCase):
             self.assertEqual(store.load().scenarios, {"boot": scenario})
             self.assertEqual(store.delete("boot").scenarios, {})
 
+    def test_step_enabled_defaults_and_json_round_trip(self) -> None:
+        self.assertTrue(AutomationStep.from_dict({"command": "legacy"}).enabled)
+        self.assertFalse(AutomationStep.from_dict({"enabled": "false"}).enabled)
+        self.assertTrue(AutomationStep.from_dict({"enabled": "YES"}).enabled)
+        step = AutomationStep(command="run", enabled=False)
+        self.assertEqual(AutomationStep.from_dict(step.to_dict()), step)
+
     def test_upsert_loads_scenario_without_steps(self) -> None:
         """Newly named scenarios can be persisted before steps are configured."""
         with tempfile.TemporaryDirectory() as directory:
@@ -113,6 +120,27 @@ class AutomationEditorDialogTest(unittest.TestCase):
 
         self.assertIs(saved_step.completion_type, CompletionType.NONE)
         self.assertEqual(saved_step.to_dict()["completion_type"], CompletionType.NONE.value)
+
+    def test_step_checkboxes_toggle_persist_and_duplicate_enabled_state(self) -> None:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+        qt_core = pytest.importorskip("PySide6.QtCore", exc_type=ImportError)
+        qt_widgets.QApplication.instance() or qt_widgets.QApplication(sys.argv)
+        from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
+
+        dialog = AutomationEditorDialog(AutomationScenario(
+            name="editor",
+            steps=[AutomationStep(name="off", command="one", enabled=False), AutomationStep(command="two")],
+        ))
+        self.assertEqual(dialog.step_list.item(0).checkState(), qt_core.Qt.CheckState.Unchecked)
+        self.assertEqual(dialog.step_list.item(1).checkState(), qt_core.Qt.CheckState.Checked)
+        dialog.step_list.item(0).setCheckState(qt_core.Qt.CheckState.Checked)
+        dialog.step_list.setCurrentRow(1)
+        dialog.step_list.setCurrentRow(0)
+        self.assertTrue(dialog.scenario().steps[0].enabled)
+        dialog.step_list.item(0).setCheckState(qt_core.Qt.CheckState.Unchecked)
+        dialog._duplicate_step()
+        self.assertFalse(dialog._steps[1].enabled)
 
     def test_add_step_keeps_edited_step_and_selects_a_default_step(self) -> None:
         """Adding a step saves only the current step and does not copy its values."""
@@ -233,6 +261,45 @@ class AutomationRunnerTest(unittest.TestCase):
         self.runner.receive_output("done")
         self.assertEqual(self.sent, ["two", "three"])
         self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_disabled_steps_are_skipped_from_start_and_advance(self) -> None:
+        scenario = AutomationScenario(name="skip disabled", steps=[
+            AutomationStep("first", "one", enabled=False),
+            AutomationStep("middle", "two"),
+            AutomationStep("last", "three", enabled=False),
+        ])
+
+        self.runner.start(scenario)
+
+        self.assertEqual(self.sent, ["two"])
+        self.assertEqual(self.runner.start_step_index, 1)
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+
+    def test_starting_on_disabled_step_uses_next_enabled_original_index(self) -> None:
+        scenario = AutomationScenario(name="resume disabled", steps=[
+            AutomationStep("first", "one"),
+            AutomationStep("disabled", "never", enabled=False),
+            AutomationStep("last", "three", CompletionType.OUTPUT_CONTAINS, "done"),
+        ])
+
+        self.runner.start(scenario, start_step_index=1)
+
+        self.assertEqual(self.sent, ["three"])
+        self.assertEqual(self.runner.status.step_index, 2)
+
+    def test_all_disabled_steps_succeed_without_commands_or_conditions(self) -> None:
+        scenario = AutomationScenario(name="none", steps=[AutomationStep(
+            "disabled", "never", start_type=CompletionType.OUTPUT_CONTAINS,
+            start_value="missing", skip_on_start_condition_failure=True, enabled=False,
+        )])
+
+        self.runner.start(scenario)
+        self.runner.tick(now=float("inf"))
+
+        self.assertEqual(self.sent, [])
+        self.assertEqual(self.runner.status.state, AutomationState.SUCCEEDED)
+        self.assertEqual(self.runner.status.step_index, -1)
+        self.assertEqual(self.runner.skipped_step_indices, frozenset())
 
     def test_rejects_an_out_of_range_start_step(self) -> None:
         scenario = AutomationScenario(name="one", steps=[AutomationStep("only", "one")])
