@@ -7,7 +7,6 @@ import posixpath
 import shlex
 import sys
 import tempfile
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,7 +23,6 @@ from mmu_control.core.ttyd_manager import TtydError, TtydManager
 from mmu_control.models.automation import (
     AutomationScenario,
     AutomationStep,
-    CompletionType,
 )
 from mmu_control.models.command_set import CommandSet
 from mmu_control.models.settings import (
@@ -201,6 +199,15 @@ def resolve_sftp_path(current: str, target: str) -> str:
 def command_lines(command_set: CommandSet) -> list[str]:
     """Return executable command lines from a command set."""
     return [line.strip() for line in command_set.commands.splitlines() if line.strip()]
+
+
+def next_command_line(command_set: CommandSet, index: int) -> tuple[str | None, int]:
+    """Return the indexed non-empty command and the subsequent index."""
+    lines = command_lines(command_set)
+    safe_index = max(index, 0)
+    if safe_index >= len(lines):
+        return None, len(lines)
+    return lines[safe_index], safe_index + 1
 
 
 def main() -> int:
@@ -717,6 +724,9 @@ def _render_commands_tab(st: Any) -> None:
     names = sorted(collection.command_sets)
     selected = st.selectbox("Command set", names, index=0 if names else None)
     command_set = collection.command_sets.get(selected) if selected else None
+    if st.session_state.get("command_line_set") != selected:
+        st.session_state["command_line_set"] = selected
+        st.session_state["command_line_index"] = 0
     with st.form("command_set_form"):
         name = st.text_input("Name", command_set.name if command_set else "")
         parent_path = st.text_input("Folder path", command_set.parent_path if command_set else "")
@@ -729,13 +739,29 @@ def _render_commands_tab(st: Any) -> None:
             st.success("Command set saved.")
         except CommandSetStoreError as exc:
             st.error(str(exc))
-    cols = st.columns(2)
+    cols = st.columns(3)
     shell = st.session_state.get("shell")
     if cols[0].button("Run command set", disabled=command_set is None or not _is_shell_open(shell)):
         for line in command_lines(command_set):
             shell.send_line(line)
             _append_output(st, "terminal_output", f"$ {line}\n")
-    if cols[1].button("Delete command set", disabled=command_set is None):
+    line_index = st.session_state.get("command_line_index", 0)
+    lines = command_lines(command_set) if command_set is not None else []
+    if cols[1].button(
+        "Run next line",
+        disabled=command_set is None or not _is_shell_open(shell) or line_index >= len(lines),
+        help="Runs the next non-empty stored command by index; this is not based on the text-area caret.",
+    ):
+        line, next_index = next_command_line(command_set, line_index)
+        if line is not None:
+            shell.send_line(line)
+            _append_output(st, "terminal_output", f"$ {line}\n")
+            st.session_state["command_line_index"] = next_index
+    st.caption(
+        f"Run next line uses a stored non-empty-line index (not the editor caret): "
+        f"{min(line_index + 1, len(lines)) if lines else 0} of {len(lines)}."
+    )
+    if cols[2].button("Delete command set", disabled=command_set is None):
         services.command_set_store.delete(command_set.name)
         st.success("Command set deleted.")
 

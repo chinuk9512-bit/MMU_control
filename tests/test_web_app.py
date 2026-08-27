@@ -18,6 +18,7 @@ from mmu_control.web_app import (
     parse_sftp_listing,
     resolve_sftp_path,
     settings_from_form_values,
+    next_command_line,
 )
 
 
@@ -200,6 +201,18 @@ def test_command_lines_ignores_blank_lines() -> None:
     command_set = CommandSet("Boot", commands="\n echo one \n\nreboot\n")
 
     assert command_lines(command_set) == ["echo one", "reboot"]
+
+
+def test_next_command_line_advances_non_empty_line_index_safely() -> None:
+    """The Streamlit index policy skips blanks and stays at the end."""
+    command_set = CommandSet("Boot", commands=" first \n\nsecond\n")
+
+    first, index = next_command_line(command_set, 0)
+    second, index = next_command_line(command_set, index)
+    finished, final_index = next_command_line(command_set, index)
+
+    assert (first, second) == ("first", "second")
+    assert (finished, final_index) == (None, 2)
 
 
 def test_is_shell_open_requires_live_shell() -> None:

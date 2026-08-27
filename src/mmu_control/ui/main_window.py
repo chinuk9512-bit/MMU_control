@@ -24,6 +24,7 @@ from PySide6.QtGui import (
     QPixmap,
     QKeyEvent,
     QRegularExpressionValidator,
+    QTextCursor,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -562,6 +563,7 @@ class MainWindow(QMainWindow):
         self.edit_command_button.clicked.connect(self._edit_command_set)
         self.delete_command_button.clicked.connect(self._delete_command_set)
         self.run_command_set_button.clicked.connect(self._run_command_set)
+        self.run_command_line_button.clicked.connect(self._run_current_command_line)
         self.new_automation_button.clicked.connect(self._create_automation_scenario)
         self.new_automation_folder_button.clicked.connect(self._create_automation_folder)
         self.import_automation_button.clicked.connect(self._import_automation_scenario)
@@ -1784,6 +1786,28 @@ class MainWindow(QMainWindow):
             self._shell.send_line(command)
         self.statusBar().showMessage(f"Commands sent from group '{command_set.name}'.")
 
+    def _run_current_command_line(self) -> None:
+        """Send the physical command line containing the output cursor.
+
+        Blank lines are deliberately left selected so an accidental click does
+        not silently skip part of a command set.
+        """
+        if self._selected_command_set() is None:
+            return
+        if self._shell is None or not self._shell.is_open:
+            self.terminal_widget.write_output("Not connected to an SSH shell.")
+            return
+
+        cursor = self.command_set_output.textCursor()
+        command = cursor.block().text().strip()
+        if not command:
+            return
+        self._shell.send_line(command)
+        if not cursor.movePosition(QTextCursor.MoveOperation.NextBlock):
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.command_set_output.setTextCursor(cursor)
+        self.command_set_output.ensureCursorVisible()
+
     def _save_command_set(self, command_set: CommandSet) -> None:
         collection = self._command_set_store.upsert(command_set)
         self._command_sets, self._command_folders = dict(collection.command_sets or {}), dict(collection.folders or {})
@@ -1817,21 +1841,27 @@ class MainWindow(QMainWindow):
         command_set = self._selected_command_set()
         if command_set is None:
             folder_path = self._selected_folder_path()
-            self.command_set_output.setPlainText(f"Folder: {folder_path}" if folder_path else "")
+            self.command_set_details_label.setText(f"Folder: {folder_path}" if folder_path else "")
+            self.command_set_output.clear()
             self._set_command_actions_enabled(False)
             self.delete_command_button.setEnabled(folder_path is not None)
             return
-        self.command_set_output.setPlainText(
-            f"Name: {command_set.name}\n"
-            f"Description: {command_set.description}\n\n"
-            f"{command_set.commands}"
-        )
+        details = f"Name: {command_set.name}"
+        if command_set.description:
+            details += f"\nDescription: {command_set.description}"
+        self.command_set_details_label.setText(details)
+        self.command_set_output.setPlainText(command_set.commands)
+        cursor = self.command_set_output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        self.command_set_output.setTextCursor(cursor)
+        self.command_set_output.ensureCursorVisible()
         self._set_command_actions_enabled(True)
 
     def _set_command_actions_enabled(self, enabled: bool) -> None:
         self.edit_command_button.setEnabled(enabled)
         self.delete_command_button.setEnabled(enabled)
         self.run_command_set_button.setEnabled(enabled)
+        self.run_command_line_button.setEnabled(enabled)
 
     @staticmethod
     def _commands_in(command_set: CommandSet) -> list[str]:
@@ -2935,9 +2965,11 @@ class MainWindow(QMainWindow):
         self.edit_command_button = QPushButton("Edit", self.commands_group)
         self.delete_command_button = QPushButton("Delete", self.commands_group)
         self.run_command_set_button = QPushButton("Run", self.commands_group)
+        self.run_command_line_button = QPushButton("Run Line", self.commands_group)
         self.edit_command_button.setEnabled(False)
         self.delete_command_button.setEnabled(False)
         self.run_command_set_button.setEnabled(False)
+        self.run_command_line_button.setEnabled(False)
 
         button_layout.addWidget(self.new_folder_button)
         button_layout.addWidget(self.new_command_button)
@@ -2945,13 +2977,15 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.delete_command_button)
         button_layout.addStretch(1)
         button_layout.addWidget(self.run_command_set_button)
+        button_layout.addWidget(self.run_command_line_button)
 
+        self.command_set_details_label = QLabel(self.commands_group)
         self.command_set_output = QPlainTextEdit(self.commands_group)
         self.command_set_output.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.command_set_output.setReadOnly(True)
-        self.command_set_output.setPlaceholderText("Selected command group details appear here.")
+        self.command_set_output.setPlaceholderText("Selected command group commands appear here.")
 
         commands_layout.addWidget(button_row)
         self.command_set_list = CommandSetTreeWidget(self.commands_group)
@@ -2962,7 +2996,12 @@ class MainWindow(QMainWindow):
         command_splitter = QSplitter(Qt.Orientation.Vertical, self.commands_group)
         command_splitter.setChildrenCollapsible(False)
         command_splitter.addWidget(self.command_set_list)
-        command_splitter.addWidget(self.command_set_output)
+        command_panel = QWidget(self.commands_group)
+        command_panel_layout = QVBoxLayout(command_panel)
+        command_panel_layout.setContentsMargins(0, 0, 0, 0)
+        command_panel_layout.addWidget(self.command_set_details_label)
+        command_panel_layout.addWidget(self.command_set_output, stretch=1)
+        command_splitter.addWidget(command_panel)
         command_splitter.setStretchFactor(0, 1)
         command_splitter.setStretchFactor(1, 1)
         commands_layout.addWidget(command_splitter, stretch=1)

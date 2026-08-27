@@ -16,7 +16,7 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
 
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
-from PySide6.QtGui import QDropEvent, QValidator
+from PySide6.QtGui import QDropEvent, QTextCursor, QValidator
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -597,8 +597,8 @@ class MainWindowTest(unittest.TestCase):
             self.assertEqual(window.command_set_list.count(), 1)
             self.assertEqual(window.command_set_list.currentItem().text(), "diagnostics")
             self.assertTrue(window.edit_command_button.isEnabled())
-            self.assertIn("Collect status", window.command_set_output.toPlainText())
-            self.assertIn("pwd\nuname -a", window.command_set_output.toPlainText())
+            self.assertIn("Collect status", window.command_set_details_label.text())
+            self.assertEqual(window.command_set_output.toPlainText(), "pwd\nuname -a")
 
             window.ssh_host_input.setText("server")
             window.ssh_username_input.setText("user")
@@ -607,6 +607,82 @@ class MainWindowTest(unittest.TestCase):
             window._run_command_set()
 
             self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
+
+    def test_run_line_sends_physical_lines_in_order_and_advances_cursor(self) -> None:
+        """Run Line sends one physical line per click and stops at document end."""
+        manager = FakeSSHManager()
+        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
+        store.upsert(CommandSet(name="diagnostics", commands=" pwd \nuname -a"))
+        window = self.create_window(ssh_manager=manager, command_set_store=store)
+        window.ssh_host_input.setText("server")
+        window.ssh_username_input.setText("user")
+        window._connect_ssh()
+
+        self.assertTrue(window.run_command_line_button.isEnabled())
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 0)
+        window.run_command_line_button.click()
+        self.assertEqual(manager.shell.sent, ["pwd"])
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
+
+        window.run_command_line_button.click()
+        self.assertEqual(manager.shell.sent, ["pwd", "uname -a"])
+        self.assertEqual(
+            window.command_set_output.textCursor().position(),
+            window.command_set_output.document().characterCount() - 1,
+        )
+
+    def test_run_line_leaves_cursor_on_blank_line(self) -> None:
+        """Blank physical lines are not sent or skipped by the Run Line action."""
+        manager = FakeSSHManager()
+        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
+        store.upsert(CommandSet(name="spaced", commands="first\n   \nlast"))
+        window = self.create_window(ssh_manager=manager, command_set_store=store)
+        window._shell = manager.shell
+        cursor = window.command_set_output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.NextBlock)
+        window.command_set_output.setTextCursor(cursor)
+
+        window._run_current_command_line()
+
+        self.assertEqual(manager.shell.sent, [])
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
+
+    def test_run_line_disconnected_and_folder_selection_are_safe(self) -> None:
+        """Unavailable shells and non-command tree rows never send or move."""
+        manager = FakeSSHManager()
+        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
+        store.create_folder("Diagnostics")
+        store.upsert(CommandSet(name="status", commands="one\ntwo", parent_path="Diagnostics"))
+        window = self.create_window(ssh_manager=manager, command_set_store=store)
+        folder = window.command_set_list.topLevelItem(0)
+        group = folder.child(0)
+        window.command_set_list.setCurrentItem(group)
+        initial_position = window.command_set_output.textCursor().position()
+
+        window._run_current_command_line()
+
+        self.assertIn("Not connected to an SSH shell.", window.terminal_widget.toPlainText())
+        self.assertEqual(window.command_set_output.textCursor().position(), initial_position)
+        window.command_set_list.setCurrentItem(folder)
+        self.assertFalse(window.run_command_line_button.isEnabled())
+        self.assertEqual(window.command_set_output.toPlainText(), "")
+        window._run_current_command_line()
+        self.assertEqual(manager.shell.sent, [])
+
+    def test_command_set_selection_resets_run_line_cursor(self) -> None:
+        """Selecting another command set resets its command cursor to line one."""
+        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
+        store.upsert(CommandSet(name="A", commands="a1\na2"))
+        store.upsert(CommandSet(name="B", commands="b1\nb2"))
+        window = self.create_window(command_set_store=store)
+        cursor = window.command_set_output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        window.command_set_output.setTextCursor(cursor)
+
+        window.command_set_list.setCurrentItem(window.command_set_list.topLevelItem(1))
+
+        self.assertEqual(window.command_set_output.toPlainText(), "b1\nb2")
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 0)
 
     def test_new_automation_button_opens_editor_and_saves_scenario(self) -> None:
         """The New Scenario action creates an editor with the main window as parent."""
