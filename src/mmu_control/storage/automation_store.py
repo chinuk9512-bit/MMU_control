@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mmu_control.core.config_manager import default_user_data_directory
 from mmu_control.models.automation import AutomationFolder, AutomationScenario, AutomationScenarioCollection
 
 
@@ -27,8 +26,9 @@ class AutomationStore:
 
     @classmethod
     def create_default(cls) -> "AutomationStore":
-        """Create a store in the persistent per-user application directory."""
-        return cls(default_user_data_directory() / "automation_scenarios.json")
+        """Create a store for the scenario data shared with the source tree."""
+        package_directory = Path(__file__).resolve().parent.parent
+        return cls(package_directory / "user_scenario" / "automation_scenarios.json")
 
     def load(self) -> AutomationScenarioCollection:
         """Load scenarios, returning an empty collection if the file is absent."""
