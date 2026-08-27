@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QPlainTextEdit,
     QScrollArea,
@@ -89,6 +90,7 @@ class AutomationEditorDialog(QDialog):
         self.step_list = ScenarioStepListWidget(self)
         self.step_list.setMinimumHeight(self.STEP_LIST_MINIMUM_HEIGHT)
         self.step_list.currentRowChanged.connect(self._select_step)
+        self.step_list.itemChanged.connect(self._step_enabled_changed)
         self.step_name_input = QLineEdit(self)
         self.command_input = QPlainTextEdit(self)
         self.command_input.setMinimumHeight(self.COMMAND_MINIMUM_HEIGHT)
@@ -254,11 +256,22 @@ class AutomationEditorDialog(QDialog):
         try:
             self.step_list.clear()
             for index, step in enumerate(self._steps, start=1):
-                self.step_list.addItem(f"{index}. {step.name or step.command or 'Unnamed step'}")
+                item = QListWidgetItem(f"{index}. {step.name or step.command or 'Unnamed step'}")
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Checked if step.enabled else Qt.CheckState.Unchecked)
+                self.step_list.addItem(item)
             if self._steps:
                 self.step_list.setCurrentRow(max(0, min(selected, len(self._steps) - 1)))
         finally:
             self._updating_step_selection = False
+
+    def _step_enabled_changed(self, item: QListWidgetItem) -> None:
+        """Persist a checkbox toggle immediately without changing selection."""
+        if self._updating_step_selection:
+            return
+        index = self.step_list.row(item)
+        if 0 <= index < len(self._steps):
+            self._steps[index].enabled = item.checkState() == Qt.CheckState.Checked
 
     def _select_step(self, index: int) -> None:
         if not self._updating_step_selection:
@@ -299,6 +312,7 @@ class AutomationEditorDialog(QDialog):
             start_file_path=start_file_path,
             start_timeout_seconds=self.start_timeout_input.value(),
             skip_on_start_condition_failure=self.skip_on_start_condition_failure_input.isChecked(),
+            enabled=self._steps[self._current_index].enabled,
         )
 
     def _save_current_step(self) -> None:
@@ -378,6 +392,7 @@ class AutomationEditorDialog(QDialog):
             start_type=step.start_type, start_value=step.start_value, start_file_path=step.start_file_path,
             start_timeout_seconds=step.start_timeout_seconds,
             skip_on_start_condition_failure=step.skip_on_start_condition_failure,
+            enabled=step.enabled,
         ))
         self._current_index += 1
         self._refresh_step_list()

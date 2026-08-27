@@ -1938,11 +1938,13 @@ class MainWindow(QMainWindow):
         self._set_automation_actions_enabled(True)
 
     def _populate_automation_start_step_input(self, scenario: AutomationScenario) -> None:
-        """Offer every step as a possible entry point for the selected scenario."""
+        """Offer enabled steps as entry points while retaining original indices."""
         self.automation_start_step_input.blockSignals(True)
         try:
             self.automation_start_step_input.clear()
             for index, step in enumerate(scenario.steps):
+                if not step.enabled:
+                    continue
                 self.automation_start_step_input.addItem(
                     f"Step {index + 1}: {step.name or step.command or 'Unnamed step'}", index
                 )
@@ -1975,7 +1977,9 @@ class MainWindow(QMainWindow):
         step_lines: list[str] = []
         for index, step in enumerate(scenario.steps):
             marker = "○"
-            if index < start_step_index:
+            if not step.enabled:
+                marker = "Disabled"
+            elif index < start_step_index:
                 marker = "↷ not run"
             elif index in skipped_indices:
                 marker = "↷ skipped"
@@ -2022,7 +2026,9 @@ class MainWindow(QMainWindow):
         self.copy_automation_button.setEnabled(selected and not active)
         self.edit_automation_button.setEnabled(selected and not active)
         self.delete_automation_button.setEnabled(selected and not active)
-        self.run_automation_button.setEnabled(selected and not active)
+        self.run_automation_button.setEnabled(
+            selected and bool(self.automation_start_step_input.count()) and not active
+        )
         self.automation_start_step_input.setEnabled(selected and bool(self.automation_start_step_input.count()) and not active)
         self.stop_automation_button.setEnabled(active)
 
