@@ -62,9 +62,12 @@ the app-managed Paramiko connection used by automation and buttons.
 
 ## Automation scenarios
 
-- Command sets and automation scenarios are saved in `%APPDATA%/MMUControl` (or
-  `~/AppData/Roaming/MMUControl` when `APPDATA` is unavailable), so they remain
-  available after restarting the executable.
+- Command sets are loaded from and saved to
+  `src/mmu_control/user_command/command_sets.json`.
+- Automation scenarios are loaded from and saved to
+  `src/mmu_control/user_scenario/automation_scenarios.json`.
+- These JSON files can be committed so the team can manage the same commands and
+  scenarios together. Do not put IDs, passwords, or other secrets in them.
 - The Scenarios tab loads this file when the application starts and refreshes the scenario list after a scenario is saved.
 
 ## Test
