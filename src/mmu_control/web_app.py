@@ -210,12 +210,12 @@ def resolve_sftp_path(current: str, target: str) -> str:
 
 
 def command_lines(command_set: CommandSet) -> list[str]:
-    """Return executable command lines from a command set."""
-    return [line.strip() for line in command_set.commands.splitlines() if line.strip()]
+    """Return every physical command line, preserving blanks as Enter."""
+    return [line.strip() for line in command_set.commands.splitlines()]
 
 
 def next_command_line(command_set: CommandSet, index: int) -> tuple[str | None, int]:
-    """Return the indexed non-empty command and the subsequent index."""
+    """Return the indexed physical command line and the subsequent index."""
     lines = command_lines(command_set)
     safe_index = max(index, 0)
     if safe_index >= len(lines):
@@ -769,7 +769,7 @@ def _render_commands_tab(st: Any) -> None:
     if cols[1].button(
         "Run next line",
         disabled=command_set is None or not _is_shell_open(shell) or line_index >= len(lines),
-        help="Runs the next non-empty stored command by index; this is not based on the text-area caret.",
+        help="Runs the next stored physical line by index; blanks send Enter and this is not based on the text-area caret.",
     ):
         line, next_index = next_command_line(command_set, line_index)
         if line is not None:
@@ -782,7 +782,7 @@ def _render_commands_tab(st: Any) -> None:
                 _append_output(st, "terminal_output", f"$ {line}\n")
                 st.session_state["command_line_index"] = next_index
     st.caption(
-        f"Run next line uses a stored non-empty-line index (not the editor caret): "
+        f"Run next line uses a stored physical-line index (not the editor caret): "
         f"{min(line_index + 1, len(lines)) if lines else 0} of {len(lines)}."
     )
     if cols[2].button("Delete command set", disabled=command_set is None):

@@ -1803,8 +1803,7 @@ class MainWindow(QMainWindow):
     def _run_current_command_line(self) -> None:
         """Send the physical command line containing the output cursor.
 
-        Blank lines are deliberately left selected so an accidental click does
-        not silently skip part of a command set.
+        Blank lines are sent as Enter and advance like any other physical line.
         """
         if self._selected_command_set() is None:
             return
@@ -1815,13 +1814,12 @@ class MainWindow(QMainWindow):
         cursor = self.command_set_output.textCursor()
         self._highlight_current_command_line()
         command = cursor.block().text().strip()
-        if not command:
-            return
-        try:
-            command = self._resolve_commands([command])[0]
-        except (VariableStoreError, MissingVariablesError) as exc:
-            self.terminal_widget.write_output(f"Command variables error: {exc}")
-            return
+        if command:
+            try:
+                command = self._resolve_commands([command])[0]
+            except (VariableStoreError, MissingVariablesError) as exc:
+                self.terminal_widget.write_output(f"Command variables error: {exc}")
+                return
         self._shell.send_line(command)
         if not cursor.movePosition(QTextCursor.MoveOperation.NextBlock):
             cursor.movePosition(QTextCursor.MoveOperation.End)

@@ -640,24 +640,22 @@ class MainWindowTest(unittest.TestCase):
             window.command_set_output.document().characterCount() - 1,
         )
 
-    def test_run_line_leaves_cursor_on_blank_line(self) -> None:
-        """Blank physical lines are not sent or skipped by the Run Line action."""
+    def test_run_line_sends_blank_line_and_advances_cursor(self) -> None:
+        """Run Line sends blank physical lines as Enter between commands."""
         manager = FakeSSHManager()
         store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
         store.upsert(CommandSet(name="spaced", commands="first\n   \nlast"))
         window = self.create_window(ssh_manager=manager, command_set_store=store)
         window._shell = manager.shell
-        cursor = window.command_set_output.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.NextBlock)
-        window.command_set_output.setTextCursor(cursor)
-
+        window._run_current_command_line()
+        window._run_current_command_line()
         window._run_current_command_line()
 
-        self.assertEqual(manager.shell.sent, [])
-        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
+        self.assertEqual(manager.shell.sent, ["first", "", "last"])
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 2)
         selections = window.command_set_output.extraSelections()
         self.assertEqual(len(selections), 1)
-        self.assertEqual(selections[0].cursor.blockNumber(), 1)
+        self.assertEqual(selections[0].cursor.blockNumber(), 2)
 
     def test_run_line_disconnected_and_folder_selection_are_safe(self) -> None:
         """Unavailable shells and non-command tree rows never send or move."""
