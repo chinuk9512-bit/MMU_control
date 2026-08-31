@@ -657,6 +657,31 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(len(selections), 1)
         self.assertEqual(selections[0].cursor.blockNumber(), 2)
 
+    def test_command_output_arrow_keys_change_run_line_target_only_when_focused(self) -> None:
+        """Arrow keys in the command output select the physical line Run Line sends."""
+        manager = FakeSSHManager()
+        store = CommandSetStore(Path(self.temp_dir.name) / "command_sets.json")
+        store.upsert(CommandSet(name="diagnostics", commands="first\n\nthird"))
+        window = self.create_window(ssh_manager=manager, command_set_store=store)
+        window._shell = manager.shell
+
+        window.command_set_output.setFocus()
+        QTest.keyClick(window.command_set_output, Qt.Key.Key_Down)
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
+        window._run_current_command_line()
+        self.assertEqual(manager.shell.sent, [""])
+
+        QTest.keyClick(window.command_set_output, Qt.Key.Key_Up)
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 1)
+        QTest.keyClick(window.command_set_output, Qt.Key.Key_Up)
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 0)
+        QTest.keyClick(window.command_set_output, Qt.Key.Key_Up)
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 0)
+
+        window.run_command_line_button.setFocus()
+        QTest.keyClick(window.run_command_line_button, Qt.Key.Key_Down)
+        self.assertEqual(window.command_set_output.textCursor().blockNumber(), 0)
+
     def test_run_line_disconnected_and_folder_selection_are_safe(self) -> None:
         """Unavailable shells and non-command tree rows never send or move."""
         manager = FakeSSHManager()

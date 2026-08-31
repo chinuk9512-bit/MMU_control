@@ -409,6 +409,26 @@ class CommandSetTreeItem(QTreeWidgetItem):
         return super().text(column)
 
 
+class CommandLineOutput(QPlainTextEdit):
+    """Read-only command display with physical-line keyboard navigation."""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        """Move the Run Line target when Up or Down is pressed in this widget."""
+        moves = {
+            Qt.Key.Key_Up: QTextCursor.MoveOperation.PreviousBlock,
+            Qt.Key.Key_Down: QTextCursor.MoveOperation.NextBlock,
+        }
+        move = moves.get(event.key())
+        if move is not None:
+            cursor = self.textCursor()
+            cursor.movePosition(move)
+            self.setTextCursor(cursor)
+            self.ensureCursorVisible()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class AutomationTreeWidget(QTreeWidget):
     """Scenario tree that allows only scenarios to be dragged into folders."""
 
@@ -3032,7 +3052,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.run_command_line_button)
 
         self.command_set_details_label = QLabel(self.commands_group)
-        self.command_set_output = QPlainTextEdit(self.commands_group)
+        self.command_set_output = CommandLineOutput(self.commands_group)
         self.command_set_output.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
