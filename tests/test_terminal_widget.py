@@ -81,6 +81,37 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget.toPlainText(), output)
 
+    def test_stream_output_preserves_scrolled_viewport(self) -> None:
+        """New stream output does not pull a scrolled-back user to the end."""
+        widget = TerminalWidget(prompt="")
+        widget.resize(500, 200)
+        widget.show()
+        widget.write_stream("".join(f"log line {index}\n" for index in range(200)))
+        self.app.processEvents()
+        scroll_bar = widget.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.maximum() // 2)
+        previous_value = scroll_bar.value()
+
+        widget.write_stream("new log line\n")
+        self.app.processEvents()
+
+        self.assertEqual(scroll_bar.value(), previous_value)
+
+    def test_stream_output_follows_when_viewport_is_at_bottom(self) -> None:
+        """New stream output remains visible when the user was at the end."""
+        widget = TerminalWidget(prompt="")
+        widget.resize(500, 200)
+        widget.show()
+        widget.write_stream("".join(f"log line {index}\n" for index in range(200)))
+        self.app.processEvents()
+        scroll_bar = widget.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.maximum())
+
+        widget.write_stream("new log line\n")
+        self.app.processEvents()
+
+        self.assertEqual(scroll_bar.value(), scroll_bar.maximum())
+
     def test_ansi_color_is_applied_and_reset_to_terminal_foreground(self) -> None:
         """Remote ANSI colours are rendered without colouring later text."""
         widget = TerminalWidget(prompt="")

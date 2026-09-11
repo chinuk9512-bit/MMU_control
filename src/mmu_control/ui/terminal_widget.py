@@ -28,6 +28,15 @@ class _LiveCursorState:
     position: int
 
 
+@dataclass(frozen=True)
+class _ScrollState:
+    """Scrollbar position captured before terminal output changes the document."""
+
+    value: int
+    maximum: int
+    at_bottom: bool
+
+
 class TerminalWidget(QPlainTextEdit):
     """Single-pane terminal widget that keeps the prompt and output together."""
 
@@ -88,6 +97,7 @@ class TerminalWidget(QPlainTextEdit):
         fragments = TerminalStreamFilter().feed_styled(text)
         if not fragments:
             return
+        scroll_state = self._capture_scroll_state()
         cursor_state = self._capture_live_cursor()
         cursor = self._remove_live_input()
         if cursor.position() and str(self.document().characterAt(cursor.position() - 1)) != "\n":
@@ -95,8 +105,9 @@ class TerminalWidget(QPlainTextEdit):
         self._insert_terminal_fragments(cursor, fragments)
         if not text.endswith("\n"):
             cursor.insertText("\n")
-        self._insert_live_input(cursor)
-        self._restore_live_cursor(cursor_state)
+        self._insert_live_input(cursor, ensure_visible=False)
+        self._restore_live_cursor(cursor_state, ensure_visible=False)
+        self._restore_scroll_state(scroll_state)
 
     def write_stream(self, text: str) -> None:
         """Append raw shell output without forcing a trailing newline."""
@@ -105,6 +116,7 @@ class TerminalWidget(QPlainTextEdit):
         fragments = self._stream_filter.feed_styled(text)
         if not fragments:
             return
+        scroll_state = self._capture_scroll_state()
         cursor_state = self._capture_live_cursor()
         cursor = self._remove_live_input()
         overwrite_from_carriage_return = False
@@ -113,8 +125,9 @@ class TerminalWidget(QPlainTextEdit):
             overwrite_from_carriage_return = self._insert_terminal_stream_text(
                 cursor, fragment.text, overwrite_from_carriage_return
             )
-        self._insert_live_input(cursor)
-        self._restore_live_cursor(cursor_state)
+        self._insert_live_input(cursor, ensure_visible=False)
+        self._restore_live_cursor(cursor_state, ensure_visible=False)
+        self._restore_scroll_state(scroll_state)
 
     def _insert_terminal_fragments(
         self, cursor: QTextCursor, fragments: list[TerminalText]
@@ -408,10 +421,13 @@ class TerminalWidget(QPlainTextEdit):
             cursor.removeSelectedText()
         return cursor
 
-    def _insert_live_input(self, cursor: QTextCursor) -> None:
+    def _insert_live_input(
+        self, cursor: QTextCursor, *, ensure_visible: bool = True
+    ) -> None:
         cursor.insertText(f"{self._prompt}{self._buffer}", self._text_format(TerminalStyle()))
         self.setTextCursor(cursor)
-        self.ensureCursorVisible()
+        if ensure_visible:
+            self.ensureCursorVisible()
 
     def _buffer_cursor_index(self) -> int:
         """Return the current cursor location relative to the editable buffer."""
@@ -433,7 +449,9 @@ class TerminalWidget(QPlainTextEdit):
             position=self._live_buffer_index(cursor.position()),
         )
 
-    def _restore_live_cursor(self, state: _LiveCursorState) -> None:
+    def _restore_live_cursor(
+        self, state: _LiveCursorState, *, ensure_visible: bool = True
+    ) -> None:
         """Restore a cursor and selection captured from the live input."""
         text_length = len(self.toPlainText())
         live_length = len(self._prompt) + len(self._buffer)
@@ -446,7 +464,31 @@ class TerminalWidget(QPlainTextEdit):
             command_start + position, QTextCursor.MoveMode.KeepAnchor
         )
         self.setTextCursor(cursor)
-        self.ensureCursorVisible()
+        if ensure_visible:
+            self.ensureCursorVisible()
+
+    def _capture_scroll_state(self) -> _ScrollState:
+        """Capture whether output should follow the end and the current position."""
+        scroll_bar = self.verticalScrollBar()
+        return _ScrollState(
+            value=scroll_bar.value(),
+            maximum=scroll_bar.maximum(),
+            at_bottom=scroll_bar.value() == scroll_bar.maximum(),
+        )
+
+    def _restore_scroll_state(self, state: _ScrollState) -> None:
+        """Follow new output or preserve the user's existing viewport."""
+        scroll_bar = self.verticalScrollBar()
+        if state.at_bottom:
+            scroll_bar.setValue(scroll_bar.maximum())
+            return
+
+        # Appending output grows the range below the viewport, so the old value
+        # keeps the same content in view.  If maximumBlockCount prunes enough
+        # old blocks to shrink the range, shift by that loss as well rather than
+        # letting Qt merely clamp the former value at the new maximum.
+        range_delta = min(0, scroll_bar.maximum() - state.maximum)
+        scroll_bar.setValue(state.value + range_delta)
 
     def _set_cursor_at_buffer_index(self, index: int) -> None:
         """Move the cursor to an index inside the editable command buffer."""
