@@ -278,6 +278,25 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(raw_input, ["\x08"])
 
+    def test_interactive_return_scrolls_to_bottom_before_sending_input(self) -> None:
+        """Submitting interactive input returns a scrolled-back viewport to the end."""
+        widget = TerminalWidget(prompt="")
+        widget.resize(500, 200)
+        widget.show()
+        widget.write_stream("".join(f"log line {index}\n" for index in range(200)))
+        self.app.processEvents()
+        scroll_bar = widget.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.maximum() // 2)
+        raw_input: list[str] = []
+        widget.rawInput.connect(raw_input.append)
+        widget.set_interactive_mode(True)
+        widget.setFocus()
+
+        QTest.keyClick(widget, Qt.Key.Key_Return)
+
+        self.assertEqual(raw_input, ["\r"])
+        self.assertEqual(scroll_bar.value(), scroll_bar.maximum())
+
     def test_interactive_mode_sends_q_and_control_c_immediately(self) -> None:
         """Full-screen programs receive keys without waiting for Enter."""
         widget = TerminalWidget(prompt="")

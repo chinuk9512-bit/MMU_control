@@ -244,6 +244,8 @@ class TerminalWidget(QPlainTextEdit):
         if self._interactive_mode:
             raw_input = self._interactive_key(event)
             if raw_input:
+                if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    self._scroll_to_bottom()
                 self.rawInput.emit(raw_input)
             return
 
@@ -489,6 +491,11 @@ class TerminalWidget(QPlainTextEdit):
         # letting Qt merely clamp the former value at the new maximum.
         range_delta = min(0, scroll_bar.maximum() - state.maximum)
         scroll_bar.setValue(state.value + range_delta)
+
+    def _scroll_to_bottom(self) -> None:
+        """Move the terminal viewport to the latest output."""
+        scroll_bar = self.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.maximum())
 
     def _set_cursor_at_buffer_index(self, index: int) -> None:
         """Move the cursor to an index inside the editable command buffer."""
