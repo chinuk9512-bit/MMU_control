@@ -112,6 +112,26 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(scroll_bar.value(), scroll_bar.maximum())
 
+    def test_submitted_command_resumes_following_stream_output(self) -> None:
+        """A command submitted while scrolled back resumes following output."""
+        widget = TerminalWidget(prompt="mmu> ")
+        widget.resize(500, 200)
+        widget.show()
+        widget.write_stream("".join(f"log line {index}\n" for index in range(200)))
+        self.app.processEvents()
+        scroll_bar = widget.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.maximum() // 2)
+        widget.setFocus()
+
+        QTest.keyClicks(widget, "status")
+        QTest.keyClick(widget, Qt.Key.Key_Return)
+
+        self.assertEqual(scroll_bar.value(), scroll_bar.maximum())
+        for chunk in ("first output\n", "second output\n", "third output\n"):
+            widget.write_stream(chunk)
+            self.app.processEvents()
+            self.assertEqual(scroll_bar.value(), scroll_bar.maximum())
+
     def test_ansi_color_is_applied_and_reset_to_terminal_foreground(self) -> None:
         """Remote ANSI colours are rendered without colouring later text."""
         widget = TerminalWidget(prompt="")
