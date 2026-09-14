@@ -381,6 +381,7 @@ class TerminalWidget(QPlainTextEdit):
         cursor.insertText("\n")
         self._buffer = ""
         self._insert_live_input(cursor)
+        self._scroll_to_bottom()
         self.commandSubmitted.emit(command)
 
     def _history_up(self) -> None:
@@ -472,10 +473,13 @@ class TerminalWidget(QPlainTextEdit):
     def _capture_scroll_state(self) -> _ScrollState:
         """Capture whether output should follow the end and the current position."""
         scroll_bar = self.verticalScrollBar()
+        bottom_threshold = max(
+            scroll_bar.minimum(), scroll_bar.maximum() - scroll_bar.singleStep()
+        )
         return _ScrollState(
             value=scroll_bar.value(),
             maximum=scroll_bar.maximum(),
-            at_bottom=scroll_bar.value() == scroll_bar.maximum(),
+            at_bottom=scroll_bar.value() >= bottom_threshold,
         )
 
     def _restore_scroll_state(self, state: _ScrollState) -> None:
