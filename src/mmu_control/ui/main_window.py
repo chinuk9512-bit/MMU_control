@@ -1722,6 +1722,27 @@ class MainWindow(QMainWindow):
     def _append_sftp_output(self, text: str) -> None:
         self.terminal_widget.write_output(f"[SFTP] {text.rstrip()}")
 
+    def refresh_shared_definitions(self) -> None:
+        """Refresh shared definitions while preserving this client's selection and run."""
+        if self._automation_runner is not None and self._automation_runner.is_active:
+            return
+        command_set = self._selected_command_set()
+        scenario = self._selected_automation_scenario()
+        start_step = self.automation_start_step_input.currentData()
+        try:
+            self._load_command_sets()
+            self._load_automation_scenarios()
+        except Exception as exc:
+            self.statusBar().showMessage(f"Could not refresh shared definitions: {exc}")
+            return
+        if command_set is not None:
+            self._refresh_command_set_list(command_set.name)
+        if scenario is not None:
+            self._refresh_automation_list(scenario.name)
+            index = self.automation_start_step_input.findData(start_step)
+            if index >= 0:
+                self.automation_start_step_input.setCurrentIndex(index)
+
     def _load_command_sets(self) -> None:
         collection = self._command_set_store.load()
         self._command_sets = dict(collection.command_sets or {})
@@ -2651,10 +2672,33 @@ class MainWindow(QMainWindow):
         self.connection_status_label.setText("SSH: disconnected")
         self.statusBar().showMessage(status_message)
 
+    @property
+    def has_pending_tasks(self) -> bool:
+        """Return whether background work still owns this client's resources."""
+        return bool(getattr(self._task_runner, "has_pending_tasks", False))
+
+    @property
+    def has_active_session(self) -> bool:
+        """Return whether closing would interrupt a connection or scenario."""
+        return bool(
+            (self._shell is not None and self._shell.is_open)
+            or (self._sftp_shell is not None and self._sftp_shell.is_open)
+            or (self._local_process is not None
+                and self._local_process.state() != QProcess.ProcessState.NotRunning)
+            or (self._automation_runner is not None and self._automation_runner.is_active)
+        )
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Close SSH resources before the application exits."""
+        if self.has_pending_tasks:
+            event.ignore()
+            return
         self._closing = True
         self._save_settings()
+        for timer in self.findChildren(QTimer):
+            timer.stop()
+        if self._automation_runner is not None and self._automation_runner.is_active:
+            self._stop_automation()
         self._close_local_process()
         self._shell_timer.stop()
         self._close_sftp_shell()
