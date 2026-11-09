@@ -16,7 +16,7 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
 
 from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
-from PySide6.QtGui import QDropEvent, QTextCursor, QTextFormat, QValidator
+from PySide6.QtGui import QDropEvent, QPalette, QTextCursor, QTextFormat, QValidator
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -43,6 +43,7 @@ from mmu_control.storage.command_set_store import CommandSetStore
 from mmu_control.storage.automation_store import AutomationStore
 from mmu_control.ui.automation_editor_dialog import AutomationEditorDialog
 from mmu_control.ui.main_window import MainWindow
+from mmu_control.ui.theme import TERMINAL_FOREGROUND, apply_dark_theme
 
 
 class FakeShell:
@@ -221,9 +222,8 @@ class MainWindowTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
+        # Window cleanups run first, while their settings paths still exist.
+        self.addCleanup(self.temp_dir.cleanup)
 
     def process_events_until(
         self,
@@ -235,6 +235,7 @@ class MainWindowTest(unittest.TestCase):
         while not condition() and time.monotonic() < deadline:
             self.app.processEvents()
             time.sleep(0.01)
+        self.assertTrue(condition(), "Qt condition was not met before timeout")
 
     def create_window(self, **kwargs: object) -> MainWindow:
         kwargs.setdefault(
@@ -242,7 +243,17 @@ class MainWindowTest(unittest.TestCase):
             ConfigManager(Path(self.temp_dir.name) / "settings.json"),
         )
         kwargs.setdefault("task_runner", ImmediateTaskRunner())
-        return MainWindow(**kwargs)
+        kwargs.setdefault(
+            "command_set_store",
+            CommandSetStore(Path(self.temp_dir.name) / "commands.json"),
+        )
+        kwargs.setdefault(
+            "automation_store",
+            AutomationStore(Path(self.temp_dir.name) / "automation.json"),
+        )
+        window = MainWindow(**kwargs)
+        self.addCleanup(window.close)
+        return window
 
     def test_main_window_initial_state(self) -> None:
         """Main window exposes the expected Task 2 controls."""
@@ -403,14 +414,16 @@ class MainWindowTest(unittest.TestCase):
         self.assertFalse(window.connect_button.isEnabled())
         self.assertTrue(window.refresh_usb_button.isEnabled())
 
-    def test_connection_panel_uses_white_background(self) -> None:
-        """Connection controls should not inherit the platform grey scroll-area background."""
+    def test_connection_panel_inherits_dark_theme(self) -> None:
+        """Connection controls inherit the application palette without white overrides."""
+        apply_dark_theme(self.app)
         window = self.create_window()
 
-        self.assertIn("background-color: white", window.connection_panel.styleSheet())
-        self.assertIn(
-            "background-color: white", window.connection_panel_scroll_area.styleSheet()
-        )
+        for panel in (window.connection_panel, window.connection_panel_scroll_area):
+            self.assertEqual(
+                panel.palette().color(QPalette.ColorRole.Window).name(), "#202328"
+            )
+            self.assertNotIn("background-color: white", panel.styleSheet())
 
     def test_response_panel_can_be_hidden_and_shown(self) -> None:
         """The response pane folds away without resizing the main workspace."""
@@ -453,6 +466,7 @@ class MainWindowTest(unittest.TestCase):
 
         window.terminal_widget.commandSubmitted.emit("pwd")
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertNotIn("\n\npwd", window.terminal_widget.toPlainText())
@@ -467,10 +481,12 @@ class MainWindowTest(unittest.TestCase):
 
         manager.shell.output = "user@server:~$ "
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         self.assertEqual(window._pending_echo, "pwd")
         manager.shell.output = "pwd\r\n/home/user\r\nuser@server:~$ "
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         self.assertIsNone(window._pending_echo)
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
@@ -485,10 +501,12 @@ class MainWindowTest(unittest.TestCase):
 
         manager.shell.output = "pw"
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         self.assertEqual(window._pending_echo, "pwd")
         manager.shell.output = "d\r\n/home/user\r\nuser@server:~$ "
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         self.assertIsNone(window._pending_echo)
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
@@ -513,6 +531,7 @@ class MainWindowTest(unittest.TestCase):
         window._connect_ssh()
         window.terminal_widget.commandSubmitted.emit("pwd")
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         self.assertEqual(manager.shell.sent, ["pwd"])
         self.assertIn("/home/user", window.terminal_widget.toPlainText())
@@ -526,6 +545,7 @@ class MainWindowTest(unittest.TestCase):
         manager.shell.output = "\x1b[31merror\x1b[0m plain"
 
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         cursor = window.terminal_widget.textCursor()
         cursor.setPosition(window.terminal_widget.toPlainText().index("error") + 1)
@@ -533,7 +553,7 @@ class MainWindowTest(unittest.TestCase):
         cursor.setPosition(window.terminal_widget.toPlainText().index("plain") + 1)
         plain_color = cursor.charFormat().foreground().color().name()
         self.assertEqual(error_color, "#cd3131")
-        self.assertEqual(plain_color, "#e6e6e6")
+        self.assertEqual(plain_color, TERMINAL_FOREGROUND.name())
 
     def test_clear_command_clears_connected_ssh_terminal(self) -> None:
         """Clear removes prior terminal content while SSH is connected."""
@@ -747,7 +767,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(created_parents, [window])
         self.assertEqual(store.load().scenarios, {"boot": scenario})
         self.assertEqual(window.automation_list.count(), 1)
-        self.assertEqual(window.automation_list.currentItem().text(), "boot")
+        self.assertEqual(window.automation_list.currentItem().text(0), "boot")
 
     def test_copy_automation_scenario_opens_a_separate_named_copy(self) -> None:
         """Copy preserves the selected scenario data while saving a distinct scenario."""
@@ -783,7 +803,7 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(dialog_scenarios, [copied])
         self.assertIsNot(dialog_scenarios[0].steps[0], original.steps[0])
         self.assertEqual(store.load().scenarios, {"boot": original, "boot (Copy)": copied})
-        self.assertEqual(window.automation_list.currentItem().text(), "boot (Copy)")
+        self.assertEqual(window.automation_list.currentItem().text(0), "boot (Copy)")
 
     def test_run_automation_uses_filtered_current_console_snapshot_for_start_condition(self) -> None:
         """Run Scenario evaluates its first start condition against visible remote output."""
@@ -968,7 +988,7 @@ class MainWindowTest(unittest.TestCase):
             window._create_automation_scenario()
 
         self.assertEqual(window.automation_list.count(), 1)
-        self.assertEqual(window.automation_list.currentItem().text(), "existing")
+        self.assertEqual(window.automation_list.currentItem().text(0), "existing")
         self.assertIn("disk is full", window.automation_status_label.text())
         self.assertIn(str(path), window.automation_status_label.text())
         self.assertEqual(window.statusBar().currentMessage(), window.automation_status_label.text())
@@ -1001,7 +1021,7 @@ class MainWindowTest(unittest.TestCase):
 
         delete.assert_called_once_with("existing")
         self.assertEqual(window.automation_list.count(), 1)
-        self.assertEqual(window.automation_list.currentItem().text(), "existing")
+        self.assertEqual(window.automation_list.currentItem().text(0), "existing")
         self.assertIn("permission denied", window.automation_status_label.text())
         self.assertIn(str(path), window.automation_status_label.text())
         self.assertEqual(window.statusBar().currentMessage(), window.automation_status_label.text())
@@ -1567,6 +1587,11 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(window.power_supply_current_input.text(), "1.25")
         window.show()
         self.app.processEvents()
+        # SSH fields live on the second board-console tab; the serial tab is
+        # selected by default and correctly hides them.
+        self.assertFalse(window.board_ip_input.isVisible())
+        window.board_console_tabs.setCurrentIndex(1)
+        self.app.processEvents()
         visible_connection_controls = (
             window.ssh_group_content,
             window.ssh_host_input,
@@ -1735,6 +1760,7 @@ class MainWindowTest(unittest.TestCase):
 
         manager.shell.output = "ssh: connect to host 192.168.0.10 port 22: Connection refused\r\n"
         window._poll_shell()
+        self.process_events_until(lambda: not window._pending_terminal_output)
 
         self.assertIn("Connection refused", window.terminal_widget.toPlainText())
         self.assertEqual(window.board_status_label.text(), "MMU: SSH failed")

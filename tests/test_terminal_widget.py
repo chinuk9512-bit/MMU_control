@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication
 
 from mmu_control.core.terminal_sequences import TerminalStyle
 from mmu_control.ui.terminal_widget import TerminalWidget
+from mmu_control.ui.theme import TERMINAL_FOREGROUND
 
 
 class TerminalWidgetTest(unittest.TestCase):
@@ -144,7 +145,7 @@ class TerminalWidgetTest(unittest.TestCase):
         plain = cursor.charFormat().foreground().color().name()
 
         self.assertEqual(red, "#cd3131")
-        self.assertEqual(plain, "#e6e6e6")
+        self.assertEqual(plain, TERMINAL_FOREGROUND.name())
 
     def test_typing_and_output_do_not_replace_the_whole_document(self) -> None:
         """Incremental rendering avoids the old full-document redraw bottleneck."""
@@ -208,7 +209,7 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget._buffer, "abcd")
         self.assertEqual(widget._buffer_cursor_index(), 2)
-        QTest.keyClick(widget, Qt.Key.Key_X)
+        QTest.keyClicks(widget, "X")
         self.assertEqual(widget._buffer, "abXcd")
 
     def test_write_output_preserves_command_cursor(self) -> None:
@@ -224,7 +225,7 @@ class TerminalWidgetTest(unittest.TestCase):
 
         self.assertEqual(widget._buffer, "abcd")
         self.assertEqual(widget._buffer_cursor_index(), 2)
-        QTest.keyClick(widget, Qt.Key.Key_X)
+        QTest.keyClicks(widget, "X")
         self.assertEqual(widget._buffer, "abXcd")
 
     def test_stream_output_preserves_live_input_selection(self) -> None:
