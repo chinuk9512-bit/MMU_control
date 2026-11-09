@@ -52,6 +52,11 @@ class ThreadPoolTaskRunner(QObject):
         self._pool = QThreadPool.globalInstance()
         self._workers: set[_Worker] = set()
 
+    @property
+    def has_pending_tasks(self) -> bool:
+        """Return whether callbacks may still arrive from a worker."""
+        return bool(self._workers)
+
     def submit(
         self,
         task: Callable[[], Any],
@@ -62,5 +67,10 @@ class ThreadPoolTaskRunner(QObject):
         self._workers.add(worker)
         worker.signals.succeeded.connect(on_success)
         worker.signals.failed.connect(on_error)
-        worker.signals.finished.connect(self._workers.discard)
+        worker.signals.finished.connect(self._worker_finished)
         self._pool.start(worker)
+
+    @Slot(object)
+    def _worker_finished(self, worker: _Worker) -> None:
+        """Release worker ownership on the UI thread after queued result delivery."""
+        self._workers.discard(worker)

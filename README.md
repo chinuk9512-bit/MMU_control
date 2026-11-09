@@ -118,3 +118,28 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_web_exe.ps1
 
 The web executable is created at `dist\MMUControlWeb.exe` and starts the local
 Streamlit browser UI.
+
+## Multiple clients in one desktop window
+
+The desktop app opens a client tab bar above the existing Terminal/SFTP workspace.
+Click **+** to add a client, double-click a tab to rename it, and drag tabs to
+reorder them. Each tab has its own server and board connection, terminal history,
+SFTP session, power settings, and automation run. Switching tabs keeps background
+connections and scenarios running. The window title and tab label identify the
+client and its connection state.
+
+Closing a connected tab asks before stopping its work; other clients keep running.
+Connection and file operations must finish before their tab or the app can close.
+Closing the last tab opens a fresh disconnected client. On restart the app restores
+the tab names, order, active tab, and each client's saved fields, without connecting
+to devices automatically.
+
+The first client reuses the existing `%APPDATA%/MMUControl/settings.json` and
+`variables.json`. Added clients store their own files in
+`%APPDATA%/MMUControl/clients/<client-id>/`. Configure per-client command variables
+in that client's `variables.json` using the same schema documented above. Tab
+layout is saved in `client_tabs.json`; closing a tab retains its settings files.
+Command and scenario definitions remain shared across clients and refresh when
+switching to an idle client tab. An active scenario keeps its current definition
+until it finishes. This tab workflow applies to the desktop app; the web UI is
+unchanged.

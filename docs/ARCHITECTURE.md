@@ -6,7 +6,8 @@ MMU Control is a Python 3.12 / PySide6 Windows desktop application. It connects 
 
 ```text
 Windows PC GUI
-  -> PySide6 MainWindow
+  -> PySide6 ClientTabsWindow
+  -> per-client MainWindow workspace
   -> Paramiko SSHManager
   -> Linux Server
   -> shell / minicom / sftp / power supply command
@@ -44,7 +45,7 @@ src/mmu_control/
 - `mmu_control.app.main`
   - Configures logging.
   - Creates `QApplication`.
-  - Creates and shows `MainWindow`.
+  - Creates and shows `ClientTabsWindow`, containing one `MainWindow` workspace per client.
   - Shuts down logging handlers when the app exits.
 
 ### UI Layer
@@ -221,3 +222,20 @@ Files:
 - `pyproject.toml` defines package metadata, dependencies, package data, and the `mmu-control` entry point.
 - `MMUControl.spec` defines the PyInstaller executable and bundled resources.
 - `scripts/build_exe.ps1` builds `dist/MMUControl.exe`.
+
+## Multi-client desktop host
+
+`app.main` creates `ClientTabsWindow`, whose outer `QTabWidget` embeds one
+`MainWindow` workspace as a child widget per client. Reusing the complete workspace
+keeps its terminal, SFTP UI, status bar, managers, QProcess and automation timers
+independent; `MainWindow` remains available for single-workspace tests and callers.
+`client_tabs.json` stores stable IDs, names, order and the selected client. The
+legacy first client uses the existing user settings/variables files; subsequent
+clients use `clients/<uuid>/settings.json` and `variables.json`. No session is
+connected automatically during restoration. Shared command/scenario JSON stays at
+its existing location; idle workspaces refresh definitions on tab activation.
+
+The host confirms closure of live sessions and refuses closure while a
+`ThreadPoolTaskRunner` still has pending callbacks. A workspace stops its timers,
+cancels automation, kills its local SSH process and closes both shell channels
+before it is removed. Application exit checks all tabs before closing any of them.
