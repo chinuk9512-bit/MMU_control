@@ -50,7 +50,6 @@ Direct board SSH is also supported through a local `ssh` process when the Linux 
 - Send line commands with Enter.
 - Support raw key input for interactive programs such as `minicom`, `htop`, `top`, `vi`, `vim`, `nano`, `less`, `more`, and `tail -f`.
 - Strip ANSI/VT escape/control sequences from displayed output where needed.
-- Keep a separate response pane for configured command responses.
 
 ### Board/MMU Serial Console
 
