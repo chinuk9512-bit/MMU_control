@@ -547,8 +547,7 @@ class MainWindow(QMainWindow):
         self._mmu_sftp_directory = "/tmp"
         self._closing = False
         self.setWindowTitle("MMU Control")
-        # Reserve enough room for the terminal, command list, and response
-        # output.  The default width is 15% larger than the previous layout.
+        # Reserve enough room for the terminal and command list.
         self.resize(1840, 900)
         self.setMinimumSize(1196, 560)
         self.setCentralWidget(self._build_central_widget())
@@ -2713,28 +2712,13 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(container)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        self.main_response_splitter = QSplitter(Qt.Orientation.Horizontal, container)
-        self.main_response_splitter.setChildrenCollapsible(False)
-
-        self.main_content = QWidget(self.main_response_splitter)
+        self.main_content = QWidget(container)
         main_layout = QVBoxLayout(self.main_content)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(10)
         main_layout.addWidget(self._build_connection_panel())
         main_layout.addWidget(self._build_workspace(), stretch=1)
-
-        self.response_panel = self._build_response_panel()
-        self.main_response_splitter.addWidget(self.main_content)
-        self.main_response_splitter.addWidget(self.response_panel)
-        self.main_response_splitter.setStretchFactor(0, 1)
-        self.main_response_splitter.setStretchFactor(1, 0)
-        self.main_response_splitter.setSizes([1100, 460])
-        self._response_panel_width = 460
-        self.setMinimumWidth(
-            1196 + self._response_panel_width + self.main_response_splitter.handleWidth()
-        )
-
-        layout.addWidget(self.main_response_splitter)
+        layout.addWidget(self.main_content)
         return container
 
     def _build_connection_buttons(self) -> QWidget:
@@ -2776,12 +2760,6 @@ class MainWindow(QMainWindow):
         self.connection_panel_toggle_button.setChecked(True)
         header_layout.addWidget(self.connection_panel_toggle_button)
         header_layout.addStretch(1)
-        # Keep the response control above the Client column so it remains
-        # available after the response pane itself is folded away.
-        self.response_panel_toggle_button = QPushButton("Hide", header)
-        self.response_panel_toggle_button.setCheckable(True)
-        self.response_panel_toggle_button.setChecked(True)
-        header_layout.addWidget(self.response_panel_toggle_button)
         layout.addWidget(header)
 
         self.connection_panel_content = QWidget(panel)
@@ -3026,48 +3004,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(terminal_splitter, stretch=1)
         return tab
-
-    def _build_response_panel(self) -> QWidget:
-        """Build the collapsible pane reserved for command-response output."""
-        panel = QWidget(self)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        title = QLabel("Response", panel)
-
-        self.response_panel_content = QPlainTextEdit(panel)
-        self.response_panel_content.setReadOnly(True)
-        self.response_panel_content.setPlaceholderText(
-            "Results for configured terminal commands will appear here."
-        )
-        layout.addWidget(title)
-        layout.addWidget(self.response_panel_content, stretch=1)
-        self.response_panel_toggle_button.toggled.connect(self._set_response_panel_visible)
-        return panel
-
-    def _set_response_panel_visible(self, visible: bool) -> None:
-        """Fold the response pane while preserving the main-content width."""
-        self.response_panel_toggle_button.setText("Hide" if visible else "Show")
-        if not hasattr(self, "main_response_splitter"):
-            return
-        if visible:
-            self.response_panel.show()
-            width_change = self._response_panel_width + self.main_response_splitter.handleWidth()
-            target_width = self.width() + width_change
-            self.setMinimumWidth(1196 + width_change)
-            if not self.isMaximized():
-                self.resize(max(target_width, self.minimumWidth()), self.height())
-            self.main_response_splitter.setSizes(
-                [max(self.main_content.width(), 1), self._response_panel_width]
-            )
-        else:
-            self._response_panel_width = max(self.response_panel.width(), 1)
-            width_change = self._response_panel_width + self.main_response_splitter.handleWidth()
-            target_width = self.width() - width_change
-            self.response_panel.hide()
-            self.setMinimumWidth(1196)
-            if not self.isMaximized():
-                self.resize(max(self.minimumWidth(), target_width), self.height())
 
     def _build_commands_tab(self) -> QWidget:
         tab = QWidget(self)

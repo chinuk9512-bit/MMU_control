@@ -425,37 +425,24 @@ class MainWindowTest(unittest.TestCase):
             )
             self.assertNotIn("background-color: white", panel.styleSheet())
 
-    def test_response_panel_can_be_hidden_and_shown(self) -> None:
-        """The response pane folds away without resizing the main workspace."""
+    def test_workspace_uses_full_width_without_response_pane(self) -> None:
+        """Connection and terminal controls fill the available central area."""
         window = self.create_window()
         window.show()
         self.app.processEvents()
-        window.response_panel_content.setPlainText("response output")
 
-        self.assertEqual(window.response_panel.parent(), window.main_response_splitter)
+        container = window.centralWidget()
+        layout = container.layout()
+        self.assertEqual(layout.count(), 1)
+        self.assertIs(layout.itemAt(0).widget(), window.main_content)
+        margins = layout.contentsMargins()
         self.assertEqual(
-            window.response_panel_toggle_button.parent(), window.connection_panel_toggle_button.parent()
+            window.main_content.width(),
+            container.width() - margins.left() - margins.right(),
         )
-        self.assertTrue(window.response_panel_toggle_button.isChecked())
-        self.assertEqual(window.response_panel_toggle_button.text(), "Hide")
-        self.assertFalse(window.response_panel_content.isHidden())
-        main_width = window.main_content.width()
-        window_width = window.width()
-
-        window.response_panel_toggle_button.setChecked(False)
-        self.app.processEvents()
-
-        self.assertTrue(window.response_panel.isHidden())
-        self.assertEqual(window.response_panel_toggle_button.text(), "Show")
-        self.assertEqual(window.response_panel_content.toPlainText(), "response output")
-        self.assertEqual(window.main_content.width(), main_width)
-        self.assertLess(window.width(), window_width)
-
-        window.response_panel_toggle_button.setChecked(True)
-        self.app.processEvents()
-
-        self.assertFalse(window.response_panel.isHidden())
-        self.assertEqual(window.response_panel_toggle_button.text(), "Hide")
+        self.assertEqual(window.minimumWidth(), 1196)
+        self.assertFalse(hasattr(window, "response_panel"))
+        self.assertFalse(hasattr(window, "response_panel_toggle_button"))
 
     def test_initial_shell_echo_newline_is_not_rendered_as_a_blank_command(self) -> None:
         """A leading PTY line advance before the first echo is filtered out."""

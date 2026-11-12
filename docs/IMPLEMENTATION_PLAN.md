@@ -12,9 +12,9 @@ This document tracks implemented work and likely next work. Keep it aligned with
 
 ### Phase 2. Main UI and Settings
 
-- `MainWindow` with connection panel, terminal workspace, SFTP tab, command/scenario side tabs, board console tabs, status bar, and response pane.
+- `MainWindow` with connection panel, terminal workspace, SFTP tab, command/scenario side tabs, board console tabs, and status bar.
 - Persisted SSH, board/MMU, power supply, selected USB port, active profile name, and window state.
-- Collapsible connection panel and response pane.
+- Collapsible connection panel; the unused response pane has been removed.
 - `%APPDATA%/MMUControl/settings.json` loading/saving with default fallback behavior.
 
 ### Phase 3. SSH and Interactive Shell

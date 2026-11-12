@@ -52,7 +52,7 @@ src/mmu_control/
 
 - `MainWindow`
   - Owns the application workflow and visible state.
-  - Builds the connection panel, terminal workspace, SFTP tab, command groups, automation scenarios, board serial console, board SSH console, and response pane.
+  - Builds the connection panel, terminal workspace, SFTP tab, command groups, automation scenarios, board serial console, and board SSH console.
   - Coordinates managers and stores.
   - Polls interactive shells with `QTimer`.
   - Starts blocking work through `ThreadPoolTaskRunner`.
