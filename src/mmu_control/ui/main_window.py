@@ -645,6 +645,7 @@ class MainWindow(QMainWindow):
 
     def _board_settings(self) -> BoardSettings:
         return BoardSettings(
+            display_name=self.board_name_input.text().strip(),
             ip_address=self.board_ip_input.text().strip(),
             username=self.board_username_input.text().strip(),
             password=self.board_password_input.text(),
@@ -687,6 +688,7 @@ class MainWindow(QMainWindow):
         self.power_supply_voltage_input.setText(settings.power_supply.voltage)
         self.power_supply_current_input.setText(settings.power_supply.current)
         self._power_supply_manager.update_settings(settings.power_supply)
+        self.board_name_input.setText(settings.board.display_name)
         self.board_ip_input.setText(settings.board.ip_address)
         self.board_username_input.setText(settings.board.username)
         self.board_password_input.setText(settings.board.password)
@@ -2898,6 +2900,9 @@ class MainWindow(QMainWindow):
         layout = QFormLayout(self.mmu_group_content)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
+        self.board_name_input = QLineEdit(self)
+        self.board_name_input.setPlaceholderText("Device name, e.g. MMU-A")
+        layout.addRow("Device name", self.board_name_input)
         self.board_ip_input = QLineEdit(self)
         self.board_ip_input.setPlaceholderText("IP address, e.g. 192.168.0.10 or fe80::1")
         self.board_username_input = QLineEdit(self)

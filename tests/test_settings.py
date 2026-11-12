@@ -28,6 +28,7 @@ class AppSettingsTest(unittest.TestCase):
                     "usb_port": "/dev/ttyUSB0",
                     "ssh_port": 2222,
                     "ssh_key_path": "/home/user/.ssh/mmu",
+                    "display_name": "MMU-A",
                 },
             }
         )
@@ -50,6 +51,7 @@ class AppSettingsTest(unittest.TestCase):
                     "usb_port": "/dev/ttyUSB0",
                     "ssh_port": 2222,
                     "ssh_key_path": "/home/user/.ssh/mmu",
+                    "display_name": "MMU-A",
                 },
                 "power_supply": {"ip_address": "", "voltage": "", "current": ""},
                 "window": {

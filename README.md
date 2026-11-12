@@ -122,8 +122,12 @@ Streamlit browser UI.
 ## Multiple clients in one desktop window
 
 The desktop app opens a client tab bar above the existing Terminal/SFTP workspace.
-Click **+** to add a client, double-click a tab to rename it, and drag tabs to
-reorder them. Each tab has its own server and board connection, terminal history,
+Click **+** to add a client and drag tabs to reorder them. Set **Device name**
+in the Client connection panel or double-click a tab to edit the same name.
+The tab uses the device name, then the Client IP, then its default `Client N`
+label. Clearing the device name restores automatic IP labeling. The label stays
+visible after disconnect; the connection status changes separately. Hover over
+a tab to see its device name, Client IP, gateway SSH server and connection states. Each tab has its own server and board connection, terminal history,
 SFTP session, power settings, and automation run. Switching tabs keeps background
 connections and scenarios running. The window title and tab label identify the
 client and its connection state.

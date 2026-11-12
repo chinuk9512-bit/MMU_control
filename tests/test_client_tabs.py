@@ -280,3 +280,80 @@ def test_cancelling_application_close_preserves_every_connected_client(window):
     assert not first._closing and not second._closing
     assert first._shell.is_open and second._shell.is_open
     assert window._status_timer.isActive()
+
+
+def test_client_label_uses_device_name_then_client_ip_then_default(window):
+    session = window.client_tabs.widget(0)
+    assert session.property("client_name") == "Client 1"
+    session.ssh_host_input.setText("gateway.example")
+    assert session.property("client_name") == "Client 1"
+    session.board_ip_input.setText("192.0.2.42")
+    assert window.client_tabs.tabText(0) == "192.0.2.42 — disconnected"
+    session.board_name_input.setText(" MMU-A ")
+    assert window.client_tabs.tabText(0) == "MMU-A — disconnected"
+    assert window.windowTitle() == "MMU Control — MMU-A"
+    tooltip = window.client_tabs.tabToolTip(0)
+    assert "Client IP: 192.0.2.42" in tooltip
+    assert "SSH server: gateway.example" in tooltip
+    session._shell = Shell()
+    window._refresh_status()
+    assert window.client_tabs.tabText(0) == "MMU-A — connected"
+    session._shell.close()
+    window._refresh_status()
+    assert window.client_tabs.tabText(0) == "MMU-A — disconnected"
+    session.board_name_input.clear()
+    assert session.property("client_name") == "192.0.2.42"
+    session.board_ip_input.clear()
+    assert session.property("client_name") == "Client 1"
+
+
+def test_double_click_rename_updates_device_field_and_can_clear_override(window):
+    session = window.client_tabs.widget(0)
+    session.board_ip_input.setText("192.0.2.42")
+    with patch("mmu_control.ui.client_tabs.QInputDialog.getText", return_value=("MMU-A", True)):
+        window.rename_client(0)
+    assert session.board_name_input.text() == "MMU-A"
+    with patch("mmu_control.ui.client_tabs.QInputDialog.getText", return_value=("", False)):
+        window.rename_client(0)
+    assert session.property("client_name") == "MMU-A"
+    with patch("mmu_control.ui.client_tabs.QInputDialog.getText", return_value=("", True)):
+        window.rename_client(0)
+    assert session.board_name_input.text() == ""
+    assert session.property("client_name") == "192.0.2.42"
+
+
+def test_ip_fallback_stays_automatic_after_restart(window):
+    session = window.client_tabs.widget(0)
+    session.board_ip_input.setText("192.0.2.42")
+    assert window.close()
+    restored = ClientTabsWindow(window._data_directory, window._session_factory)
+    try:
+        session = restored.client_tabs.widget(0)
+        assert session.board_name_input.text() == ""
+        assert session.property("client_name") == "192.0.2.42"
+        session.board_ip_input.setText("192.0.2.43")
+        assert session.property("client_name") == "192.0.2.43"
+        session.board_ip_input.clear()
+        assert session.property("client_name") == "Client 1"
+    finally:
+        restored.close()
+
+
+def test_legacy_tab_names_migrate_to_device_names_without_overriding_defaults(window):
+    assert window.close()
+    path = window._manifest_path
+    path.write_text(json.dumps({"schema_version": 1, "clients": [
+        {"id": "default", "name": "Legacy board"},
+        {"id": "a" * 32, "name": "Client 7"},
+    ]}))
+    restored = ClientTabsWindow(window._data_directory, window._session_factory)
+    try:
+        first, second = restored.client_tabs.widget(0), restored.client_tabs.widget(1)
+        assert first.board_name_input.text() == "Legacy board"
+        assert first.property("client_name") == "Legacy board"
+        assert second.board_name_input.text() == ""
+        assert second.property("client_name") == "Client 7"
+        second.board_ip_input.setText("192.0.2.7")
+        assert second.property("client_name") == "192.0.2.7"
+    finally:
+        restored.close()
