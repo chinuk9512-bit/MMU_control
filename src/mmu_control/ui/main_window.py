@@ -645,6 +645,8 @@ class MainWindow(QMainWindow):
     def _board_settings(self) -> BoardSettings:
         return BoardSettings(
             display_name=self.board_name_input.text().strip(),
+            vlan=self.board_vlan_input.text().strip(),
+            du_mac=self.du_mac_input.text().strip(),
             ip_address=self.board_ip_input.text().strip(),
             username=self.board_username_input.text().strip(),
             password=self.board_password_input.text(),
@@ -688,6 +690,8 @@ class MainWindow(QMainWindow):
         self.power_supply_current_input.setText(settings.power_supply.current)
         self._power_supply_manager.update_settings(settings.power_supply)
         self.board_name_input.setText(settings.board.display_name)
+        self.board_vlan_input.setText(settings.board.vlan)
+        self.du_mac_input.setText(settings.board.du_mac)
         self.board_ip_input.setText(settings.board.ip_address)
         self.board_username_input.setText(settings.board.username)
         self.board_password_input.setText(settings.board.password)
@@ -1878,12 +1882,32 @@ class MainWindow(QMainWindow):
         selection.format.setForeground(QColor("#1b1f23"))
         self.command_set_output.setExtraSelections([selection])
 
-    def _resolve_commands(self, commands: list[str]) -> list[str]:
-        """Resolve every command before any command in a group is sent."""
+    def _command_variables(self, commands: list[str]) -> dict[str, str]:
+        """Snapshot local variables and validate referenced client input fields."""
         variables = self._variable_store.load()
-        missing = set().union(*(VariableResolver.names(command) for command in commands)) - variables.keys()
+        names = set().union(*(VariableResolver.names(command) for command in commands))
+        # These two names always belong to the current client inputs. Never
+        # fall back to stale values in variables.json when an input is cleared.
+        variables.pop("MMU_VLAN", None)
+        variables.pop("DU_MAC", None)
+        if "MMU_VLAN" in names:
+            vlan = self.board_vlan_input.text().strip()
+            if not re.fullmatch(r"[0-9]{1,4}", vlan) or not 1 <= int(vlan) <= 4094:
+                raise VariableStoreError("MMU_VLAN: enter a VLAN number from 1 to 4094 in this Client tab.")
+            variables["MMU_VLAN"] = str(int(vlan))
+        if "DU_MAC" in names:
+            mac = self.du_mac_input.text().strip()
+            if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}", mac):
+                raise VariableStoreError("DU_MAC: enter six hexadecimal pairs, e.g. AA:BB:CC:DD:EE:FF, in this Client tab.")
+            variables["DU_MAC"] = mac.replace("-", ":").upper()
+        missing = names - variables.keys()
         if missing:
             raise MissingVariablesError(set(missing))
+        return variables
+
+    def _resolve_commands(self, commands: list[str]) -> list[str]:
+        """Resolve every command before any command in a group is sent."""
+        variables = self._command_variables(commands)
         return [VariableResolver.resolve(command, variables) for command in commands]
 
     def _save_command_set(self, command_set: CommandSet) -> None:
@@ -2258,9 +2282,15 @@ class MainWindow(QMainWindow):
         if terminal is None:
             self.automation_status_label.setText("Automation: no active console is available")
             return
+        start_step_index = self.automation_start_step_input.currentData()
+        if not isinstance(start_step_index, int):
+            self.automation_status_label.setText("Automation: selected scenario has no steps")
+            return
         try:
-            variables = self._variable_store.load()
-        except VariableStoreError as exc:
+            variables = self._command_variables([
+                step.command for step in scenario.steps[start_step_index:] if step.enabled
+            ])
+        except (VariableStoreError, MissingVariablesError) as exc:
             self.automation_status_label.setText(f"Automation variables error: {exc}")
             return
         self._automation_runner = AutomationRunner(
@@ -2269,10 +2299,6 @@ class MainWindow(QMainWindow):
         )
         self._automation_terminal = terminal
         try:
-            start_step_index = self.automation_start_step_input.currentData()
-            if not isinstance(start_step_index, int):
-                self.automation_status_label.setText("Automation: selected scenario has no steps")
-                return
             self._automation_runner.start(scenario, start_step_index)
             self._automation_runner.receive_initial_output(terminal.read_recent_output())
         except Exception as exc:
@@ -2881,6 +2907,14 @@ class MainWindow(QMainWindow):
         self.board_name_input = QLineEdit(self)
         self.board_name_input.setPlaceholderText("Device name, e.g. MMU-A")
         layout.addRow("Device name", self.board_name_input)
+        self.board_vlan_input = QLineEdit(self)
+        self.board_vlan_input.setPlaceholderText("1–4094")
+        self.board_vlan_input.setToolTip("Used as ${MMU_VLAN} in commands and scenarios")
+        self.du_mac_input = QLineEdit(self)
+        self.du_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
+        self.du_mac_input.setToolTip("Used as ${DU_MAC} in commands and scenarios")
+        layout.addRow("VLAN", self.board_vlan_input)
+        layout.addRow("DU MAC", self.du_mac_input)
         self.board_ip_input = QLineEdit(self)
         self.board_ip_input.setPlaceholderText("IP address, e.g. 192.168.0.10 or fe80::1")
         self.board_username_input = QLineEdit(self)

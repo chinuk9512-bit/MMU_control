@@ -147,3 +147,22 @@ Command and scenario definitions remain shared across clients and refresh when
 switching to an idle client tab. An active scenario keeps its current definition
 until it finishes. This tab workflow applies to the desktop app; the web UI is
 unchanged.
+
+### Per-client VLAN and DU MAC variables
+
+Set **VLAN** and **DU MAC** in each desktop Client panel. The values are saved
+with that client's connection settings and restored on restart. Shared Commands
+and automation scenarios can use these placeholders:
+
+```bash
+configure --vlan ${MMU_VLAN} --du-mac ${DU_MAC}
+```
+
+VLAN must be 1–4094. DU MAC accepts six hexadecimal pairs separated consistently
+by colons or hyphens, and is substituted as uppercase colon-separated pairs.
+Only referenced inputs are required. A missing or invalid referenced value blocks
+the whole command group or scenario before any command is sent. A running scenario
+keeps the values captured when it started; edits apply to subsequent runs.
+These two variable names use the current Client input fields, overriding values
+with the same names in `variables.json`. Other variables continue to use that file.
+Literal remote-shell placeholders can still be escaped as `$${MMU_VLAN}`.
