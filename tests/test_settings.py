@@ -29,6 +29,8 @@ class AppSettingsTest(unittest.TestCase):
                     "ssh_port": 2222,
                     "ssh_key_path": "/home/user/.ssh/mmu",
                     "display_name": "MMU-A",
+                    "vlan": "100",
+                    "du_mac": "AA:BB:CC:DD:EE:FF",
                 },
             }
         )
@@ -52,6 +54,8 @@ class AppSettingsTest(unittest.TestCase):
                     "ssh_port": 2222,
                     "ssh_key_path": "/home/user/.ssh/mmu",
                     "display_name": "MMU-A",
+                    "vlan": "100",
+                    "du_mac": "AA:BB:CC:DD:EE:FF",
                 },
                 "power_supply": {"ip_address": "", "voltage": "", "current": ""},
                 "window": {

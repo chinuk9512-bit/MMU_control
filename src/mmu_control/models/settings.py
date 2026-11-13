@@ -73,6 +73,8 @@ class BoardSettings:
     ssh_port: int = 22
     ssh_key_path: str = ""
     display_name: str = ""
+    vlan: str = ""
+    du_mac: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BoardSettings:
@@ -86,6 +88,8 @@ class BoardSettings:
             ssh_port=int(data.get("ssh_port", 22)),
             ssh_key_path=str(data.get("ssh_key_path", "")),
             display_name=str(data.get("display_name", "")),
+            vlan=str(data.get("vlan", "")),
+            du_mac=str(data.get("du_mac", "")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -99,6 +103,8 @@ class BoardSettings:
             "ssh_port": self.ssh_port,
             "ssh_key_path": self.ssh_key_path,
             "display_name": self.display_name,
+            "vlan": self.vlan,
+            "du_mac": self.du_mac,
         }
 
 

@@ -357,3 +357,106 @@ def test_legacy_tab_names_migrate_to_device_names_without_overriding_defaults(wi
         assert second.property("client_name") == "192.0.2.7"
     finally:
         restored.close()
+
+
+def test_vlan_mac_values_are_per_client_and_restored(window):
+    first = window.client_tabs.widget(0)
+    second = window.add_client("MMU-B")
+    template = "configure --vlan ${MMU_VLAN} --du-mac ${DU_MAC}"
+    first.board_vlan_input.setText("100")
+    first.du_mac_input.setText("aa:bb:cc:dd:ee:01")
+    second.board_vlan_input.setText("200")
+    second.du_mac_input.setText("aa-bb-cc-dd-ee-02")
+    assert first._resolve_commands([template]) == ["configure --vlan 100 --du-mac AA:BB:CC:DD:EE:01"]
+    assert second._resolve_commands([template]) == ["configure --vlan 200 --du-mac AA:BB:CC:DD:EE:02"]
+    assert window.close()
+    restored = ClientTabsWindow(window._data_directory, window._session_factory)
+    try:
+        a, b = restored.client_tabs.widget(0), restored.client_tabs.widget(1)
+        assert (a.board_vlan_input.text(), a.du_mac_input.text()) == ("100", "aa:bb:cc:dd:ee:01")
+        assert (b.board_vlan_input.text(), b.du_mac_input.text()) == ("200", "aa-bb-cc-dd-ee-02")
+        assert a._resolve_commands([template]) != b._resolve_commands([template])
+    finally:
+        restored.close()
+
+
+@pytest.mark.parametrize("vlan", ["", "0", "4095", "12; reboot", "1.5"])
+def test_invalid_vlan_blocks_entire_command_group(window, vlan):
+    from mmu_control.models.command_set import CommandSet
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session.board_vlan_input.setText(vlan)
+    session._command_set_store.upsert(CommandSet(name="config", commands="echo start\nset-vlan ${MMU_VLAN}"))
+    session.refresh_shared_definitions()
+    session._run_command_set()
+    assert session._shell.sent == []
+    assert "MMU_VLAN" in session.terminal_widget.toPlainText()
+
+
+@pytest.mark.parametrize("mac", ["", "AA:BB:CC:DD:EE", "AA:BB:CC:DD:EE:GG", "AA:BB-CC:DD:EE:FF"])
+def test_invalid_du_mac_blocks_scenario_before_first_command(window, mac):
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session.du_mac_input.setText(mac)
+    session._automation_store.upsert(AutomationScenario(name="config", steps=[
+        AutomationStep("first", "echo start"),
+        AutomationStep("mac", "set-mac ${DU_MAC}"),
+    ]))
+    session.refresh_shared_definitions()
+    session._run_automation_scenario()
+    assert session._shell.sent == []
+    assert "DU_MAC" in session.automation_status_label.text()
+
+
+def test_scenario_keeps_initial_vlan_mac_snapshot(window):
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session.board_vlan_input.setText("100")
+    session.du_mac_input.setText("AA:BB:CC:DD:EE:01")
+    session._automation_store.upsert(AutomationScenario(name="snapshot", steps=[
+        AutomationStep("wait", "set-vlan ${MMU_VLAN}", CompletionType.OUTPUT_CONTAINS,
+                       completion_value="continue", timeout_seconds=100),
+        AutomationStep("apply", "apply ${MMU_VLAN} ${DU_MAC}"),
+    ]))
+    session.refresh_shared_definitions()
+    session._run_automation_scenario()
+    session.board_vlan_input.setText("200")
+    session.du_mac_input.setText("AA:BB:CC:DD:EE:02")
+    session._automation_runner.receive_output("continue")
+    assert session._shell.sent == ["set-vlan 100", "apply 100 AA:BB:CC:DD:EE:01"]
+
+
+def test_unreferenced_inputs_and_escaped_placeholders_do_not_require_values(window):
+    session = window.client_tabs.widget(0)
+    session.board_vlan_input.setText("not configured")
+    assert session._resolve_commands(["echo hello", "echo $${MMU_VLAN}"]) == [
+        "echo hello", "echo ${MMU_VLAN}"
+    ]
+
+
+def test_input_fields_override_variable_file_and_vlan_boundaries(window):
+    from mmu_control.storage.variable_store import VariableStoreError
+    session = window.client_tabs.widget(0)
+    session._variable_store.save({"MMU_VLAN": "999", "DU_MAC": "stale", "OTHER": "retained"})
+    for vlan in ("1", "4094"):
+        session.board_vlan_input.setText(vlan)
+        session.du_mac_input.setText("AA:BB:CC:DD:EE:FF")
+        assert session._resolve_commands(["${MMU_VLAN} ${DU_MAC} ${OTHER}"]) == [
+            f"{vlan} AA:BB:CC:DD:EE:FF retained"
+        ]
+    session.board_vlan_input.clear()
+    with pytest.raises(VariableStoreError, match="MMU_VLAN"):
+        session._resolve_commands(["${MMU_VLAN}"])
+
+
+def test_starting_at_later_step_does_not_require_skipped_input(window):
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session._automation_store.upsert(AutomationScenario(name="partial", steps=[
+        AutomationStep("skipped", "set-vlan ${MMU_VLAN}"),
+        AutomationStep("run", "echo later"),
+    ]))
+    session.refresh_shared_definitions()
+    session.automation_start_step_input.setCurrentIndex(1)
+    session._run_automation_scenario()
+    assert session._shell.sent == ["echo later"]
