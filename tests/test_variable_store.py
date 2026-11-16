@@ -34,24 +34,20 @@ def test_default_store_uses_per_user_data_directory(monkeypatch, tmp_path) -> No
     assert VariableStore.create_default().path == tmp_path / "MMUControl" / "variables.json"
 
 
-def test_client_variables_inherit_shared_defaults_and_override_locally(tmp_path):
-    shared = VariableStore(tmp_path / "variables.json")
-    shared.save({"MMU_PW_2": "shared-example", "TARGET": "shared-target"})
-    local = VariableStore(tmp_path / "clients" / "a" / "variables.json", fallback_path=shared.path)
-    assert local.load() == {"MMU_PW_2": "shared-example", "TARGET": "shared-target"}
-    local.save({"TARGET": "client-target"})
-    assert local.load() == {"MMU_PW_2": "shared-example", "TARGET": "client-target"}
-    assert shared.load()["TARGET"] == "shared-target"
-    assert json.loads(local.path.read_text())["variables"] == {"TARGET": "client-target"}
-    shared.save({"MMU_PW_2": "updated-example"})
-    assert local.load()["MMU_PW_2"] == "updated-example"
+def test_common_variable_updates_are_reread(tmp_path):
+    first = VariableStore(tmp_path / "variables.json")
+    second = VariableStore(first.path)
+    first.save({"MMU_PW_2": "first-example"})
+    assert second.load() == {"MMU_PW_2": "first-example"}
+    first.save({"MMU_PW_2": "updated-example"})
+    assert second.load() == {"MMU_PW_2": "updated-example"}
 
 
 def test_invalid_shared_json_fails_without_printing_secret_values(tmp_path):
     shared_path = tmp_path / "variables.json"
     shared_path.write_text('{"MMU_PW_2": "do-not-display"')
-    local = VariableStore(tmp_path / "clients" / "variables.json", fallback_path=shared_path)
+    store = VariableStore(shared_path)
     with pytest.raises(VariableStoreError) as error:
-        local.load()
+        store.load()
     assert str(shared_path) in str(error.value)
     assert "do-not-display" not in str(error.value)

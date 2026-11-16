@@ -69,17 +69,16 @@ def window(tmp_path, app):
     app.processEvents()
 
 
-def test_independent_ssh_sftp_variables_and_background_output(window, app):
+def test_independent_connections_with_common_variables_and_background_output(window, app):
     first = window.client_tabs.widget(0)
     second = window.add_client("Board B")
     assert first._ssh_manager is not second._ssh_manager
     assert first._config_manager.config_path != second._config_manager.config_path
-    assert first._variable_store.path != second._variable_store.path
+    assert first._variable_store.path == second._variable_store.path
     assert first._power_supply_manager is not second._power_supply_manager
     first._variable_store.save({"TARGET": "a"})
-    second._variable_store.save({"TARGET": "b"})
     assert first._variable_store.load() == {"TARGET": "a"}
-    assert second._variable_store.load() == {"TARGET": "b"}
+    assert second._variable_store.load() == {"TARGET": "a"}
 
     a, b = Shell(), Shell()
     first._shell, second._shell = a, b
@@ -195,23 +194,23 @@ def test_invalid_manifest_is_preserved_and_cannot_escape_data_directory(tmp_path
 def test_sftp_commands_and_simultaneous_scenarios_use_their_own_client(window):
     first = window.client_tabs.widget(0)
     second = window.add_client("Second")
-    for session, target in ((first, "alpha"), (second, "beta")):
+    for session, vlan in ((first, "100"), (second, "200")):
         session._shell = Shell()
         session._sftp_shell = Shell()
-        session._variable_store.save({"TARGET": target})
+        session.board_vlan_input.setText(vlan)
     first._send_sftp_command("put alpha.bin")
     second._send_sftp_command("get beta.bin")
     assert first._sftp_shell.sent == ["put alpha.bin"]
     assert second._sftp_shell.sent == ["get beta.bin"]
     first._automation_store.upsert(AutomationScenario(name="shared", steps=[
-        AutomationStep("run", "echo ${TARGET}", CompletionType.OUTPUT_CONTAINS,
+        AutomationStep("run", "echo ${MMU_VLAN}", CompletionType.OUTPUT_CONTAINS,
                        completion_value="done", timeout_seconds=100)
     ]))
     for session in (first, second):
         session.refresh_shared_definitions()
         session._run_automation_scenario()
-    assert first._shell.sent == ["echo alpha"]
-    assert second._shell.sent == ["echo beta"]
+    assert first._shell.sent == ["echo 100"]
+    assert second._shell.sent == ["echo 200"]
     first_runner, second_runner = first._automation_runner, second._automation_runner
     window.client_tabs.setCurrentIndex(0)
     window.client_tabs.setCurrentIndex(1)
@@ -462,7 +461,7 @@ def test_starting_at_later_step_does_not_require_skipped_input(window):
     assert session._shell.sent == ["echo later"]
 
 
-def test_all_clients_resolve_shared_root_variables_with_local_overrides(window):
+def test_all_clients_ignore_legacy_local_files_and_use_only_common_variables(window):
     from mmu_control.storage.variable_store import VariableStore
     shared = VariableStore(window._data_directory / "variables.json")
     shared.save({"MMU_PW_2": "shared-example"})
@@ -472,8 +471,10 @@ def test_all_clients_resolve_shared_root_variables_with_local_overrides(window):
     command = "example --password ${MMU_PW_2}"
     for session in (first, second, third):
         assert session._resolve_commands([command]) == ["example --password shared-example"]
-    second._variable_store.save({"MMU_PW_2": "client-example"})
-    assert second._resolve_commands([command]) == ["example --password client-example"]
+    legacy = VariableStore(second._config_manager.config_path.parent / "variables.json")
+    legacy.save({"MMU_PW_2": "ignored-client-example"})
+    original_legacy = legacy.path.read_bytes()
+    assert second._resolve_commands([command]) == ["example --password shared-example"]
     assert third._resolve_commands([command]) == ["example --password shared-example"]
     assert first._resolve_commands([command]) == ["example --password shared-example"]
     second._shell = Shell()
@@ -482,4 +483,12 @@ def test_all_clients_resolve_shared_root_variables_with_local_overrides(window):
     ]))
     second.refresh_shared_definitions()
     second._run_automation_scenario()
-    assert second._shell.sent == ["example --password client-example"]
+    assert second._shell.sent == ["example --password shared-example"]
+    shared.save({"MMU_PW_2": "updated-example"})
+    for session in (first, second, third):
+        assert session._resolve_commands([command]) == ["example --password updated-example"]
+    assert legacy.path.read_bytes() == original_legacy
+    shared.save({})
+    from mmu_control.core.variable_resolver import MissingVariablesError
+    with pytest.raises(MissingVariablesError, match="MMU_PW_2"):
+        second._resolve_commands([command])
