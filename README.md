@@ -140,8 +140,10 @@ to devices automatically.
 
 The first client reuses the existing `%APPDATA%/MMUControl/settings.json` and
 `variables.json`. Added clients store their own files in
-`%APPDATA%/MMUControl/clients/<client-id>/`. Configure per-client command variables
-in that client's `variables.json` using the same schema documented above. Tab
+`%APPDATA%/MMUControl/clients/<client-id>/`. Define common command variables in `%APPDATA%/MMUControl/variables.json`.
+Every Client tab reads this file. Override individual values in that client's
+`variables.json` using the same schema documented above; client values take
+precedence over common values. Files are reread for each command/scenario run. Tab
 layout is saved in `client_tabs.json`; closing a tab retains its settings files.
 Command and scenario definitions remain shared across clients and refresh when
 switching to an idle client tab. An active scenario keeps its current definition
@@ -166,3 +168,13 @@ keeps the values captured when it started; edits apply to subsequent runs.
 These two variable names use the current Client input fields, overriding values
 with the same names in `variables.json`. Other variables continue to use that file.
 Literal remote-shell placeholders can still be escaped as `$${MMU_VLAN}`.
+
+### Shared variable lookup
+
+For `${MMU_PW_2}` (and other user-defined variables), every desktop tab loads
+`%APPDATA%/MMUControl/variables.json` first, then overlays its own
+`%APPDATA%/MMUControl/clients/<client-id>/variables.json`. The legacy default
+client uses the common file directly. A missing per-client file does not hide
+common variables. Names are case-sensitive; use `MMU_PW_2` as the JSON key and
+`${MMU_PW_2}` in the command. Client VLAN/MAC fields still own `${MMU_VLAN}` and
+`${DU_MAC}` as described above.
