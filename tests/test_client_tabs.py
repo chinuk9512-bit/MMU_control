@@ -492,3 +492,59 @@ def test_all_clients_ignore_legacy_local_files_and_use_only_common_variables(win
     from mmu_control.core.variable_resolver import MissingVariablesError
     with pytest.raises(MissingVariablesError, match="MMU_PW_2"):
         second._resolve_commands([command])
+
+
+def test_mmu_mac_is_per_client_restored_and_shares_network_row(window, app):
+    from PySide6.QtCore import QPoint
+    first = window.client_tabs.widget(0)
+    second = window.add_client("Second")
+    first.mmu_mac_input.setText("aa-bb-cc-dd-ee-01")
+    second.mmu_mac_input.setText("aa:bb:cc:dd:ee:02")
+    assert first._resolve_commands(["set ${MMU_MAC}"]) == ["set AA:BB:CC:DD:EE:01"]
+    assert second._resolve_commands(["set ${MMU_MAC}"]) == ["set AA:BB:CC:DD:EE:02"]
+    window.show()
+    app.processEvents()
+    fields = (second.board_vlan_input, second.du_mac_input, second.mmu_mac_input)
+    positions = [field.mapTo(window, QPoint()) for field in fields]
+    assert len({point.y() for point in positions}) == 1
+    assert positions[0].x() < positions[1].x() < positions[2].x()
+    assert window.close()
+    restored = ClientTabsWindow(window._data_directory, window._session_factory)
+    try:
+        assert restored.client_tabs.widget(0).mmu_mac_input.text() == "aa-bb-cc-dd-ee-01"
+        assert restored.client_tabs.widget(1).mmu_mac_input.text() == "aa:bb:cc:dd:ee:02"
+    finally:
+        restored.close()
+
+
+@pytest.mark.parametrize("mac", ["", "AA:BB:CC:DD:EE", "AA:BB:CC:DD:EE:GG", "AA:BB-CC:DD:EE:FF"])
+def test_invalid_mmu_mac_blocks_scenario_before_first_command(window, mac):
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session.mmu_mac_input.setText(mac)
+    session._automation_store.upsert(AutomationScenario(name="config", steps=[
+        AutomationStep("first", "echo start"),
+        AutomationStep("mac", "set-mac ${MMU_MAC}"),
+    ]))
+    session.refresh_shared_definitions()
+    session._run_automation_scenario()
+    assert session._shell.sent == []
+    assert "MMU_MAC" in session.automation_status_label.text()
+
+
+def test_mmu_mac_snapshot_and_input_precedence(window):
+    session = window.client_tabs.widget(0)
+    session._variable_store.save({"MMU_MAC": "stale-file-value"})
+    assert session._resolve_commands(["echo unused"]) == ["echo unused"]
+    session._shell = Shell()
+    session.mmu_mac_input.setText("AA:BB:CC:DD:EE:01")
+    session._automation_store.upsert(AutomationScenario(name="snapshot", steps=[
+        AutomationStep("wait", "echo waiting", CompletionType.OUTPUT_CONTAINS,
+                       completion_value="continue", timeout_seconds=100),
+        AutomationStep("apply", "set ${MMU_MAC}"),
+    ]))
+    session.refresh_shared_definitions()
+    session._run_automation_scenario()
+    session.mmu_mac_input.setText("AA:BB:CC:DD:EE:02")
+    session._automation_runner.receive_output("continue")
+    assert session._shell.sent == ["echo waiting", "set AA:BB:CC:DD:EE:01"]

@@ -31,6 +31,7 @@ class AppSettingsTest(unittest.TestCase):
                     "display_name": "MMU-A",
                     "vlan": "100",
                     "du_mac": "AA:BB:CC:DD:EE:FF",
+                    "mmu_mac": "11:22:33:44:55:66",
                 },
             }
         )
@@ -56,6 +57,7 @@ class AppSettingsTest(unittest.TestCase):
                     "display_name": "MMU-A",
                     "vlan": "100",
                     "du_mac": "AA:BB:CC:DD:EE:FF",
+                    "mmu_mac": "11:22:33:44:55:66",
                 },
                 "power_supply": {"ip_address": "", "voltage": "", "current": ""},
                 "window": {
