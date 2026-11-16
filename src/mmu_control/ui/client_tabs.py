@@ -65,7 +65,10 @@ class ClientTabsWindow(QMainWindow):
         directory = self._data_directory if client_id == "default" else self._data_directory / "clients" / client_id
         session = self._session_factory(
             config_manager=ConfigManager(directory / "settings.json"),
-            variable_store=VariableStore(directory / "variables.json"),
+            variable_store=VariableStore(
+                directory / "variables.json",
+                fallback_path=self._data_directory / "variables.json",
+            ),
         )
         # QMainWindow is also a QWidget: keep the existing workspace and status
         # bar intact while embedding it instead of creating another OS window.

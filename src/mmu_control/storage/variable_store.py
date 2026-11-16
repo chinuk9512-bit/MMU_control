@@ -17,8 +17,9 @@ class VariableStoreError(RuntimeError):
 class VariableStore:
     _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, fallback_path: Path | None = None) -> None:
         self._path = path
+        self._fallback_path = fallback_path
 
     @property
     def path(self) -> Path:
@@ -29,6 +30,14 @@ class VariableStore:
         return cls(default_user_data_directory() / "variables.json")
 
     def load(self) -> dict[str, str]:
+        """Load shared defaults, overlaid by this client's local variable file."""
+        variables = {}
+        if self._fallback_path is not None and self._fallback_path != self._path:
+            variables.update(VariableStore(self._fallback_path).load())
+        variables.update(self._load_local())
+        return variables
+
+    def _load_local(self) -> dict[str, str]:
         if not self._path.exists():
             return {}
         try:
@@ -47,6 +56,7 @@ class VariableStore:
         return variables
 
     def save(self, variables: dict[str, str]) -> None:
+        """Save only to this client's file; never modify the shared defaults."""
         self._validate_names(variables)
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)

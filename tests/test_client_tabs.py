@@ -460,3 +460,26 @@ def test_starting_at_later_step_does_not_require_skipped_input(window):
     session.automation_start_step_input.setCurrentIndex(1)
     session._run_automation_scenario()
     assert session._shell.sent == ["echo later"]
+
+
+def test_all_clients_resolve_shared_root_variables_with_local_overrides(window):
+    from mmu_control.storage.variable_store import VariableStore
+    shared = VariableStore(window._data_directory / "variables.json")
+    shared.save({"MMU_PW_2": "shared-example"})
+    first = window.client_tabs.widget(0)
+    second = window.add_client("Second")
+    third = window.add_client("Third")
+    command = "example --password ${MMU_PW_2}"
+    for session in (first, second, third):
+        assert session._resolve_commands([command]) == ["example --password shared-example"]
+    second._variable_store.save({"MMU_PW_2": "client-example"})
+    assert second._resolve_commands([command]) == ["example --password client-example"]
+    assert third._resolve_commands([command]) == ["example --password shared-example"]
+    assert first._resolve_commands([command]) == ["example --password shared-example"]
+    second._shell = Shell()
+    second._automation_store.upsert(AutomationScenario(name="shared-vars", steps=[
+        AutomationStep("run", command),
+    ]))
+    second.refresh_shared_definitions()
+    second._run_automation_scenario()
+    assert second._shell.sent == ["example --password client-example"]
