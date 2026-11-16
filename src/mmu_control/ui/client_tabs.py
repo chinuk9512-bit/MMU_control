@@ -60,15 +60,12 @@ class ClientTabsWindow(QMainWindow):
         self, name: str | None = None, client_id: str | None = None,
         *, fallback_name: str | None = None,
     ) -> MainWindow:
-        """Create a disconnected client with its own managers, variables and settings."""
+        """Create a client with independent connections/settings and common variables."""
         client_id = client_id or uuid4().hex
         directory = self._data_directory if client_id == "default" else self._data_directory / "clients" / client_id
         session = self._session_factory(
             config_manager=ConfigManager(directory / "settings.json"),
-            variable_store=VariableStore(
-                directory / "variables.json",
-                fallback_path=self._data_directory / "variables.json",
-            ),
+            variable_store=VariableStore(self._data_directory / "variables.json"),
         )
         # QMainWindow is also a QWidget: keep the existing workspace and status
         # bar intact while embedding it instead of creating another OS window.
@@ -137,7 +134,7 @@ class ClientTabsWindow(QMainWindow):
 
     def _current_changed(self, index: int) -> None:
         if index >= 0:
-            # Definitions are shared, but executions and variable stores are not.
+            # Definitions and user variables are shared; executions remain independent.
             session = self.client_tabs.widget(index)
             session.refresh_shared_definitions()
         self._save_tabs()
