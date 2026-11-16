@@ -647,6 +647,7 @@ class MainWindow(QMainWindow):
             display_name=self.board_name_input.text().strip(),
             vlan=self.board_vlan_input.text().strip(),
             du_mac=self.du_mac_input.text().strip(),
+            mmu_mac=self.mmu_mac_input.text().strip(),
             ip_address=self.board_ip_input.text().strip(),
             username=self.board_username_input.text().strip(),
             password=self.board_password_input.text(),
@@ -692,6 +693,7 @@ class MainWindow(QMainWindow):
         self.board_name_input.setText(settings.board.display_name)
         self.board_vlan_input.setText(settings.board.vlan)
         self.du_mac_input.setText(settings.board.du_mac)
+        self.mmu_mac_input.setText(settings.board.mmu_mac)
         self.board_ip_input.setText(settings.board.ip_address)
         self.board_username_input.setText(settings.board.username)
         self.board_password_input.setText(settings.board.password)
@@ -1890,16 +1892,21 @@ class MainWindow(QMainWindow):
         # fall back to stale values in variables.json when an input is cleared.
         variables.pop("MMU_VLAN", None)
         variables.pop("DU_MAC", None)
+        variables.pop("MMU_MAC", None)
         if "MMU_VLAN" in names:
             vlan = self.board_vlan_input.text().strip()
             if not re.fullmatch(r"[0-9]{1,4}", vlan) or not 1 <= int(vlan) <= 4094:
                 raise VariableStoreError("MMU_VLAN: enter a VLAN number from 1 to 4094 in this Client tab.")
             variables["MMU_VLAN"] = str(int(vlan))
-        if "DU_MAC" in names:
-            mac = self.du_mac_input.text().strip()
+        for name, field in (("DU_MAC", self.du_mac_input), ("MMU_MAC", self.mmu_mac_input)):
+            if name not in names:
+                continue
+            mac = field.text().strip()
             if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}", mac):
-                raise VariableStoreError("DU_MAC: enter six hexadecimal pairs, e.g. AA:BB:CC:DD:EE:FF, in this Client tab.")
-            variables["DU_MAC"] = mac.replace("-", ":").upper()
+                raise VariableStoreError(
+                    f"{name}: enter six hexadecimal pairs, e.g. AA:BB:CC:DD:EE:FF, in this Client tab."
+                )
+            variables[name] = mac.replace("-", ":").upper()
         missing = names - variables.keys()
         if missing:
             raise MissingVariablesError(set(missing))
@@ -2913,6 +2920,9 @@ class MainWindow(QMainWindow):
         self.du_mac_input = QLineEdit(self)
         self.du_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
         self.du_mac_input.setToolTip("Used as ${DU_MAC} in commands and scenarios")
+        self.mmu_mac_input = QLineEdit(self)
+        self.mmu_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
+        self.mmu_mac_input.setToolTip("Used as ${MMU_MAC} in commands and scenarios")
         network_row = QWidget(self.mmu_group_content)
         network_layout = QHBoxLayout(network_row)
         network_layout.setContentsMargins(0, 0, 0, 0)
@@ -2922,6 +2932,10 @@ class MainWindow(QMainWindow):
         du_mac_label.setBuddy(self.du_mac_input)
         network_layout.addWidget(du_mac_label)
         network_layout.addWidget(self.du_mac_input, stretch=3)
+        mmu_mac_label = QLabel("MMU MAC", network_row)
+        mmu_mac_label.setBuddy(self.mmu_mac_input)
+        network_layout.addWidget(mmu_mac_label)
+        network_layout.addWidget(self.mmu_mac_input, stretch=3)
         vlan_label = QLabel("VLAN", self.mmu_group_content)
         vlan_label.setBuddy(self.board_vlan_input)
         layout.addRow(vlan_label, network_row)

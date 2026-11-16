@@ -232,7 +232,7 @@ independent; `MainWindow` remains available for single-workspace tests and calle
 `client_tabs.json` stores stable IDs, names, order and the selected client. The
 legacy first client uses the existing user settings file; subsequent clients
 use `clients/<uuid>/settings.json`. All tabs read only the common `variables.json`.
-VLAN and DU MAC remain in each client's connection settings. No session is
+VLAN, DU MAC and MMU MAC remain in each client's connection settings. No session is
 connected automatically during restoration. Shared command/scenario JSON stays at
 its existing location; idle workspaces refresh definitions on tab activation.
 

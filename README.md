@@ -148,22 +148,22 @@ switching to an idle client tab. An active scenario keeps its current definition
 until it finishes. This tab workflow applies to the desktop app; the web UI is
 unchanged.
 
-### Per-client VLAN and DU MAC variables
+### Per-client VLAN and MAC variables
 
-Set **VLAN** and **DU MAC** in each desktop Client panel. The values are saved
+Set **VLAN**, **DU MAC**, and **MMU MAC** on the same row in each desktop Client panel. The values are saved
 with that client's connection settings and restored on restart. Shared Commands
 and automation scenarios can use these placeholders:
 
 ```bash
-configure --vlan ${MMU_VLAN} --du-mac ${DU_MAC}
+configure --vlan ${MMU_VLAN} --du-mac ${DU_MAC} --mmu-mac ${MMU_MAC}
 ```
 
-VLAN must be 1–4094. DU MAC accepts six hexadecimal pairs separated consistently
-by colons or hyphens, and is substituted as uppercase colon-separated pairs.
+VLAN must be 1–4094. DU MAC and MMU MAC accept six hexadecimal pairs separated consistently
+by colons or hyphens, and are substituted as uppercase colon-separated pairs.
 Only referenced inputs are required. A missing or invalid referenced value blocks
 the whole command group or scenario before any command is sent. A running scenario
 keeps the values captured when it started; edits apply to subsequent runs.
-These two variable names use the current Client input fields, overriding values
+These three variable names use the current Client input fields, overriding values
 with the same names in `variables.json`. Other variables continue to use that file.
 Literal remote-shell placeholders can still be escaped as `$${MMU_VLAN}`.
 
@@ -173,5 +173,5 @@ For `${MMU_PW_2}` (and other user-defined variables), every desktop tab loads
 only `%APPDATA%/MMUControl/variables.json`. Client-specific `variables.json`
 files are no longer read or created; existing files are left untouched. Move any
 variables you still need from those files into the common file yourself. Names are case-sensitive; use `MMU_PW_2` as the JSON key and
-`${MMU_PW_2}` in the command. Client VLAN/MAC fields still own `${MMU_VLAN}` and
-`${DU_MAC}` as described above.
+`${MMU_PW_2}` in the command. Client VLAN/MAC fields still own `${MMU_VLAN}`,
+`${DU_MAC}`, and `${MMU_MAC}` as described above.
