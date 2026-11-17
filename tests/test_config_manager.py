@@ -59,3 +59,53 @@ class ConfigManagerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_private_paths_ignore_working_directory_and_appdata(monkeypatch, tmp_path):
+    from mmu_control.core import config_manager
+    from mmu_control.core.logging_config import default_log_path
+    root = tmp_path / "project"
+    monkeypatch.setattr(config_manager, "__file__", str(root / "src/mmu_control/core/config_manager.py"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "old-appdata"))
+    monkeypatch.chdir(tmp_path)
+    expected = root / "local_data"
+    assert config_manager.default_user_data_directory() == expected
+    assert config_manager.default_config_path() == expected / "settings.json"
+    assert default_log_path() == expected / "mmu_control.log"
+    assert not expected.exists()  # Resolving paths neither creates nor migrates data.
+
+
+def test_frozen_private_data_uses_project_above_dist(monkeypatch, tmp_path):
+    from mmu_control.core import config_manager
+    root = tmp_path / "project"
+    (root / "src/mmu_control").mkdir(parents=True)
+    monkeypatch.setattr(config_manager.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(config_manager.sys, "executable", str(root / "dist/MMUControl.exe"))
+    monkeypatch.setattr(config_manager.sys, "_MEIPASS", str(tmp_path / "extraction"), raising=False)
+    assert config_manager.default_user_data_directory() == root / "local_data"
+
+
+def test_standalone_exe_uses_distribution_directory(monkeypatch, tmp_path):
+    from mmu_control.core import config_manager
+    monkeypatch.setattr(config_manager.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(config_manager.sys, "executable", str(tmp_path / "distribution/MMUControl.exe"))
+    assert config_manager.default_user_data_directory() == tmp_path / "distribution/local_data"
+
+
+def test_launch_outside_project_does_not_migrate_old_appdata(monkeypatch, tmp_path):
+    from mmu_control.core import config_manager
+    from mmu_control.storage.variable_store import VariableStore
+    root = tmp_path / "project"
+    (root / "src/mmu_control").mkdir(parents=True)
+    old = tmp_path / "appdata/MMUControl"
+    old.mkdir(parents=True)
+    original = '{"ssh": {"host": "old-host"}}'
+    (old / "settings.json").write_text(original)
+    monkeypatch.setenv("APPDATA", str(old.parent))
+    monkeypatch.setattr(config_manager, "__file__", str(root / "src/mmu_control/core/config_manager.py"))
+    monkeypatch.chdir(tmp_path)
+    assert config_manager.project_storage_root() == root
+    assert ConfigManager.create_default().load().ssh.host == ""
+    assert VariableStore.create_default().load() == {}
+    assert not (root / "local_data").exists()
+    assert (old / "settings.json").read_text() == original

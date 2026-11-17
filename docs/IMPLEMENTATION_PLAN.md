@@ -15,7 +15,7 @@ This document tracks implemented work and likely next work. Keep it aligned with
 - `MainWindow` with connection panel, terminal workspace, SFTP tab, command/scenario side tabs, board console tabs, and status bar.
 - Persisted SSH, board/MMU, power supply, selected USB port, active profile name, and window state.
 - Collapsible connection panel; the unused response pane has been removed.
-- `%APPDATA%/MMUControl/settings.json` loading/saving with default fallback behavior.
+- `<project>/local_data/settings.json` loading/saving in the Git-ignored project-local data directory.
 
 ### Phase 3. SSH and Interactive Shell
 

@@ -41,7 +41,7 @@ python -m streamlit run .\src\mmu_control\web_app.py
 ```
 
 The web UI runs locally and reuses the same settings, command sets, and
-automation scenarios stored in `%APPDATA%/MMUControl`. Its Terminal tab embeds
+automation scenarios stored in `<project>/local_data`. Its Terminal tab embeds
 a browser terminal served by `ttyd`, so install `ttyd` and make it available on
 `PATH`, or set `MMU_CONTROL_TTYD` to the full `ttyd` executable path before
 starting `mmu-control-web`. The embedded terminal runs a normal local `ssh`
@@ -79,8 +79,7 @@ the app-managed Paramiko connection used by automation and buttons.
 - Shared commands and scenario steps may reference per-user values with the
   `${VARIABLE_NAME}` syntax, for example `ssh ${MMU_USERNAME}@${MMU_HOST}`.
   Literal remote-shell placeholders can be escaped as `$${VARIABLE_NAME}`.
-- Each user supplies the actual values in `%APPDATA%\MMUControl\variables.json`
-  (or `~/AppData/Roaming/MMUControl/variables.json` when `APPDATA` is unset):
+- Each user supplies the actual values in `<project>\local_data\variables.json`:
 
   ```json
   {
@@ -138,9 +137,9 @@ Closing the last tab opens a fresh disconnected client. On restart the app resto
 the tab names, order, active tab, and each client's saved fields, without connecting
 to devices automatically.
 
-The first client reuses `%APPDATA%/MMUControl/settings.json`. Added clients store
-connection settings in `%APPDATA%/MMUControl/clients/<client-id>/settings.json`.
-All tabs read the same `%APPDATA%/MMUControl/variables.json` for user-defined
+The first client reuses `<project>/local_data/settings.json`. Added clients store
+connection settings in `<project>/local_data/clients/<client-id>/settings.json`.
+All tabs read the same `<project>/local_data/variables.json` for user-defined
 command variables, rereading it for each command/scenario run. Tab
 layout is saved in `client_tabs.json`; closing a tab retains its settings files.
 Command and scenario definitions remain shared across clients and refresh when
@@ -170,7 +169,7 @@ Literal remote-shell placeholders can still be escaped as `$${MMU_VLAN}`.
 ### Shared variable lookup
 
 For `${MMU_PW_2}` (and other user-defined variables), every desktop tab loads
-only `%APPDATA%/MMUControl/variables.json`. Client-specific `variables.json`
+only `<project>/local_data/variables.json`. Client-specific `variables.json`
 files are no longer read or created; existing files are left untouched. Move any
 variables you still need from those files into the common file yourself. Names are case-sensitive; use `MMU_PW_2` as the JSON key and
 `${MMU_PW_2}` in the command. Client VLAN/MAC fields still own `${MMU_VLAN}`,
@@ -219,3 +218,18 @@ removed here. Changes save immediately to the common `variables.json` for all
 clients and apply to subsequent commands/scenario runs. The list refreshes with
 values hidden after a successful change. Fix unreadable/invalid JSON files and
 refresh before making changes; existing files are not overwritten on load errors.
+
+### Private runtime data location
+
+Settings, client tabs, common variables, client-specific settings and logs use
+`<project>/local_data/`, which is excluded from Git by `/local_data/`.
+Development uses the installed source checkout regardless of the working directory.
+An EXE in a project's `dist` directory uses that project's `local_data/`; a
+standalone EXE without a source tree uses `local_data/` beside the EXE, never
+PyInstaller's temporary extraction folder. The location must be writable.
+
+No existing AppData files are automatically copied, moved or deleted, and no
+sample data/templates are generated. Copy any existing settings you wish to keep
+manually into this directory before starting the program. Existing behavior when
+settings are absent is unchanged. Shared command/scenario JSON locations are
+unchanged. Exclude `local_data/` when sharing a ZIP of the project.

@@ -50,15 +50,18 @@ The optional dependency groups in `pyproject.toml` provide the supported install
 
 ## Runtime User Data
 
-The application stores user data under `%APPDATA%\MMUControl` on Windows. If `APPDATA` is not defined, it falls back to `~/AppData/Roaming/MMUControl`.
+The application stores private runtime data in the Git-ignored project-root `local_data/`. Frozen builds use the containing project above `dist`, or the executable directory in standalone distributions. No AppData migration or template initialization is performed.
 
 Expected files include:
 
 - `settings.json` - SSH, board/MMU, power supply, active profile name, and window state.
-- `command_sets.json` - saved command folders and command groups.
-- `automation_scenarios.json` - saved automation scenarios.
-- `profiles.json` - connection profile storage for future profile-management UI.
+- `client_tabs.json` - client tab names, order and selection.
+- `variables.json` - common command variables.
+- `clients/<ID>/settings.json` - per-client connection fields and VLAN/MAC inputs.
 - `mmu_control.log` - rotating application log file.
+
+Shared commands and scenarios remain under `src/mmu_control/user_command/` and
+`src/mmu_control/user_scenario/`; their locations are unchanged.
 
 ## External Environment Requirements
 

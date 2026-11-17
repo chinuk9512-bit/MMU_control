@@ -33,7 +33,7 @@
 - When adding fields, make `from_dict` tolerate missing values with safe defaults.
 - Keep schema changes backward compatible.
 - Save persistent JSON through a temporary file and replace where practical.
-- Use `%APPDATA%/MMUControl` as the default user data location, with the current fallback behavior from `default_user_data_directory()`.
+- Use the Git-ignored project-root `local_data/` for private runtime data. Never automatically migrate AppData files or commit private data.
 
 ## Terminal and Shell
 
