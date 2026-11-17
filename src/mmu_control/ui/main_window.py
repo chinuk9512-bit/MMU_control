@@ -1888,25 +1888,30 @@ class MainWindow(QMainWindow):
         """Snapshot local variables and validate referenced client input fields."""
         variables = self._variable_store.load()
         names = set().union(*(VariableResolver.names(command) for command in commands))
-        # These two names always belong to the current client inputs. Never
+        # These names always belong to the current client inputs. Never
         # fall back to stale values in variables.json when an input is cleared.
         variables.pop("MMU_VLAN", None)
-        variables.pop("DU_MAC", None)
-        variables.pop("MMU_MAC", None)
+        for base in ("DU_MAC", "MMU_MAC"):
+            for suffix in ("", "_HEAD", "_TAIL"):
+                variables.pop(base + suffix, None)
         if "MMU_VLAN" in names:
             vlan = self.board_vlan_input.text().strip()
             if not re.fullmatch(r"[0-9]{1,4}", vlan) or not 1 <= int(vlan) <= 4094:
                 raise VariableStoreError("MMU_VLAN: enter a VLAN number from 1 to 4094 in this Client tab.")
             variables["MMU_VLAN"] = str(int(vlan))
         for name, field in (("DU_MAC", self.du_mac_input), ("MMU_MAC", self.mmu_mac_input)):
-            if name not in names:
+            if not names.intersection((name, name + "_HEAD", name + "_TAIL")):
                 continue
             mac = field.text().strip()
             if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}", mac):
                 raise VariableStoreError(
                     f"{name}: enter six hexadecimal pairs, e.g. AA:BB:CC:DD:EE:FF, in this Client tab."
                 )
-            variables[name] = mac.replace("-", ":").upper()
+            normalized = mac.replace("-", ":").upper()
+            digits = normalized.replace(":", "")
+            variables[name] = normalized
+            variables[name + "_HEAD"] = digits[:4]
+            variables[name + "_TAIL"] = digits[4:]
         missing = names - variables.keys()
         if missing:
             raise MissingVariablesError(set(missing))
@@ -2919,10 +2924,10 @@ class MainWindow(QMainWindow):
         self.board_vlan_input.setToolTip("Used as ${MMU_VLAN} in commands and scenarios")
         self.du_mac_input = QLineEdit(self)
         self.du_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
-        self.du_mac_input.setToolTip("Used as ${DU_MAC} in commands and scenarios")
+        self.du_mac_input.setToolTip("Use ${DU_MAC} for the full MAC, ${DU_MAC_HEAD} for the first 4 hex digits, ${DU_MAC_TAIL} for the last 8")
         self.mmu_mac_input = QLineEdit(self)
         self.mmu_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
-        self.mmu_mac_input.setToolTip("Used as ${MMU_MAC} in commands and scenarios")
+        self.mmu_mac_input.setToolTip("Use ${MMU_MAC} for the full MAC, ${MMU_MAC_HEAD} for the first 4 hex digits, ${MMU_MAC_TAIL} for the last 8")
         network_row = QWidget(self.mmu_group_content)
         network_layout = QHBoxLayout(network_row)
         network_layout.setContentsMargins(0, 0, 0, 0)
