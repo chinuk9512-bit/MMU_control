@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -71,15 +70,16 @@ def default_config_path() -> Path:
 
 
 def default_user_data_directory() -> Path:
-    """Return the per-user directory for data that must survive app upgrades.
-
-    PyInstaller extracts bundled package files to a temporary directory for a
-    one-file executable.  User-created data must therefore never use a path
-    inside the package directory.
-    """
-    appdata = os.environ.get("APPDATA")
-    base_path = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    return base_path / "MMUControl"
+    """Return project-local private data, never AppData or a bundle temp path."""
+    if getattr(sys, "frozen", False):
+        try:
+            root = project_storage_root()
+        except RuntimeError:
+            # A standalone distribution need not contain the source tree.
+            root = Path(sys.executable).resolve().parent
+    else:
+        root = Path(__file__).resolve().parents[3]
+    return root / "local_data"
 
 
 def project_storage_root(project_root: Path | None = None) -> Path:
@@ -101,6 +101,10 @@ def project_storage_root(project_root: Path | None = None) -> Path:
     for candidate in (search_start, *search_start.parents):
         if (candidate / "src" / "mmu_control").is_dir():
             return candidate
+    if not getattr(sys, "frozen", False):
+        source_root = Path(__file__).resolve().parents[3]
+        if (source_root / "src" / "mmu_control").is_dir():
+            return source_root
     raise RuntimeError(
         "Unable to locate project root containing src/mmu_control; "
         "provide project_root explicitly."

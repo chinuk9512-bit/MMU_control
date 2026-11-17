@@ -100,8 +100,8 @@ src/mmu_control/
 - `TerminalStreamFilter`
   - Removes ANSI/VT/control sequences while preserving parser state across chunks.
 - `ConfigManager`
-  - Loads and saves `%APPDATA%/MMUControl/settings.json`.
-  - Falls back to `~/AppData/Roaming/MMUControl` when `APPDATA` is unavailable.
+  - Loads and saves `<project>/local_data/settings.json`.
+  - Uses the source root independently of the working directory; frozen builds use the containing project or standalone EXE directory.
 - `run_with_retry`
   - Shared retry/backoff helper.
 
@@ -200,22 +200,22 @@ Automation currently targets the active terminal abstraction and uses remote-fil
 Default user data location:
 
 ```text
-%APPDATA%/MMUControl
+<project>/local_data
 ```
 
-Fallback when `APPDATA` is missing:
-
-```text
-~/AppData/Roaming/MMUControl
-```
+The folder is excluded from Git. Frozen builds use the project above `dist`,
+or the EXE directory for standalone distributions. AppData is not read or copied.
 
 Files:
 
 - `settings.json` - connection, power supply, board, active profile, and window state.
-- `command_sets.json` - hierarchical command folders and command groups.
-- `automation_scenarios.json` - automation scenarios.
-- `profiles.json` - profile storage for future profile UI expansion.
+- `client_tabs.json` - client tab names, order and selection.
+- `variables.json` - common command variables.
+- `clients/<ID>/settings.json` - per-client connection fields and VLAN/MAC inputs.
 - `mmu_control.log` - rotating application log.
+
+Shared commands and scenarios remain under `src/mmu_control/user_command/` and
+`src/mmu_control/user_scenario/`; their locations are unchanged.
 
 ## Packaging
 

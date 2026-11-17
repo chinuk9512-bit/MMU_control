@@ -69,15 +69,18 @@ The board area supports:
 
 ## Persistence
 
-User data lives under `%APPDATA%/MMUControl`, with a fallback to `~/AppData/Roaming/MMUControl`.
+Private runtime data lives in the Git-ignored `<project>/local_data` directory.
 
 Key files:
 
 - `settings.json`
-- `command_sets.json`
-- `automation_scenarios.json`
-- `profiles.json`
+- `client_tabs.json`
+- `variables.json`
+- `clients/<ID>/settings.json`
 - `mmu_control.log`
+
+Shared commands/scenarios remain in `src/mmu_control/user_command` and `user_scenario`.
+No AppData migration is performed.
 
 Packaged resources live in `src/mmu_control/resources`.
 

@@ -30,8 +30,10 @@ def test_variable_store_rejects_invalid_names_without_showing_values(tmp_path) -
 
 
 def test_default_store_uses_per_user_data_directory(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("APPDATA", str(tmp_path))
-    assert VariableStore.create_default().path == tmp_path / "MMUControl" / "variables.json"
+    from mmu_control.core import config_manager
+    monkeypatch.setenv("APPDATA", str(tmp_path / "ignored-appdata"))
+    monkeypatch.setattr(config_manager, "__file__", str(tmp_path / "src/mmu_control/core/config_manager.py"))
+    assert VariableStore.create_default().path == tmp_path / "local_data" / "variables.json"
 
 
 def test_common_variable_updates_are_reread(tmp_path):
