@@ -1945,7 +1945,9 @@ class MainWindow(QMainWindow):
 
     def _show_variable_list(self) -> None:
         name = self.property("client_name") or self.board_name_input.text().strip() or "Current client"
-        VariableListDialog(self._variable_catalog, self, client_name=name).exec()
+        VariableListDialog(
+            self._variable_catalog, self, client_name=name, variable_store=self._variable_store
+        ).exec()
 
     def _resolve_commands(self, commands: list[str]) -> list[str]:
         """Resolve every command before any command in a group is sent."""
