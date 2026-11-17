@@ -193,5 +193,18 @@ validates the corresponding Client MAC input. Parts follow the same Client input
 precedence and scenario-start snapshot rules as the full MAC variables.
 
 Hover over a DU MAC or MMU MAC input (or its label) to see the exact full/HEAD/TAIL
-variable names. Clicking or tabbing into either input also shows persistent,
-selectable variable help below the MAC row until focus moves elsewhere.
+variable names. Clicking or tabbing into either input also displays its tooltip, without adding
+an extra help area or changing the panel height.
+
+### Variable catalog
+
+Click **Variables** at the top of a Client workspace to open a searchable list of
+all common `variables.json` names and built-in Client input/full MAC/HEAD/TAIL
+variables. The dialog identifies the selected Client and shows each variable's
+source and purpose, including names whose inputs are not configured yet. Click a
+row or use **Copy variable** to copy `${NAME}` syntax, never its value.
+
+Values are hidden by default; **Show values** explicitly reveals them, including
+any passwords in the common file. Search matches only names, sources and
+descriptions. **Refresh** reloads the common file and current Client inputs and
+hides values again. Opening the dialog also reads the latest file contents.

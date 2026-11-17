@@ -54,11 +54,13 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QTabWidget,
+    QToolTip,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from mmu_control.ui.variable_list_dialog import VariableEntry, VariableListDialog
 from mmu_control.core.config_manager import ConfigError, ConfigManager
 from mmu_control.core.automation_runner import AutomationRunner, AutomationStatus
 from mmu_control.core.automation_terminal import AutomationTerminal, AutomationTerminalCapability
@@ -1917,6 +1919,34 @@ class MainWindow(QMainWindow):
             raise MissingVariablesError(set(missing))
         return variables
 
+    def _variable_catalog(self) -> tuple[list[VariableEntry], str]:
+        """List common names and client-owned variables, including unavailable inputs."""
+        error = ""
+        try:
+            common = self._variable_store.load()
+        except VariableStoreError as exc:
+            common = {}
+            error = str(exc)
+        descriptions = {"MMU_VLAN": "Client VLAN (1–4094)"}
+        for base in ("DU_MAC", "MMU_MAC"):
+            descriptions[base] = "Full MAC address, separated by colons"
+            descriptions[base + "_HEAD"] = "First 4 hexadecimal digits, without separators or 0x"
+            descriptions[base + "_TAIL"] = "Last 8 hexadecimal digits, without separators or 0x"
+        entries = [VariableEntry(name, "Common variables.json", "User-defined variable", value)
+                   for name, value in common.items() if name not in descriptions]
+        for name, description in descriptions.items():
+            try:
+                value = self._command_variables([f"${{{name}}}"])[name]
+            except (VariableStoreError, MissingVariablesError):
+                value = None
+                description += " (input missing/invalid or variable file unreadable)"
+            entries.append(VariableEntry(name, "Client input", description, value))
+        return sorted(entries, key=lambda entry: entry.name), error
+
+    def _show_variable_list(self) -> None:
+        name = self.property("client_name") or self.board_name_input.text().strip() or "Current client"
+        VariableListDialog(self._variable_catalog, self, client_name=name).exec()
+
     def _resolve_commands(self, commands: list[str]) -> list[str]:
         """Resolve every command before any command in a group is sent."""
         variables = self._command_variables(commands)
@@ -2798,6 +2828,10 @@ class MainWindow(QMainWindow):
         self.connection_panel_toggle_button.setChecked(True)
         header_layout.addWidget(self.connection_panel_toggle_button)
         header_layout.addStretch(1)
+        self.variable_list_button = QPushButton("Variables", header)
+        self.variable_list_button.setToolTip("Search and copy command variable names for this Client")
+        self.variable_list_button.clicked.connect(self._show_variable_list)
+        header_layout.addWidget(self.variable_list_button)
         layout.addWidget(header)
 
         self.connection_panel_content = QWidget(panel)
@@ -2912,14 +2946,25 @@ class MainWindow(QMainWindow):
         return self.power_supply_group
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        """Keep MAC variable help visible while its input has keyboard focus."""
-        if hasattr(self, "mac_variable_hint") and watched in (self.du_mac_input, self.mmu_mac_input):
-            if event.type() == QEvent.Type.FocusIn:
-                self.mac_variable_hint.setText(watched.toolTip())
-                self.mac_variable_hint.show()
+        """Show standard MAC tooltips on mouse or keyboard selection."""
+        if hasattr(self, "mmu_mac_input") and watched in (self.du_mac_input, self.mmu_mac_input):
+            if event.type() in (QEvent.Type.FocusIn, QEvent.Type.MouseButtonRelease):
+                # Defer until the click/focus event has finished so Qt does not
+                # immediately dismiss the tooltip as part of handling the click.
+                QTimer.singleShot(0, self._show_focused_mac_tooltip)
             elif event.type() == QEvent.Type.FocusOut:
-                self.mac_variable_hint.hide()
+                QToolTip.hideText()
         return super().eventFilter(watched, event)
+
+    def _show_focused_mac_tooltip(self) -> None:
+        if self._closing:
+            return
+        for field in (self.du_mac_input, self.mmu_mac_input):
+            if field.hasFocus():
+                QToolTip.showText(
+                    field.mapToGlobal(QPoint(0, field.height())), field.toolTip(), field
+                )
+                break
 
     def _build_board_group(self) -> QGroupBox:
         self.mmu_group_content = QWidget(self)
@@ -2962,12 +3007,6 @@ class MainWindow(QMainWindow):
         vlan_label = QLabel("VLAN", self.mmu_group_content)
         vlan_label.setBuddy(self.board_vlan_input)
         layout.addRow(vlan_label, network_row)
-        self.mac_variable_hint = QLabel(self.mmu_group_content)
-        self.mac_variable_hint.setWordWrap(True)
-        self.mac_variable_hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.mac_variable_hint.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.mac_variable_hint.hide()
-        layout.addRow(self.mac_variable_hint)
         self.du_mac_input.installEventFilter(self)
         self.mmu_mac_input.installEventFilter(self)
         self.board_ip_input = QLineEdit(self)
