@@ -175,3 +175,19 @@ files are no longer read or created; existing files are left untouched. Move any
 variables you still need from those files into the common file yourself. Names are case-sensitive; use `MMU_PW_2` as the JSON key and
 `${MMU_PW_2}` in the command. Client VLAN/MAC fields still own `${MMU_VLAN}`,
 `${DU_MAC}`, and `${MMU_MAC}` as described above.
+
+### Split MAC variables
+
+Each Client MAC input also supplies a first-four-digit `_HEAD` and a
+last-eight-digit `_TAIL` variable, with separators removed:
+
+| Input | Full variable | HEAD | TAIL |
+| --- | --- | --- | --- |
+| DU MAC `12:34:56:78:90:12` | `${DU_MAC}` | `${DU_MAC_HEAD}` = `1234` | `${DU_MAC_TAIL}` = `56789012` |
+| MMU MAC `00:01:00:02:0A:BC` | `${MMU_MAC}` | `${MMU_MAC_HEAD}` = `0001` | `${MMU_MAC_TAIL}` = `00020ABC` |
+
+For example, `configure --high 0x${DU_MAC_HEAD} --low 0x${DU_MAC_TAIL}`.
+Hexadecimal letters are uppercase and leading zeros are retained. The variables
+do not include `0x`; add it in the command where needed. Referencing either part
+validates the corresponding Client MAC input. Parts follow the same Client input
+precedence and scenario-start snapshot rules as the full MAC variables.

@@ -548,3 +548,54 @@ def test_mmu_mac_snapshot_and_input_precedence(window):
     session.mmu_mac_input.setText("AA:BB:CC:DD:EE:02")
     session._automation_runner.receive_output("continue")
     assert session._shell.sent == ["echo waiting", "set AA:BB:CC:DD:EE:01"]
+
+
+@pytest.mark.parametrize("base,attribute", [("DU_MAC", "du_mac_input"), ("MMU_MAC", "mmu_mac_input")])
+@pytest.mark.parametrize("mac,full,head,tail", [
+    ("12:34:56:78:90:12", "12:34:56:78:90:12", "1234", "56789012"),
+    ("00-01-00-02-0a-bc", "00:01:00:02:0A:BC", "0001", "00020ABC"),
+])
+def test_mac_parts_preserve_hex_digits(window, base, attribute, mac, full, head, tail):
+    session = window.client_tabs.widget(0)
+    getattr(session, attribute).setText(mac)
+    template = "${" + base + "} 0x${" + base + "_HEAD} 0x${" + base + "_TAIL}"
+    assert session._resolve_commands([template]) == [f"{full} 0x{head} 0x{tail}"]
+
+
+@pytest.mark.parametrize("base,attribute", [("DU_MAC", "du_mac_input"), ("MMU_MAC", "mmu_mac_input")])
+@pytest.mark.parametrize("suffix", ["HEAD", "TAIL"])
+def test_mac_part_requires_valid_client_input_even_with_common_override(window, base, attribute, suffix):
+    from mmu_control.models.command_set import CommandSet
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    name = f"{base}_{suffix}"
+    session._variable_store.save({name: "stale-file-value"})
+    session._command_set_store.upsert(CommandSet(name="parts", commands="echo start\nset ${" + name + "}"))
+    session.refresh_shared_definitions()
+    for mac in ("", "invalid"):
+        getattr(session, attribute).setText(mac)
+        session._run_command_set()
+        assert session._shell.sent == []
+        assert base in session.terminal_widget.toPlainText()
+
+
+@pytest.mark.parametrize("base,attribute", [("DU_MAC", "du_mac_input"), ("MMU_MAC", "mmu_mac_input")])
+def test_mac_parts_are_client_specific_and_scenario_snapshot_is_stable(window, base, attribute):
+    first = window.client_tabs.widget(0)
+    second = window.add_client("Second")
+    getattr(first, attribute).setText("00:01:00:02:0A:BC")
+    getattr(second, attribute).setText("12:34:56:78:90:12")
+    command = "set ${" + base + "_HEAD} ${" + base + "_TAIL}"
+    assert first._resolve_commands([command]) == ["set 0001 00020ABC"]
+    assert second._resolve_commands([command]) == ["set 1234 56789012"]
+    first._shell = Shell()
+    first._automation_store.upsert(AutomationScenario(name="parts", steps=[
+        AutomationStep("wait", "echo waiting", CompletionType.OUTPUT_CONTAINS,
+                       completion_value="continue", timeout_seconds=100),
+        AutomationStep("apply", command),
+    ]))
+    first.refresh_shared_definitions()
+    first._run_automation_scenario()
+    getattr(first, attribute).setText("FF:FF:FF:FF:FF:FF")
+    first._automation_runner.receive_output("continue")
+    assert first._shell.sent == ["echo waiting", "set 0001 00020ABC"]
