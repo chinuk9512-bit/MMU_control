@@ -19,9 +19,11 @@ def test_values_hidden_search_excludes_values_and_click_copies_syntax():
         app.processEvents()
         assert "MMU-A" in dialog.windowTitle()
         assert not dialog.show_values.isChecked()
-        assert dialog.table.item(0, 3).text() == "Hidden"
-        assert dialog.table.item(0, 3).data(Qt.ItemDataRole.UserRole) is None
-        assert dialog.table.item(0, 3).toolTip() == ""
+        assert dialog.table.columnCount() == 2
+        assert [dialog.table.horizontalHeaderItem(i).text() for i in range(2)] == ["Variable", "Value"]
+        assert dialog.table.item(0, 1).text() == "Hidden"
+        assert dialog.table.item(0, 1).data(Qt.ItemDataRole.UserRole) is None
+        assert dialog.table.item(0, 1).toolTip() == ""
         dialog.search_input.setText("secret-example")
         assert all(dialog.table.isRowHidden(row) for row in range(2))
         dialog.search_input.setText("pw_2")
@@ -33,10 +35,10 @@ def test_values_hidden_search_excludes_values_and_click_copies_syntax():
         dialog.search_input.setText("du_mac_head")
         assert not dialog.copy_button.isEnabled()
         dialog.show_values.setChecked(True)
-        assert dialog.table.item(0, 3).text() == "secret-example"
+        assert dialog.table.item(0, 1).text() == "secret-example"
         dialog.refresh()
         assert not dialog.show_values.isChecked()
-        assert dialog.table.item(0, 3).text() == "Hidden"
+        assert dialog.table.item(0, 1).text() == "Hidden"
     finally:
         dialog.close()
 
@@ -51,7 +53,7 @@ def test_refresh_reloads_provider_and_displays_errors_without_stale_values():
         dialog.refresh_button.click()
         assert dialog.table.rowCount() == 1
         assert dialog.table.item(0, 0).text() == "${SECOND}"
-        assert dialog.table.item(0, 3).text() == "Unavailable"
+        assert dialog.table.item(0, 1).text() == "Unavailable"
         assert dialog.error_label.text() == "Invalid config JSON"
         assert not dialog.show_values.isChecked()
     finally:

@@ -200,11 +200,13 @@ an extra help area or changing the panel height.
 
 Click **Variables** at the top of a Client workspace to open a searchable list of
 all common `variables.json` names and built-in Client input/full MAC/HEAD/TAIL
-variables. The dialog identifies the selected Client and shows each variable's
-source and purpose, including names whose inputs are not configured yet. Click a
-row or use **Copy variable** to copy `${NAME}` syntax, never its value.
+variables. The dialog identifies the selected Client and shows only variable
+names and masked values, including variables whose inputs are not configured yet.
+Click a row or use **Copy variable** to copy `${NAME}` syntax, never its value.
 
 Values are hidden by default; **Show values** explicitly reveals them, including
-any passwords in the common file. Search matches only names, sources and
-descriptions. **Refresh** reloads the common file and current Client inputs and
-hides values again. Opening the dialog also reads the latest file contents.
+any passwords in the common file. Search matches only variable names. **Refresh**
+reloads the common file and current Client inputs and hides values again. Opening the dialog also reads the latest file contents.
+
+VLAN also shows `${MMU_VLAN}` in a tooltip when hovered, clicked or selected with
+Tab, matching the DU MAC and MMU MAC inputs.

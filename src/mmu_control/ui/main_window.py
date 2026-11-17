@@ -2946,20 +2946,20 @@ class MainWindow(QMainWindow):
         return self.power_supply_group
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        """Show standard MAC tooltips on mouse or keyboard selection."""
-        if hasattr(self, "mmu_mac_input") and watched in (self.du_mac_input, self.mmu_mac_input):
+        """Show variable tooltips on mouse or keyboard selection."""
+        if hasattr(self, "mmu_mac_input") and watched in (self.board_vlan_input, self.du_mac_input, self.mmu_mac_input):
             if event.type() in (QEvent.Type.FocusIn, QEvent.Type.MouseButtonRelease):
                 # Defer until the click/focus event has finished so Qt does not
                 # immediately dismiss the tooltip as part of handling the click.
-                QTimer.singleShot(0, self._show_focused_mac_tooltip)
+                QTimer.singleShot(0, self._show_focused_variable_tooltip)
             elif event.type() == QEvent.Type.FocusOut:
                 QToolTip.hideText()
         return super().eventFilter(watched, event)
 
-    def _show_focused_mac_tooltip(self) -> None:
+    def _show_focused_variable_tooltip(self) -> None:
         if self._closing:
             return
-        for field in (self.du_mac_input, self.mmu_mac_input):
+        for field in (self.board_vlan_input, self.du_mac_input, self.mmu_mac_input):
             if field.hasFocus():
                 QToolTip.showText(
                     field.mapToGlobal(QPoint(0, field.height())), field.toolTip(), field
@@ -2976,7 +2976,7 @@ class MainWindow(QMainWindow):
         layout.addRow("Device name", self.board_name_input)
         self.board_vlan_input = QLineEdit(self)
         self.board_vlan_input.setPlaceholderText("1–4094")
-        self.board_vlan_input.setToolTip("Used as ${MMU_VLAN} in commands and scenarios")
+        self.board_vlan_input.setToolTip("${MMU_VLAN}: Client VLAN (1–4094), used in commands and scenarios")
         self.du_mac_input = QLineEdit(self)
         self.du_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
         self.du_mac_input.setToolTip(
@@ -3006,7 +3006,9 @@ class MainWindow(QMainWindow):
         network_layout.addWidget(self.mmu_mac_input, stretch=3)
         vlan_label = QLabel("VLAN", self.mmu_group_content)
         vlan_label.setBuddy(self.board_vlan_input)
+        vlan_label.setToolTip(self.board_vlan_input.toolTip())
         layout.addRow(vlan_label, network_row)
+        self.board_vlan_input.installEventFilter(self)
         self.du_mac_input.installEventFilter(self)
         self.mmu_mac_input.installEventFilter(self)
         self.board_ip_input = QLineEdit(self)
