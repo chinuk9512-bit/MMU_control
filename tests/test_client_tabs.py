@@ -677,3 +677,31 @@ def test_variables_button_opens_catalog_even_when_connection_fields_are_hidden(w
     with patch("mmu_control.ui.main_window.VariableListDialog.exec", return_value=0) as opened:
         session.variable_list_button.click()
     opened.assert_called_once()
+
+
+def test_vlan_variable_tooltip_on_click_repeated_click_and_tab(window, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    session = window.client_tabs.widget(0)
+    window.show()
+    app.processEvents()
+    session.board_name_input.setFocus()
+    app.processEvents()
+    assert "${MMU_VLAN}" in session.board_vlan_input.toolTip()
+    with patch("mmu_control.ui.main_window.QToolTip.showText") as show:
+        QTest.mouseClick(session.board_vlan_input, Qt.MouseButton.LeftButton)
+        app.processEvents()
+        assert show.call_args.args[2] is session.board_vlan_input
+        assert "${MMU_VLAN}" in show.call_args.args[1]
+        show.reset_mock()
+        QTest.mouseClick(session.board_vlan_input, Qt.MouseButton.LeftButton)
+        app.processEvents()
+        assert show.called
+        session.board_name_input.setFocus()
+        app.processEvents()
+        show.reset_mock()
+        QTest.keyClick(session.board_name_input, Qt.Key.Key_Tab)
+        app.processEvents()
+        assert session.board_vlan_input.hasFocus()
+        assert show.call_args.args[2] is session.board_vlan_input
+        assert "${MMU_VLAN}" in show.call_args.args[1]

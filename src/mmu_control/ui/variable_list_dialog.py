@@ -34,12 +34,12 @@ class VariableListDialog(QDialog):
         self._provider = provider
         self._entries: list[VariableEntry] = []
         self.setWindowTitle(f"Variables — {client_name}")
-        self.resize(900, 480)
+        self.resize(640, 480)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Click a variable to copy its ${NAME} command syntax.", self))
         controls = QHBoxLayout()
         self.search_input = QLineEdit(self)
-        self.search_input.setPlaceholderText("Search variable names, sources or descriptions")
+        self.search_input.setPlaceholderText("Search variable names")
         controls.addWidget(self.search_input, stretch=1)
         self.show_values = QCheckBox("Show values", self)
         controls.addWidget(self.show_values)
@@ -49,13 +49,13 @@ class VariableListDialog(QDialog):
         self.error_label = QLabel(self)
         self.error_label.setWordWrap(True)
         layout.addWidget(self.error_label)
-        self.table = QTableWidget(0, 4, self)
-        self.table.setHorizontalHeaderLabels(["Variable", "Source", "Description", "Value"])
+        self.table = QTableWidget(0, 2, self)
+        self.table.setHorizontalHeaderLabels(["Variable", "Value"])
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
         self.status_label = QLabel(self)
         layout.addWidget(self.status_label)
@@ -89,7 +89,7 @@ class VariableListDialog(QDialog):
             value = "Unavailable" if entry.value is None else (
                 entry.value if self.show_values.isChecked() else "Hidden"
             )
-            for column, text in enumerate((f"${{{entry.name}}}", entry.source, entry.description, value)):
+            for column, text in enumerate((f"${{{entry.name}}}", value)):
                 self.table.setItem(row, column, QTableWidgetItem(text))
         self.table.clearSelection()
         self._filter()
@@ -99,7 +99,7 @@ class VariableListDialog(QDialog):
         for row, entry in enumerate(self._entries):
             # Values are never searched, even when shown: a hidden password
             # must not be discoverable by trying search strings.
-            searchable = f"{entry.name} {entry.source} {entry.description}".casefold()
+            searchable = entry.name.casefold()
             self.table.setRowHidden(row, query not in searchable)
         self._update_copy_button()
 
