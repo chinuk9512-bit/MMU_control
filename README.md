@@ -210,3 +210,12 @@ reloads the common file and current Client inputs and hides values again. Openin
 
 VLAN also shows `${MMU_VLAN}` in a tooltip when hovered, clicked or selected with
 Tab, matching the DU MAC and MMU MAC inputs.
+
+Use **Add variable** to register a new common variable: enter its name without
+`${}` and then its value in the masked prompt. Duplicate names and Client-owned
+VLAN/MAC names cannot be added. Select a common variable and choose **Remove
+variable** to delete it after confirmation; Client-owned variables cannot be
+removed here. Changes save immediately to the common `variables.json` for all
+clients and apply to subsequent commands/scenario runs. The list refreshes with
+values hidden after a successful change. Fix unreadable/invalid JSON files and
+refresh before making changes; existing files are not overwritten on load errors.
