@@ -12,7 +12,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
-from PySide6.QtCore import QByteArray, QMimeData, QPoint, QProcess, QRegularExpression, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QByteArray, QMimeData, QPoint, QProcess, QRegularExpression, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QCloseEvent,
@@ -2911,6 +2911,16 @@ class MainWindow(QMainWindow):
         self.power_supply_group = self._make_group("Power Supply", self.power_supply_group_content)
         return self.power_supply_group
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        """Keep MAC variable help visible while its input has keyboard focus."""
+        if hasattr(self, "mac_variable_hint") and watched in (self.du_mac_input, self.mmu_mac_input):
+            if event.type() == QEvent.Type.FocusIn:
+                self.mac_variable_hint.setText(watched.toolTip())
+                self.mac_variable_hint.show()
+            elif event.type() == QEvent.Type.FocusOut:
+                self.mac_variable_hint.hide()
+        return super().eventFilter(watched, event)
+
     def _build_board_group(self) -> QGroupBox:
         self.mmu_group_content = QWidget(self)
         layout = QFormLayout(self.mmu_group_content)
@@ -2924,10 +2934,16 @@ class MainWindow(QMainWindow):
         self.board_vlan_input.setToolTip("Used as ${MMU_VLAN} in commands and scenarios")
         self.du_mac_input = QLineEdit(self)
         self.du_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
-        self.du_mac_input.setToolTip("Use ${DU_MAC} for the full MAC, ${DU_MAC_HEAD} for the first 4 hex digits, ${DU_MAC_TAIL} for the last 8")
+        self.du_mac_input.setToolTip(
+            "DU MAC variables\n${DU_MAC}: full MAC\n"
+            "${DU_MAC_HEAD}: first 4 hex digits\n${DU_MAC_TAIL}: last 8 hex digits"
+        )
         self.mmu_mac_input = QLineEdit(self)
         self.mmu_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
-        self.mmu_mac_input.setToolTip("Use ${MMU_MAC} for the full MAC, ${MMU_MAC_HEAD} for the first 4 hex digits, ${MMU_MAC_TAIL} for the last 8")
+        self.mmu_mac_input.setToolTip(
+            "MMU MAC variables\n${MMU_MAC}: full MAC\n"
+            "${MMU_MAC_HEAD}: first 4 hex digits\n${MMU_MAC_TAIL}: last 8 hex digits"
+        )
         network_row = QWidget(self.mmu_group_content)
         network_layout = QHBoxLayout(network_row)
         network_layout.setContentsMargins(0, 0, 0, 0)
@@ -2935,15 +2951,25 @@ class MainWindow(QMainWindow):
         network_layout.addWidget(self.board_vlan_input, stretch=1)
         du_mac_label = QLabel("DU MAC", network_row)
         du_mac_label.setBuddy(self.du_mac_input)
+        du_mac_label.setToolTip(self.du_mac_input.toolTip())
         network_layout.addWidget(du_mac_label)
         network_layout.addWidget(self.du_mac_input, stretch=3)
         mmu_mac_label = QLabel("MMU MAC", network_row)
         mmu_mac_label.setBuddy(self.mmu_mac_input)
+        mmu_mac_label.setToolTip(self.mmu_mac_input.toolTip())
         network_layout.addWidget(mmu_mac_label)
         network_layout.addWidget(self.mmu_mac_input, stretch=3)
         vlan_label = QLabel("VLAN", self.mmu_group_content)
         vlan_label.setBuddy(self.board_vlan_input)
         layout.addRow(vlan_label, network_row)
+        self.mac_variable_hint = QLabel(self.mmu_group_content)
+        self.mac_variable_hint.setWordWrap(True)
+        self.mac_variable_hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.mac_variable_hint.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.mac_variable_hint.hide()
+        layout.addRow(self.mac_variable_hint)
+        self.du_mac_input.installEventFilter(self)
+        self.mmu_mac_input.installEventFilter(self)
         self.board_ip_input = QLineEdit(self)
         self.board_ip_input.setPlaceholderText("IP address, e.g. 192.168.0.10 or fe80::1")
         self.board_username_input = QLineEdit(self)
