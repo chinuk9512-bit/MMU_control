@@ -601,7 +601,7 @@ def test_mac_parts_are_client_specific_and_scenario_snapshot_is_stable(window, b
     assert first._shell.sent == ["echo waiting", "set 0001 00020ABC"]
 
 
-def test_mac_variable_help_follows_mouse_and_keyboard_focus(window, app):
+def test_mac_tooltips_follow_click_and_tab_without_expanding_layout(window, app):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
     session = window.client_tabs.widget(0)
@@ -609,25 +609,35 @@ def test_mac_variable_help_follows_mouse_and_keyboard_focus(window, app):
     app.processEvents()
     session.ssh_host_input.setFocus()
     app.processEvents()
-    assert session.mac_variable_hint.isHidden()
-    QTest.mouseClick(session.du_mac_input, Qt.MouseButton.LeftButton)
-    app.processEvents()
-    assert session.mac_variable_hint.isVisible()
-    for name in ("${DU_MAC}", "${DU_MAC_HEAD}", "${DU_MAC_TAIL}"):
-        assert name in session.mac_variable_hint.text()
-        assert name in session.du_mac_input.toolTip()
-    assert "${MMU_MAC}" not in session.mac_variable_hint.text()
-    QTest.keyClicks(session.du_mac_input, "12:34:56:78:90:12")
-    assert session.mac_variable_hint.isVisible()
-    assert session.du_mac_input.text() == "12:34:56:78:90:12"
-    QTest.keyClick(session.du_mac_input, Qt.Key.Key_Tab)
-    app.processEvents()
-    assert session.mmu_mac_input.hasFocus()
-    assert session.mac_variable_hint.isVisible()
-    for name in ("${MMU_MAC}", "${MMU_MAC_HEAD}", "${MMU_MAC_TAIL}"):
-        assert name in session.mac_variable_hint.text()
-        assert name in session.mmu_mac_input.toolTip()
-    assert "${DU_MAC}" not in session.mac_variable_hint.text()
-    session.ssh_host_input.setFocus()
-    app.processEvents()
-    assert session.mac_variable_hint.isHidden()
+    assert not hasattr(session, "mac_variable_hint")
+    with patch("mmu_control.ui.main_window.QToolTip.showText") as show, patch(
+        "mmu_control.ui.main_window.QToolTip.hideText"
+    ) as hide:
+        QTest.mouseClick(session.du_mac_input, Qt.MouseButton.LeftButton)
+        app.processEvents()
+        text = show.call_args.args[1]
+        assert show.call_args.args[2] is session.du_mac_input
+        for name in ("${DU_MAC}", "${DU_MAC_HEAD}", "${DU_MAC_TAIL}"):
+            assert name in text
+        assert "${MMU_MAC}" not in text
+        show.reset_mock()
+        # Clicking an already-focused input should show its tooltip again.
+        QTest.mouseClick(session.du_mac_input, Qt.MouseButton.LeftButton)
+        app.processEvents()
+        assert show.called
+        QTest.keyClicks(session.du_mac_input, "12:34:56:78:90:12")
+        assert session.du_mac_input.text() == "12:34:56:78:90:12"
+        QTest.keyClick(session.du_mac_input, Qt.Key.Key_Tab)
+        app.processEvents()
+        assert session.mmu_mac_input.hasFocus()
+        text = show.call_args.args[1]
+        assert show.call_args.args[2] is session.mmu_mac_input
+        for name in ("${MMU_MAC}", "${MMU_MAC_HEAD}", "${MMU_MAC_TAIL}"):
+            assert name in text
+        assert "${DU_MAC}" not in text
+        show.reset_mock()
+        hide.reset_mock()
+        session.ssh_host_input.setFocus()
+        app.processEvents()
+        hide.assert_called()
+        show.assert_not_called()

@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QTabWidget,
+    QToolTip,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -2912,14 +2913,25 @@ class MainWindow(QMainWindow):
         return self.power_supply_group
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        """Keep MAC variable help visible while its input has keyboard focus."""
-        if hasattr(self, "mac_variable_hint") and watched in (self.du_mac_input, self.mmu_mac_input):
-            if event.type() == QEvent.Type.FocusIn:
-                self.mac_variable_hint.setText(watched.toolTip())
-                self.mac_variable_hint.show()
+        """Show standard MAC tooltips on mouse or keyboard selection."""
+        if hasattr(self, "mmu_mac_input") and watched in (self.du_mac_input, self.mmu_mac_input):
+            if event.type() in (QEvent.Type.FocusIn, QEvent.Type.MouseButtonRelease):
+                # Defer until the click/focus event has finished so Qt does not
+                # immediately dismiss the tooltip as part of handling the click.
+                QTimer.singleShot(0, self._show_focused_mac_tooltip)
             elif event.type() == QEvent.Type.FocusOut:
-                self.mac_variable_hint.hide()
+                QToolTip.hideText()
         return super().eventFilter(watched, event)
+
+    def _show_focused_mac_tooltip(self) -> None:
+        if self._closing:
+            return
+        for field in (self.du_mac_input, self.mmu_mac_input):
+            if field.hasFocus():
+                QToolTip.showText(
+                    field.mapToGlobal(QPoint(0, field.height())), field.toolTip(), field
+                )
+                break
 
     def _build_board_group(self) -> QGroupBox:
         self.mmu_group_content = QWidget(self)
@@ -2962,12 +2974,6 @@ class MainWindow(QMainWindow):
         vlan_label = QLabel("VLAN", self.mmu_group_content)
         vlan_label.setBuddy(self.board_vlan_input)
         layout.addRow(vlan_label, network_row)
-        self.mac_variable_hint = QLabel(self.mmu_group_content)
-        self.mac_variable_hint.setWordWrap(True)
-        self.mac_variable_hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.mac_variable_hint.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.mac_variable_hint.hide()
-        layout.addRow(self.mac_variable_hint)
         self.du_mac_input.installEventFilter(self)
         self.mmu_mac_input.installEventFilter(self)
         self.board_ip_input = QLineEdit(self)

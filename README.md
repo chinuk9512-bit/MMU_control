@@ -193,5 +193,5 @@ validates the corresponding Client MAC input. Parts follow the same Client input
 precedence and scenario-start snapshot rules as the full MAC variables.
 
 Hover over a DU MAC or MMU MAC input (or its label) to see the exact full/HEAD/TAIL
-variable names. Clicking or tabbing into either input also shows persistent,
-selectable variable help below the MAC row until focus moves elsewhere.
+variable names. Clicking or tabbing into either input also displays its tooltip, without adding
+an extra help area or changing the panel height.
