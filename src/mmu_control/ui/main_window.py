@@ -60,6 +60,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mmu_control.ui.variable_list_dialog import VariableEntry, VariableListDialog
 from mmu_control.core.config_manager import ConfigError, ConfigManager
 from mmu_control.core.automation_runner import AutomationRunner, AutomationStatus
 from mmu_control.core.automation_terminal import AutomationTerminal, AutomationTerminalCapability
@@ -1918,6 +1919,34 @@ class MainWindow(QMainWindow):
             raise MissingVariablesError(set(missing))
         return variables
 
+    def _variable_catalog(self) -> tuple[list[VariableEntry], str]:
+        """List common names and client-owned variables, including unavailable inputs."""
+        error = ""
+        try:
+            common = self._variable_store.load()
+        except VariableStoreError as exc:
+            common = {}
+            error = str(exc)
+        descriptions = {"MMU_VLAN": "Client VLAN (1–4094)"}
+        for base in ("DU_MAC", "MMU_MAC"):
+            descriptions[base] = "Full MAC address, separated by colons"
+            descriptions[base + "_HEAD"] = "First 4 hexadecimal digits, without separators or 0x"
+            descriptions[base + "_TAIL"] = "Last 8 hexadecimal digits, without separators or 0x"
+        entries = [VariableEntry(name, "Common variables.json", "User-defined variable", value)
+                   for name, value in common.items() if name not in descriptions]
+        for name, description in descriptions.items():
+            try:
+                value = self._command_variables([f"${{{name}}}"])[name]
+            except (VariableStoreError, MissingVariablesError):
+                value = None
+                description += " (input missing/invalid or variable file unreadable)"
+            entries.append(VariableEntry(name, "Client input", description, value))
+        return sorted(entries, key=lambda entry: entry.name), error
+
+    def _show_variable_list(self) -> None:
+        name = self.property("client_name") or self.board_name_input.text().strip() or "Current client"
+        VariableListDialog(self._variable_catalog, self, client_name=name).exec()
+
     def _resolve_commands(self, commands: list[str]) -> list[str]:
         """Resolve every command before any command in a group is sent."""
         variables = self._command_variables(commands)
@@ -2799,6 +2828,10 @@ class MainWindow(QMainWindow):
         self.connection_panel_toggle_button.setChecked(True)
         header_layout.addWidget(self.connection_panel_toggle_button)
         header_layout.addStretch(1)
+        self.variable_list_button = QPushButton("Variables", header)
+        self.variable_list_button.setToolTip("Search and copy command variable names for this Client")
+        self.variable_list_button.clicked.connect(self._show_variable_list)
+        header_layout.addWidget(self.variable_list_button)
         layout.addWidget(header)
 
         self.connection_panel_content = QWidget(panel)

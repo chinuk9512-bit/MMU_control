@@ -641,3 +641,39 @@ def test_mac_tooltips_follow_click_and_tab_without_expanding_layout(window, app)
         app.processEvents()
         hide.assert_called()
         show.assert_not_called()
+
+
+def test_variable_catalog_uses_current_client_and_reserved_input_precedence(window):
+    first = window.client_tabs.widget(0)
+    second = window.add_client("Other")
+    first.board_vlan_input.setText("100")
+    second.board_vlan_input.setText("200")
+    first.du_mac_input.setText("00:01:00:02:0A:BC")
+    first._variable_store.save({"MMU_PW_2": "shared-example", "MMU_VLAN": "stale"})
+    entries, error = first._variable_catalog()
+    assert not error
+    by_name = {entry.name: entry for entry in entries}
+    assert len(by_name) == 8
+    assert by_name["MMU_PW_2"].source == "Common variables.json"
+    assert by_name["MMU_PW_2"].value == "shared-example"
+    assert by_name["MMU_VLAN"].value == "100"
+    assert by_name["DU_MAC_HEAD"].value == "0001"
+    assert by_name["DU_MAC_TAIL"].value == "00020ABC"
+    assert by_name["MMU_MAC"].value is None
+    assert {entry.name: entry.value for entry in second._variable_catalog()[0]}["MMU_VLAN"] == "200"
+    first._variable_store.save({"NEW_NAME": "updated-example"})
+    assert "NEW_NAME" in {entry.name for entry in first._variable_catalog()[0]}
+    # Malformed files must still leave the built-in names discoverable.
+    first._variable_store.path.write_text('{"broken":')
+    entries, error = first._variable_catalog()
+    assert error and len(entries) == 7
+    assert all(entry.value is None for entry in entries)
+
+
+def test_variables_button_opens_catalog_even_when_connection_fields_are_hidden(window):
+    session = window.client_tabs.widget(0)
+    session.connection_panel_toggle_button.setChecked(False)
+    assert not session.variable_list_button.isHidden()
+    with patch("mmu_control.ui.main_window.VariableListDialog.exec", return_value=0) as opened:
+        session.variable_list_button.click()
+    opened.assert_called_once()
