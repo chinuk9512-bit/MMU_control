@@ -70,7 +70,7 @@ from mmu_control.core.power_supply_manager import PowerSupplyCommandError, Power
 from mmu_control.core.sftp_manager import SFTPError, SFTPManager
 from mmu_control.core.ssh_manager import SSHManager
 from mmu_control.core.terminal_sequences import TerminalStreamFilter
-from mmu_control.core.variable_resolver import MissingVariablesError, VariableResolver
+from mmu_control.core.variable_resolver import MissingVariablesError, VariableResolutionError, VariableResolver
 from mmu_control.models.command_set import CommandFolder, CommandSet
 from mmu_control.models.automation import AutomationScenario
 from mmu_control.models.settings import (
@@ -1843,7 +1843,7 @@ class MainWindow(QMainWindow):
             return
         try:
             commands = self._resolve_commands(commands)
-        except (VariableStoreError, MissingVariablesError) as exc:
+        except (VariableStoreError, VariableResolutionError) as exc:
             self.terminal_widget.write_output(f"Command variables error: {exc}")
             return
         for command in commands:
@@ -1867,7 +1867,7 @@ class MainWindow(QMainWindow):
         if command:
             try:
                 command = self._resolve_commands([command])[0]
-            except (VariableStoreError, MissingVariablesError) as exc:
+            except (VariableStoreError, VariableResolutionError) as exc:
                 self.terminal_widget.write_output(f"Command variables error: {exc}")
                 return
         self._shell.send_line(command)
@@ -1889,34 +1889,41 @@ class MainWindow(QMainWindow):
     def _command_variables(self, commands: list[str]) -> dict[str, str]:
         """Snapshot local variables and validate referenced client input fields."""
         variables = self._variable_store.load()
-        names = set().union(*(VariableResolver.names(command) for command in commands))
         # These names always belong to the current client inputs. Never
         # fall back to stale values in variables.json when an input is cleared.
         variables.pop("MMU_VLAN", None)
         for base in ("DU_MAC", "MMU_MAC"):
             for suffix in ("", "_HEAD", "_TAIL"):
                 variables.pop(base + suffix, None)
-        if "MMU_VLAN" in names:
-            vlan = self.board_vlan_input.text().strip()
-            if not re.fullmatch(r"[0-9]{1,4}", vlan) or not 1 <= int(vlan) <= 4094:
-                raise VariableStoreError("MMU_VLAN: enter a VLAN number from 1 to 4094 in this Client tab.")
-            variables["MMU_VLAN"] = str(int(vlan))
-        for name, field in (("DU_MAC", self.du_mac_input), ("MMU_MAC", self.mmu_mac_input)):
-            if not names.intersection((name, name + "_HEAD", name + "_TAIL")):
-                continue
-            mac = field.text().strip()
-            if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}", mac):
-                raise VariableStoreError(
-                    f"{name}: enter six hexadecimal pairs, e.g. AA:BB:CC:DD:EE:FF, in this Client tab."
-                )
-            normalized = mac.replace("-", ":").upper()
-            digits = normalized.replace(":", "")
-            variables[name] = normalized
-            variables[name + "_HEAD"] = digits[:4]
-            variables[name + "_TAIL"] = digits[4:]
-        missing = names - variables.keys()
-        if missing:
-            raise MissingVariablesError(set(missing))
+        previous: set[str] | None = None
+        while True:
+            names = set().union(*(VariableResolver.names(command, variables) for command in commands))
+            if names == previous:
+                break
+            previous = names
+            if "MMU_VLAN" in names:
+                vlan = self.board_vlan_input.text().strip()
+                if not re.fullmatch(r"[0-9]{1,4}", vlan) or not 1 <= int(vlan) <= 4094:
+                    raise VariableStoreError("MMU_VLAN: enter a VLAN number from 1 to 4094 in this Client tab.")
+                variables["MMU_VLAN"] = str(int(vlan))
+            for name, field in (("DU_MAC", self.du_mac_input), ("MMU_MAC", self.mmu_mac_input)):
+                if not names.intersection((name, name + "_HEAD", name + "_TAIL")):
+                    continue
+                mac = field.text().strip()
+                if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}", mac):
+                    raise VariableStoreError(
+                        f"{name}: enter six hexadecimal pairs, e.g. AA:BB:CC:DD:EE:FF, in this Client tab."
+                    )
+                normalized = mac.replace("-", ":").upper()
+                digits = normalized.replace(":", "")
+                variables[name] = normalized
+                variables[name + "_HEAD"] = digits[:4]
+                variables[name + "_TAIL"] = digits[4:]
+            missing = names - variables.keys()
+            if missing:
+                raise MissingVariablesError(set(missing))
+        for command in commands:
+            VariableResolver.resolve(command, variables)
         return variables
 
     def _variable_catalog(self) -> tuple[list[VariableEntry], str]:
@@ -1937,7 +1944,7 @@ class MainWindow(QMainWindow):
         for name, description in descriptions.items():
             try:
                 value = self._command_variables([f"${{{name}}}"])[name]
-            except (VariableStoreError, MissingVariablesError):
+            except (VariableStoreError, VariableResolutionError):
                 value = None
                 description += " (input missing/invalid or variable file unreadable)"
             entries.append(VariableEntry(name, "Client input", description, value))
@@ -2334,7 +2341,7 @@ class MainWindow(QMainWindow):
             variables = self._command_variables([
                 step.command for step in scenario.steps[start_step_index:] if step.enabled
             ])
-        except (VariableStoreError, MissingVariablesError) as exc:
+        except (VariableStoreError, VariableResolutionError) as exc:
             self.automation_status_label.setText(f"Automation variables error: {exc}")
             return
         self._automation_runner = AutomationRunner(

@@ -705,3 +705,46 @@ def test_vlan_variable_tooltip_on_click_repeated_click_and_tab(window, app):
         assert session.board_vlan_input.hasFocus()
         assert show.call_args.args[2] is session.board_vlan_input
         assert "${MMU_VLAN}" in show.call_args.args[1]
+
+
+def test_nested_selectors_in_commands_and_scenario_snapshot(window):
+    from mmu_control.models.command_set import CommandSet
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session._variable_store.save({"MMU_A": "1", "CC_1": "one", "CC_2": "two"})
+    session._command_set_store.upsert(CommandSet(name="nested", commands="echo ${CC_${MMU_A}}"))
+    session.refresh_shared_definitions()
+    session._run_command_set()
+    assert session._shell.sent == ["echo one"]
+    session._automation_store.upsert(AutomationScenario(name="nested", steps=[
+        AutomationStep("wait", "echo waiting", CompletionType.OUTPUT_CONTAINS,
+                       completion_value="continue", timeout_seconds=100),
+        AutomationStep("apply", "apply ${CC_${MMU_A}}"),
+    ]))
+    session.refresh_shared_definitions()
+    session._run_automation_scenario()
+    session._variable_store.save({"MMU_A": "2", "CC_1": "changed", "CC_2": "two"})
+    session._automation_runner.receive_output("continue")
+    assert session._shell.sent == ["echo one", "echo waiting", "apply one"]
+
+
+def test_nested_missing_outer_blocks_scenario_before_first_command(window):
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session._variable_store.save({"MMU_A": "1"})
+    session._automation_store.upsert(AutomationScenario(name="missing", steps=[
+        AutomationStep("first", "echo must-not-run"),
+        AutomationStep("second", "${CC_${MMU_A}}"),
+    ]))
+    session.refresh_shared_definitions()
+    session._run_automation_scenario()
+    assert session._shell.sent == []
+    assert "CC_1" in session.automation_status_label.text()
+
+
+def test_nested_names_support_client_inputs_as_selectors_and_targets(window):
+    session = window.client_tabs.widget(0)
+    session._variable_store.save({"CC_100": "chosen", "FIELD": "MMU_VLAN", "MAC_FIELD": "DU_MAC_HEAD"})
+    session.board_vlan_input.setText("100")
+    session.du_mac_input.setText("00:01:02:03:04:05")
+    assert session._resolve_commands(["${CC_${MMU_VLAN}} ${${FIELD}} ${${MAC_FIELD}}"]) == ["chosen 100 0001"]

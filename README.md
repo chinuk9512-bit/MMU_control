@@ -233,3 +233,23 @@ sample data/templates are generated. Copy any existing settings you wish to keep
 manually into this directory before starting the program. Existing behavior when
 settings are absent is unchanged. Shared command/scenario JSON locations are
 unchanged. Exclude `local_data/` when sharing a ZIP of the project.
+
+### Nested variable names
+
+Commands and scenario steps can build a variable name from another variable.
+With `MMU_A` set to `1` and `CC_1` set to `selected-command`, this template:
+
+```bash
+configure ${CC_${MMU_A}}
+```
+
+runs as `configure selected-command`: the inner expression selects `CC_1`, then
+its value is inserted. Multiple selectors and nested selectors are supported,
+including Client inputs such as `${CC_${MMU_VLAN}}`. Missing inner or selected
+variables block the whole group/scenario before commands are sent. Scenarios keep
+the variable snapshot taken at startup.
+
+Variable values themselves are inserted literally, not recursively expanded.
+`$${NAME}` still sends a literal `${NAME}`; `$${CC_${MMU_A}}` sends the entire
+nested expression literally. Invalid computed names and nesting beyond 32 levels
+are rejected before execution.
