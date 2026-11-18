@@ -253,3 +253,20 @@ Variable values themselves are inserted literally, not recursively expanded.
 `$${NAME}` still sends a literal `${NAME}`; `$${CC_${MMU_A}}` sends the entire
 nested expression literally. Invalid computed names and nesting beyond 32 levels
 are rejected before execution.
+
+### Connection defaults
+
+Click **Save defaults** in a Client workspace to save its currently entered
+**SSH server**, **Power supply**, and/or **Client** fields. Choose the groups to
+include; saving replaces the defaults with only those checked groups. Defaults
+are stored in Git-ignored `local_data/default_settings.json`, including credentials
+if their group is selected. Window state and common command variables are not
+included.
+
+New Client tabs automatically populate the saved groups. The first workspace of
+a new window also uses defaults if it has no saved Client settings. Reopening
+existing tabs restores their own settings, regardless of changes to the defaults.
+Use **Load defaults** to apply saved groups to an existing disconnected tab after
+confirmation; unchecked/unsaved groups are left unchanged. Busy or connected tabs
+must finish/disconnect before loading defaults. Applying defaults only fills
+inputs: it never connects, runs a scenario, or sends a power command.

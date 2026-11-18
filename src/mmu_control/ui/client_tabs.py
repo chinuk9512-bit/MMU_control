@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from mmu_control.core.config_manager import ConfigManager, default_user_data_directory
+from mmu_control.storage.default_settings_store import DefaultSettingsStore
 from mmu_control.storage.variable_store import VariableStore
 from mmu_control.ui.main_window import MainWindow
 
@@ -58,15 +59,19 @@ class ClientTabsWindow(QMainWindow):
 
     def add_client(
         self, name: str | None = None, client_id: str | None = None,
-        *, fallback_name: str | None = None,
+        *, fallback_name: str | None = None, apply_defaults: bool | None = None,
     ) -> MainWindow:
         """Create a client with independent connections/settings and common variables."""
+        is_new = client_id is None if apply_defaults is None else apply_defaults
         client_id = client_id or uuid4().hex
         directory = self._data_directory if client_id == "default" else self._data_directory / "clients" / client_id
         session = self._session_factory(
             config_manager=ConfigManager(directory / "settings.json"),
             variable_store=VariableStore(self._data_directory / "variables.json"),
+            defaults_store=DefaultSettingsStore(self._data_directory / "default_settings.json"),
         )
+        if is_new:
+            session.load_new_client_defaults()
         # QMainWindow is also a QWidget: keep the existing workspace and status
         # bar intact while embedding it instead of creating another OS window.
         session.setWindowState(Qt.WindowState.WindowNoState)
@@ -190,7 +195,7 @@ class ClientTabsWindow(QMainWindow):
                     raise ValueError("Duplicate client ID")
                 seen.add(client_id)
         except FileNotFoundError:
-            self.add_client("Client 1", "default")
+            self.add_client("Client 1", "default", apply_defaults=not (self._data_directory / "settings.json").exists())
             return
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             self.statusBar().showMessage(f"Could not restore client tabs: {exc}")
