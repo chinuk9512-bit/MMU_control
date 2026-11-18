@@ -61,6 +61,8 @@ from PySide6.QtWidgets import (
 )
 
 from mmu_control.ui.variable_list_dialog import VariableEntry, VariableListDialog
+from mmu_control.storage.default_settings_store import DefaultSettingsStore
+from mmu_control.ui.default_settings_dialog import DefaultSettingsDialog
 from mmu_control.core.config_manager import ConfigError, ConfigManager
 from mmu_control.core.automation_runner import AutomationRunner, AutomationStatus
 from mmu_control.core.automation_terminal import AutomationTerminal, AutomationTerminalCapability
@@ -498,6 +500,7 @@ class MainWindow(QMainWindow):
         variable_store: VariableStore | None = None,
         config_manager: ConfigManager | None = None,
         task_runner: TaskRunner | None = None,
+        defaults_store: DefaultSettingsStore | None = None,
     ) -> None:
         super().__init__()
         self._ssh_manager = ssh_manager or SSHManager()
@@ -505,6 +508,7 @@ class MainWindow(QMainWindow):
         self._automation_store = automation_store or AutomationStore.create_default()
         self._variable_store = variable_store or VariableStore.create_default()
         self._config_manager = config_manager or ConfigManager.create_default()
+        self._defaults_store = defaults_store or DefaultSettingsStore()
         self._task_runner = task_runner or ThreadPoolTaskRunner(self)
         self._sftp_manager = SFTPManager()
         self._minicom_manager = MinicomManager()
@@ -684,29 +688,76 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Could not load settings")
             return
         settings = self._settings
-        self.ssh_host_input.setText(settings.ssh.host)
-        self.ssh_port_input.setValue(settings.ssh.port)
-        self.ssh_username_input.setText(settings.ssh.username)
-        self.ssh_password_input.setText(settings.ssh.password)
-        self.power_supply_ip_input.setText(settings.power_supply.ip_address)
-        self.power_supply_voltage_input.setText(settings.power_supply.voltage)
-        self.power_supply_current_input.setText(settings.power_supply.current)
-        self._power_supply_manager.update_settings(settings.power_supply)
-        self.board_name_input.setText(settings.board.display_name)
-        self.board_vlan_input.setText(settings.board.vlan)
-        self.du_mac_input.setText(settings.board.du_mac)
-        self.mmu_mac_input.setText(settings.board.mmu_mac)
-        self.board_ip_input.setText(settings.board.ip_address)
-        self.board_username_input.setText(settings.board.username)
-        self.board_password_input.setText(settings.board.password)
-        self.board_interface_input.setText(settings.board.interface)
-        self.board_ssh_port_input.setValue(settings.board.ssh_port)
-        if settings.board.usb_port:
-            self.usb_port_combo.clear()
-            self.usb_port_combo.addItem(settings.board.usb_port)
+        self.apply_connection_defaults(settings, DefaultSettingsStore.SECTIONS)
         self.resize(settings.window.width, settings.window.height)
         if settings.window.is_maximized:
             self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+
+    def apply_connection_defaults(self, settings: AppSettings, sections: frozenset[str]) -> None:
+        """Populate only selected fields without connecting or sending commands."""
+        if "ssh" in sections:
+            self.ssh_host_input.setText(settings.ssh.host)
+            self.ssh_port_input.setValue(settings.ssh.port)
+            self.ssh_username_input.setText(settings.ssh.username)
+            self.ssh_password_input.setText(settings.ssh.password)
+        if "power_supply" in sections:
+            self.power_supply_ip_input.setText(settings.power_supply.ip_address)
+            self.power_supply_voltage_input.setText(settings.power_supply.voltage)
+            self.power_supply_current_input.setText(settings.power_supply.current)
+            self._power_supply_manager.update_settings(settings.power_supply)
+        if "board" in sections:
+            self.board_name_input.setText(settings.board.display_name)
+            self.board_vlan_input.setText(settings.board.vlan)
+            self.du_mac_input.setText(settings.board.du_mac)
+            self.mmu_mac_input.setText(settings.board.mmu_mac)
+            self.board_ip_input.setText(settings.board.ip_address)
+            self.board_username_input.setText(settings.board.username)
+            self.board_password_input.setText(settings.board.password)
+            self.board_interface_input.setText(settings.board.interface)
+            self.board_ssh_port_input.setValue(settings.board.ssh_port)
+            self.usb_port_combo.clear()
+            self.usb_port_combo.addItem(settings.board.usb_port or "No USB ports detected")
+
+    def load_new_client_defaults(self) -> None:
+        """Apply saved defaults to a new disconnected workspace only."""
+        try:
+            settings, sections = self._defaults_store.load()
+            self.apply_connection_defaults(settings, sections)
+        except ConfigError as exc:
+            self.statusBar().showMessage(str(exc))
+
+    def _save_connection_defaults(self) -> None:
+        dialog = DefaultSettingsDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._defaults_store.save(AppSettings(
+                ssh=self._ssh_settings(), power_supply=self._power_supply_settings(), board=self._board_settings()
+            ), dialog.selected_sections())
+        except ConfigError as exc:
+            QMessageBox.warning(self, "Could not save defaults", str(exc))
+            return
+        self.statusBar().showMessage("Connection defaults saved for new Clients")
+
+    def _load_connection_defaults(self) -> None:
+        if self.has_active_session or self.has_pending_tasks:
+            QMessageBox.information(self, "Client is busy", "Disconnect and finish running work before loading defaults.")
+            return
+        try:
+            settings, sections = self._defaults_store.load()
+        except ConfigError as exc:
+            QMessageBox.warning(self, "Could not load defaults", str(exc))
+            return
+        if not sections:
+            QMessageBox.information(self, "No defaults", "Save connection defaults first.")
+            return
+        if QMessageBox.question(
+            self, "Load connection defaults?", "Replace current fields for the saved connection groups?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self.apply_connection_defaults(settings, sections)
+        self.statusBar().showMessage("Connection defaults loaded; no connection or command was started")
 
     def _save_settings(self) -> None:
         geometry = self.normalGeometry() if self.isMaximized() else self.geometry()
@@ -2837,6 +2888,12 @@ class MainWindow(QMainWindow):
         self.connection_panel_toggle_button.setChecked(True)
         header_layout.addWidget(self.connection_panel_toggle_button)
         header_layout.addStretch(1)
+        self.save_defaults_button = QPushButton("Save defaults", header)
+        self.save_defaults_button.clicked.connect(self._save_connection_defaults)
+        header_layout.addWidget(self.save_defaults_button)
+        self.load_defaults_button = QPushButton("Load defaults", header)
+        self.load_defaults_button.clicked.connect(self._load_connection_defaults)
+        header_layout.addWidget(self.load_defaults_button)
         self.variable_list_button = QPushButton("Variables", header)
         self.variable_list_button.setToolTip("Search and copy command variable names for this Client")
         self.variable_list_button.clicked.connect(self._show_variable_list)

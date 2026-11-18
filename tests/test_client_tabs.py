@@ -748,3 +748,76 @@ def test_nested_names_support_client_inputs_as_selectors_and_targets(window):
     session.board_vlan_input.setText("100")
     session.du_mac_input.setText("00:01:02:03:04:05")
     assert session._resolve_commands(["${CC_${MMU_VLAN}} ${${FIELD}} ${${MAC_FIELD}}"]) == ["chosen 100 0001"]
+
+
+def test_defaults_apply_only_to_new_clients_and_not_restored_tabs(window):
+    from mmu_control.models.settings import AppSettings, SSHSettings, BoardSettings, PowerSupplySettings
+    first = window.client_tabs.widget(0)
+    first.ssh_host_input.setText("existing-host")
+    first._defaults_store.save(AppSettings(
+        ssh=SSHSettings(host="default-host", port=2222, username="default-user"),
+        board=BoardSettings(ip_address="192.0.2.100", vlan="100", du_mac="AA:BB:CC:DD:EE:01", mmu_mac="AA:BB:CC:DD:EE:02"),
+        power_supply=PowerSupplySettings(ip_address="192.0.2.200", voltage="12", current="1"),
+    ), {"ssh", "power_supply", "board"})
+    second = window.add_client()
+    assert first.ssh_host_input.text() == "existing-host"
+    assert second.ssh_host_input.text() == "default-host"
+    assert second.ssh_port_input.value() == 2222
+    assert second.power_supply_ip_input.text() == "192.0.2.200"
+    assert second.board_vlan_input.text() == "100"
+    assert second.mmu_mac_input.text() == "AA:BB:CC:DD:EE:02"
+    assert not second.has_active_session and not second.has_pending_tasks
+    second.ssh_host_input.setText("edited-host")
+    assert window.close()
+    first._defaults_store.save(AppSettings(ssh=SSHSettings(host="changed-default")), {"ssh"})
+    restored = ClientTabsWindow(window._data_directory, window._session_factory)
+    try:
+        assert restored.client_tabs.widget(0).ssh_host_input.text() == "existing-host"
+        assert restored.client_tabs.widget(1).ssh_host_input.text() == "edited-host"
+        new = restored.add_client()
+        assert new.ssh_host_input.text() == "changed-default"
+        assert new.board_ip_input.text() == ""
+    finally:
+        restored.close()
+
+
+def test_manual_default_load_confirms_and_preserves_unselected_fields(window):
+    from mmu_control.models.settings import AppSettings, SSHSettings
+    session = window.client_tabs.widget(0)
+    session._defaults_store.save(AppSettings(ssh=SSHSettings(host="default-host")), {"ssh"})
+    session.ssh_host_input.setText("current-host")
+    session.board_vlan_input.setText("200")
+    with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.No):
+        session.load_defaults_button.click()
+    assert session.ssh_host_input.text() == "current-host"
+    with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+        session.load_defaults_button.click()
+    assert session.ssh_host_input.text() == "default-host"
+    assert session.board_vlan_input.text() == "200"
+    assert not session.has_active_session and not session.has_pending_tasks
+    session._shell = Shell()
+    session.ssh_host_input.setText("connected-host")
+    with patch.object(QMessageBox, "information") as blocked:
+        session.load_defaults_button.click()
+    blocked.assert_called_once()
+    assert session.ssh_host_input.text() == "connected-host"
+    assert session._shell.sent == []
+
+
+def test_save_defaults_button_saves_only_selected_groups(window):
+    from PySide6.QtWidgets import QDialog
+    session = window.client_tabs.widget(0)
+    session.ssh_host_input.setText("saved-server")
+    session.board_ip_input.setText("not-selected")
+    with patch("mmu_control.ui.main_window.DefaultSettingsDialog") as selection:
+        selection.return_value.exec.return_value = QDialog.DialogCode.Accepted
+        selection.return_value.selected_sections.return_value = {"ssh"}
+        session.save_defaults_button.click()
+    settings, groups = session._defaults_store.load()
+    assert groups == {"ssh"} and settings.ssh.host == "saved-server"
+    assert settings.board.ip_address == ""
+    before = session._defaults_store.path.read_bytes()
+    with patch("mmu_control.ui.main_window.DefaultSettingsDialog") as selection:
+        selection.return_value.exec.return_value = QDialog.DialogCode.Rejected
+        session.save_defaults_button.click()
+    assert session._defaults_store.path.read_bytes() == before
