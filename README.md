@@ -270,3 +270,8 @@ Use **Load defaults** to apply saved groups to an existing disconnected tab afte
 confirmation; unchecked/unsaved groups are left unchanged. Busy or connected tabs
 must finish/disconnect before loading defaults. Applying defaults only fills
 inputs: it never connects, runs a scenario, or sends a power command.
+
+In the scenario editor, the Start/Completion condition selectors and timeout
+inputs do not change values with the mouse wheel, even while focused. Wheel
+motion over these controls scrolls the details pane instead. Change settings
+explicitly with clicks, keyboard selection, typing or the timeout arrow buttons.
