@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QKeyEvent, QShowEvent
+from PySide6.QtCore import QCoreApplication, QPointF, QTimer, Qt
+from PySide6.QtGui import QKeyEvent, QShowEvent, QWheelEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -29,6 +29,24 @@ from PySide6.QtWidgets import (
 from mmu_control.models.automation import AutomationScenario, AutomationStep, CompletionType
 
 
+def _scroll_details_on_wheel(widget: QWidget, event: QWheelEvent) -> None:
+    """Route wheel motion to the surrounding scroll pane without editing values."""
+    parent = widget.parentWidget()
+    while parent is not None and not isinstance(parent, QScrollArea):
+        parent = parent.parentWidget()
+    if parent is None:
+        event.ignore()
+        return
+    viewport = parent.viewport()
+    forwarded = QWheelEvent(
+        QPointF(viewport.mapFromGlobal(event.globalPosition().toPoint())),
+        event.globalPosition(), event.pixelDelta(), event.angleDelta(),
+        event.buttons(), event.modifiers(), event.phase(), event.inverted(),
+    )
+    QCoreApplication.sendEvent(viewport, forwarded)
+    event.setAccepted(forwarded.isAccepted())
+
+
 class ScenarioStepListWidget(QListWidget):
     """Step list with explicit keyboard navigation between scenario steps."""
 
@@ -46,12 +64,24 @@ class ScenarioStepListWidget(QListWidget):
 class CompletionTypeComboBox(QComboBox):
     """Combo box that always exposes completion data as CompletionType."""
 
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        """Let the containing pane scroll instead of changing the condition."""
+        _scroll_details_on_wheel(self, event)
+
     def currentData(self, role: int = Qt.ItemDataRole.UserRole) -> CompletionType:  # noqa: N802
         value = super().currentData(role)
         try:
             return CompletionType(str(value))
         except ValueError:
             return CompletionType.NONE
+
+
+class ConditionTimeoutSpinBox(QSpinBox):
+    """Timeout editor that changes only through explicit typing/keys/buttons."""
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        """Pass wheel input to the containing scroll pane, even when focused."""
+        _scroll_details_on_wheel(self, event)
 
 
 class AutomationEditorDialog(QDialog):
@@ -112,7 +142,7 @@ class AutomationEditorDialog(QDialog):
         self.condition_type_input.currentIndexChanged.connect(self._update_condition_labels)
         self.start_value_input = QLineEdit(self)
         self.start_file_path_input = QLineEdit(self)
-        self.start_timeout_input = QSpinBox(self)
+        self.start_timeout_input = ConditionTimeoutSpinBox(self)
         self.start_timeout_input.setRange(1, 86_400)
         self.start_timeout_input.setSuffix(" seconds")
         self.skip_on_start_condition_failure_input = QCheckBox(
@@ -120,7 +150,7 @@ class AutomationEditorDialog(QDialog):
         )
         self.condition_value_input = QLineEdit(self)
         self.file_path_input = QLineEdit(self)
-        self.timeout_input = QSpinBox(self)
+        self.timeout_input = ConditionTimeoutSpinBox(self)
         self.timeout_input.setRange(1, 86_400)
         self.timeout_input.setSuffix(" seconds")
         self.save_step_button = QPushButton("Save Step", self)
