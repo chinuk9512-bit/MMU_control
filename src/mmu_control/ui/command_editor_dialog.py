@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import (
     QDialog,
     QComboBox,
@@ -15,6 +16,14 @@ from PySide6.QtWidgets import (
 )
 
 from mmu_control.models.command_set import CommandSet
+
+
+class ParentFolderComboBox(QComboBox):
+    """Require explicit selection rather than changing folders on wheel input."""
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        """Ignore wheel changes even when the folder selector is focused."""
+        event.ignore()
 
 
 class CommandEditorDialog(QDialog):
@@ -33,7 +42,7 @@ class CommandEditorDialog(QDialog):
 
         self.name_input = QLineEdit(self)
         self.description_input = QLineEdit(self)
-        self.parent_folder_input = QComboBox(self)
+        self.parent_folder_input = ParentFolderComboBox(self)
         self.parent_folder_input.addItem("Top level", "")
         for path in folder_paths or []:
             self.parent_folder_input.addItem(path, path)

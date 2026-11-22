@@ -275,3 +275,6 @@ In the scenario editor, the Start/Completion condition selectors and timeout
 inputs do not change values with the mouse wheel, even while focused. Wheel
 motion over these controls scrolls the details pane instead. Change settings
 explicitly with clicks, keyboard selection, typing or the timeout arrow buttons.
+
+The Commands editor's **Parent folder** selector also ignores mouse-wheel changes,
+including while focused. Select a folder explicitly by clicking or using the keyboard.
