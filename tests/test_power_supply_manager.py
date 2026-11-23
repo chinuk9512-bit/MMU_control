@@ -22,7 +22,7 @@ class PowerSupplyManagerTest(unittest.TestCase):
         self.assertEqual(manager.build_command("on"), "psu 192.168.0.50 on")
         self.assertEqual(manager.build_command("off"), "psu 192.168.0.50 off")
         self.assertEqual(manager.build_command("status"), "psu 192.168.0.50 status")
-        self.assertEqual(manager.build_command("all_status"), "psu all-status")
+        self.assertEqual(manager.build_command("all_status"), "psu all")
 
     def test_builds_custom_commands_from_json_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
