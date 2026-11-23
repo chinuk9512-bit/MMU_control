@@ -368,7 +368,7 @@ class MainWindowTest(unittest.TestCase):
                 "psu 192.168.0.50 on",
                 "psu 192.168.0.50 off",
                 "psu 192.168.0.50 status",
-                "psu all-status",
+                "psu all",
             ],
         )
 
