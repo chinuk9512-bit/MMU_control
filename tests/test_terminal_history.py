@@ -89,3 +89,33 @@ def test_recalled_command_sends_one_newline_only_when_enter_is_pressed(terminal)
     assert channel.sent == ["echo hello\n"]
     QTest.keyClick(terminal, Qt.Key.Key_Return)
     assert channel.sent == ["echo hello\n", "echo hello\n"]
+
+
+def test_clear_display_preserves_history_and_resets_recall_position(terminal):
+    submitted = []
+    terminal.commandSubmitted.connect(submitted.append)
+    for command in ("first", "second"):
+        terminal._replace_buffer(command)
+        QTest.keyClick(terminal, Qt.Key.Key_Return)
+    QTest.keyClick(terminal, Qt.Key.Key_Up)
+    terminal.write_output("old output")
+    terminal.clear_terminal()
+    assert terminal.toPlainText() == "test> "
+    assert terminal._buffer == ""
+    assert terminal._history == ["first", "second"]
+    QTest.keyClick(terminal, Qt.Key.Key_Up)
+    assert terminal._buffer == "second"
+    QTest.keyClick(terminal, Qt.Key.Key_Up)
+    assert terminal._buffer == "first"
+    QTest.keyClick(terminal, Qt.Key.Key_Down)
+    assert terminal._buffer == "second"
+    assert submitted == ["first", "second"]
+
+
+def test_explicit_new_session_reset_can_still_clear_history(terminal):
+    terminal._replace_buffer("old-session-command")
+    QTest.keyClick(terminal, Qt.Key.Key_Return)
+    terminal.clear_terminal(clear_history=True)
+    assert terminal._history == []
+    QTest.keyClick(terminal, Qt.Key.Key_Up)
+    assert terminal._buffer == ""

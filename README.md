@@ -284,3 +284,7 @@ are still sent to the shell but are not added to history. Up/Down skip old blank
 entries and remove old trailing line endings when recalling commands; recall does
 not execute anything. Interior line breaks and spaces are preserved, and pressing
 Enter explicitly submits the recalled command with the shell's normal newline.
+
+`clear` (and local `cls`) clears visible and queued terminal output without deleting
+command history. Up/Down can still recall earlier commands afterward; the screen
+clear does not execute or resend any recalled command.

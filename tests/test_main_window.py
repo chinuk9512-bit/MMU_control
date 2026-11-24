@@ -543,18 +543,30 @@ class MainWindowTest(unittest.TestCase):
         self.assertEqual(plain_color, TERMINAL_FOREGROUND.name())
 
     def test_clear_command_clears_connected_ssh_terminal(self) -> None:
-        """Clear removes prior terminal content while SSH is connected."""
+        """Clear removes visible/queued output but leaves command recall intact."""
         manager = FakeSSHManager()
         window = self.create_window(ssh_manager=manager)
         window.ssh_host_input.setText("server")
         window.ssh_username_input.setText("user")
         window._connect_ssh()
-        window.terminal_widget.write_output("old command output")
+        terminal = window.terminal_widget
+        terminal._replace_buffer("pwd")
+        QTest.keyClick(terminal, Qt.Key.Key_Return)
+        terminal.write_output("old command output")
+        window._terminal_flush_timer.start(10000)
+        window._queue_terminal_output("queued output")
+        terminal._replace_buffer("clear")
+        QTest.keyClick(terminal, Qt.Key.Key_Return)
 
-        window.terminal_widget.commandSubmitted.emit("clear")
-
-        self.assertEqual(window.terminal_widget.toPlainText(), "")
-        self.assertEqual(manager.shell.sent, [])
+        self.assertEqual(terminal.toPlainText(), "")
+        self.assertEqual(terminal._history, ["pwd", "clear"])
+        self.assertFalse(window._terminal_flush_timer.isActive())
+        self.assertEqual(window._pending_terminal_characters, 0)
+        QTest.keyClick(terminal, Qt.Key.Key_Up)
+        self.assertEqual(terminal._buffer, "clear")
+        QTest.keyClick(terminal, Qt.Key.Key_Up)
+        self.assertEqual(terminal._buffer, "pwd")
+        self.assertEqual(manager.shell.sent, ["pwd"])
 
     def test_empty_ssh_enter_filters_remote_echo_newline(self) -> None:
         """Blank Enter on SSH should leave a single prompt line, not a double newline."""
