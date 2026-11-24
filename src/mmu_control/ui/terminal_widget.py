@@ -373,8 +373,9 @@ class TerminalWidget(QPlainTextEdit):
             )
 
     def _submit_buffer(self) -> None:
-        command = self._buffer
-        self._history.append(command)
+        command = self._buffer.rstrip("\r\n")
+        if command:
+            self._history.append(command)
         self._history_index = len(self._history)
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
@@ -385,20 +386,24 @@ class TerminalWidget(QPlainTextEdit):
         self.commandSubmitted.emit(command)
 
     def _history_up(self) -> None:
-        if not self._history:
-            return
-        self._history_index = max(0, self._history_index - 1)
-        self._replace_buffer(self._history[self._history_index])
+        for index in range(self._history_index - 1, -1, -1):
+            command = self._history[index].rstrip("\r\n")
+            if command:
+                self._history_index = index
+                self._replace_buffer(command)
+                return
 
     def _history_down(self) -> None:
         if not self._history:
             return
-        self._history_index = min(len(self._history), self._history_index + 1)
-        if self._history_index == len(self._history):
-            buffer = ""
-        else:
-            buffer = self._history[self._history_index]
-        self._replace_buffer(buffer)
+        while self._history_index < len(self._history) - 1:
+            self._history_index += 1
+            command = self._history[self._history_index].rstrip("\r\n")
+            if command:
+                self._replace_buffer(command)
+                return
+        self._history_index = len(self._history)
+        self._replace_buffer("")
 
     def refresh_display(self) -> None:
         """Keep the cursor at the live command line."""
