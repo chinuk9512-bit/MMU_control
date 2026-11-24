@@ -278,3 +278,9 @@ explicitly with clicks, keyboard selection, typing or the timeout arrow buttons.
 
 The Commands editor's **Parent folder** selector also ignores mouse-wheel changes,
 including while focused. Select a folder explicitly by clicking or using the keyboard.
+
+Terminal history stores command text without trailing CR/LF. Empty Enter presses
+are still sent to the shell but are not added to history. Up/Down skip old blank
+entries and remove old trailing line endings when recalling commands; recall does
+not execute anything. Interior line breaks and spaces are preserved, and pressing
+Enter explicitly submits the recalled command with the shell's normal newline.
