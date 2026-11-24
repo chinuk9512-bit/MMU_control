@@ -208,11 +208,12 @@ class TerminalWidget(QPlainTextEdit):
             index = next_control
         return overwrite_from_carriage_return
 
-    def clear_terminal(self) -> None:
-        """Clear the terminal and restore the prompt."""
+    def clear_terminal(self, *, clear_history: bool = False) -> None:
+        """Clear the display, preserving history unless explicitly resetting a session."""
         self._buffer = ""
-        self._history.clear()
-        self._history_index = 0
+        if clear_history:
+            self._history.clear()
+        self._history_index = len(self._history)
         self._stream_filter.reset()
         self.setPlainText(self._prompt)
         self._move_cursor_to_end()

@@ -817,7 +817,7 @@ class MainWindow(QMainWindow):
         self._mmu_ssh_session_active = False
         self._mmu_ssh_prompt_buffer = ""
         self._leave_interactive_mode()
-        self._clear_terminal_display()
+        self._clear_terminal_display(clear_history=True)
         self.terminal_widget.set_prompt("")
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
@@ -2509,13 +2509,13 @@ class MainWindow(QMainWindow):
                 # Keep a short cooldown so repeated readyRead signals coalesce.
                 self._terminal_flush_timer.start()
 
-    def _clear_terminal_display(self) -> None:
+    def _clear_terminal_display(self, *, clear_history: bool = False) -> None:
         """Clear rendered and not-yet-rendered terminal output together."""
         self._terminal_flush_timer.stop()
         self._pending_terminal_output.clear()
         self._pending_terminal_characters = 0
         self._terminal_output_truncated = False
-        self.terminal_widget.clear_terminal()
+        self.terminal_widget.clear_terminal(clear_history=clear_history)
 
     def _flush_terminal_output(self) -> None:
         """Write at most one display budget and yield back to Qt between batches."""
