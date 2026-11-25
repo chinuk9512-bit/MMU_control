@@ -157,7 +157,9 @@ and automation scenarios can use these placeholders:
 configure --vlan ${MMU_VLAN} --du-mac ${DU_MAC} --mmu-mac ${MMU_MAC}
 ```
 
-VLAN must be 1–4094. DU MAC and MMU MAC accept six hexadecimal pairs separated consistently
+VLAN input must be decimal 1–255. `${MMU_VLAN}` is substituted as exactly two
+lowercase hexadecimal digits without `0x` (1 → `01`, 10 → `0a`, 100 → `64`,
+255 → `ff`). Add `0x` in a command if required: `0x${MMU_VLAN}`. DU MAC and MMU MAC accept six hexadecimal pairs separated consistently
 by colons or hyphens, and are substituted as uppercase colon-separated pairs.
 Only referenced inputs are required. A missing or invalid referenced value blocks
 the whole command group or scenario before any command is sent. A running scenario
@@ -245,7 +247,8 @@ configure ${CC_${MMU_A}}
 
 runs as `configure selected-command`: the inner expression selects `CC_1`, then
 its value is inserted. Multiple selectors and nested selectors are supported,
-including Client inputs such as `${CC_${MMU_VLAN}}`. Missing inner or selected
+including Client inputs such as `${CC_${MMU_VLAN}}` (decimal VLAN 100 selects
+`CC_64`, not `CC_100`). Missing inner or selected
 variables block the whole group/scenario before commands are sent. Scenarios keep
 the variable snapshot taken at startup.
 

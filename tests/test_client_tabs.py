@@ -209,8 +209,8 @@ def test_sftp_commands_and_simultaneous_scenarios_use_their_own_client(window):
     for session in (first, second):
         session.refresh_shared_definitions()
         session._run_automation_scenario()
-    assert first._shell.sent == ["echo 100"]
-    assert second._shell.sent == ["echo 200"]
+    assert first._shell.sent == ["echo 64"]
+    assert second._shell.sent == ["echo c8"]
     first_runner, second_runner = first._automation_runner, second._automation_runner
     window.client_tabs.setCurrentIndex(0)
     window.client_tabs.setCurrentIndex(1)
@@ -366,8 +366,8 @@ def test_vlan_mac_values_are_per_client_and_restored(window):
     first.du_mac_input.setText("aa:bb:cc:dd:ee:01")
     second.board_vlan_input.setText("200")
     second.du_mac_input.setText("aa-bb-cc-dd-ee-02")
-    assert first._resolve_commands([template]) == ["configure --vlan 100 --du-mac AA:BB:CC:DD:EE:01"]
-    assert second._resolve_commands([template]) == ["configure --vlan 200 --du-mac AA:BB:CC:DD:EE:02"]
+    assert first._resolve_commands([template]) == ["configure --vlan 64 --du-mac AA:BB:CC:DD:EE:01"]
+    assert second._resolve_commands([template]) == ["configure --vlan c8 --du-mac AA:BB:CC:DD:EE:02"]
     assert window.close()
     restored = ClientTabsWindow(window._data_directory, window._session_factory)
     try:
@@ -379,7 +379,7 @@ def test_vlan_mac_values_are_per_client_and_restored(window):
         restored.close()
 
 
-@pytest.mark.parametrize("vlan", ["", "0", "4095", "12; reboot", "1.5"])
+@pytest.mark.parametrize("vlan", ["", "0", "-1", "256", "4094", "4095", "0xff", "12; reboot", "1.5"])
 def test_invalid_vlan_blocks_entire_command_group(window, vlan):
     from mmu_control.models.command_set import CommandSet
     session = window.client_tabs.widget(0)
@@ -422,7 +422,7 @@ def test_scenario_keeps_initial_vlan_mac_snapshot(window):
     session.board_vlan_input.setText("200")
     session.du_mac_input.setText("AA:BB:CC:DD:EE:02")
     session._automation_runner.receive_output("continue")
-    assert session._shell.sent == ["set-vlan 100", "apply 100 AA:BB:CC:DD:EE:01"]
+    assert session._shell.sent == ["set-vlan 64", "apply 64 AA:BB:CC:DD:EE:01"]
 
 
 def test_unreferenced_inputs_and_escaped_placeholders_do_not_require_values(window):
@@ -437,11 +437,11 @@ def test_input_fields_override_variable_file_and_vlan_boundaries(window):
     from mmu_control.storage.variable_store import VariableStoreError
     session = window.client_tabs.widget(0)
     session._variable_store.save({"MMU_VLAN": "999", "DU_MAC": "stale", "OTHER": "retained"})
-    for vlan in ("1", "4094"):
+    for vlan, expected in (("1", "01"), ("255", "ff")):
         session.board_vlan_input.setText(vlan)
         session.du_mac_input.setText("AA:BB:CC:DD:EE:FF")
         assert session._resolve_commands(["${MMU_VLAN} ${DU_MAC} ${OTHER}"]) == [
-            f"{vlan} AA:BB:CC:DD:EE:FF retained"
+            f"{expected} AA:BB:CC:DD:EE:FF retained"
         ]
     session.board_vlan_input.clear()
     with pytest.raises(VariableStoreError, match="MMU_VLAN"):
@@ -656,11 +656,11 @@ def test_variable_catalog_uses_current_client_and_reserved_input_precedence(wind
     assert len(by_name) == 8
     assert by_name["MMU_PW_2"].source == "Common variables.json"
     assert by_name["MMU_PW_2"].value == "shared-example"
-    assert by_name["MMU_VLAN"].value == "100"
+    assert by_name["MMU_VLAN"].value == "64"
     assert by_name["DU_MAC_HEAD"].value == "0001"
     assert by_name["DU_MAC_TAIL"].value == "00020ABC"
     assert by_name["MMU_MAC"].value is None
-    assert {entry.name: entry.value for entry in second._variable_catalog()[0]}["MMU_VLAN"] == "200"
+    assert {entry.name: entry.value for entry in second._variable_catalog()[0]}["MMU_VLAN"] == "c8"
     first._variable_store.save({"NEW_NAME": "updated-example"})
     assert "NEW_NAME" in {entry.name for entry in first._variable_catalog()[0]}
     # Malformed files must still leave the built-in names discoverable.
@@ -744,10 +744,10 @@ def test_nested_missing_outer_blocks_scenario_before_first_command(window):
 
 def test_nested_names_support_client_inputs_as_selectors_and_targets(window):
     session = window.client_tabs.widget(0)
-    session._variable_store.save({"CC_100": "chosen", "FIELD": "MMU_VLAN", "MAC_FIELD": "DU_MAC_HEAD"})
+    session._variable_store.save({"CC_64": "chosen", "FIELD": "MMU_VLAN", "MAC_FIELD": "DU_MAC_HEAD"})
     session.board_vlan_input.setText("100")
     session.du_mac_input.setText("00:01:02:03:04:05")
-    assert session._resolve_commands(["${CC_${MMU_VLAN}} ${${FIELD}} ${${MAC_FIELD}}"]) == ["chosen 100 0001"]
+    assert session._resolve_commands(["${CC_${MMU_VLAN}} ${${FIELD}} ${${MAC_FIELD}}"]) == ["chosen 64 0001"]
 
 
 def test_defaults_apply_only_to_new_clients_and_not_restored_tabs(window):
@@ -821,3 +821,31 @@ def test_save_defaults_button_saves_only_selected_groups(window):
         selection.return_value.exec.return_value = QDialog.DialogCode.Rejected
         session.save_defaults_button.click()
     assert session._defaults_store.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("decimal,hexadecimal", [("1", "01"), ("10", "0a"), ("15", "0f"),
+    ("16", "10"), ("100", "64"), ("254", "fe"), ("255", "ff"), ("0001", "01")])
+def test_vlan_converts_decimal_input_to_two_lowercase_hex_digits(window, decimal, hexadecimal):
+    session = window.client_tabs.widget(0)
+    session.board_vlan_input.setText(decimal)
+    assert session._resolve_commands(["set ${MMU_VLAN} 0x${MMU_VLAN}"]) == [
+        f"set {hexadecimal} 0x{hexadecimal}"
+    ]
+    assert session._board_settings().vlan == decimal
+    tooltip = session.board_vlan_input.toolTip()
+    assert "1–255" in tooltip and "100 → 64" in tooltip and "255 → ff" in tooltip
+    assert "10 → 0a" in tooltip and "without 0x" in tooltip
+
+
+def test_vlan_256_blocks_scenario_before_any_command(window):
+    session = window.client_tabs.widget(0)
+    session._shell = Shell()
+    session.board_vlan_input.setText("256")
+    session._automation_store.upsert(AutomationScenario(name="vlan", steps=[
+        AutomationStep("first", "echo must-not-run"),
+        AutomationStep("vlan", "set ${MMU_VLAN}"),
+    ]))
+    session.refresh_shared_definitions()
+    session._run_automation_scenario()
+    assert session._shell.sent == []
+    assert "1 to 255" in session.automation_status_label.text()
