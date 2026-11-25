@@ -1954,9 +1954,9 @@ class MainWindow(QMainWindow):
             previous = names
             if "MMU_VLAN" in names:
                 vlan = self.board_vlan_input.text().strip()
-                if not re.fullmatch(r"[0-9]{1,4}", vlan) or not 1 <= int(vlan) <= 4094:
-                    raise VariableStoreError("MMU_VLAN: enter a VLAN number from 1 to 4094 in this Client tab.")
-                variables["MMU_VLAN"] = str(int(vlan))
+                if not re.fullmatch(r"[0-9]{1,4}", vlan) or not 1 <= int(vlan) <= 255:
+                    raise VariableStoreError("MMU_VLAN: enter a decimal VLAN number from 1 to 255 in this Client tab.")
+                variables["MMU_VLAN"] = f"{int(vlan):02x}"
             for name, field in (("DU_MAC", self.du_mac_input), ("MMU_MAC", self.mmu_mac_input)):
                 if not names.intersection((name, name + "_HEAD", name + "_TAIL")):
                     continue
@@ -1985,7 +1985,7 @@ class MainWindow(QMainWindow):
         except VariableStoreError as exc:
             common = {}
             error = str(exc)
-        descriptions = {"MMU_VLAN": "Client VLAN (1–4094)"}
+        descriptions = {"MMU_VLAN": "Decimal VLAN (1–255), substituted as 2-digit lowercase hex"}
         for base in ("DU_MAC", "MMU_MAC"):
             descriptions[base] = "Full MAC address, separated by colons"
             descriptions[base + "_HEAD"] = "First 4 hexadecimal digits, without separators or 0x"
@@ -3041,8 +3041,11 @@ class MainWindow(QMainWindow):
         self.board_name_input.setPlaceholderText("Device name, e.g. MMU-A")
         layout.addRow("Device name", self.board_name_input)
         self.board_vlan_input = QLineEdit(self)
-        self.board_vlan_input.setPlaceholderText("1–4094")
-        self.board_vlan_input.setToolTip("${MMU_VLAN}: Client VLAN (1–4094), used in commands and scenarios")
+        self.board_vlan_input.setPlaceholderText("1–255")
+        self.board_vlan_input.setToolTip(
+            "Decimal input: 1–255\n${MMU_VLAN}: 2-digit lowercase hex (without 0x)\n"
+            "Examples: 1 → 01, 10 → 0a, 100 → 64, 255 → ff"
+        )
         self.du_mac_input = QLineEdit(self)
         self.du_mac_input.setPlaceholderText("AA:BB:CC:DD:EE:FF")
         self.du_mac_input.setToolTip(
